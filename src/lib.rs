@@ -151,6 +151,7 @@ pub mod prelude {
     pub use super::operator::window::{CountWindow, ProcessingTimeWindow, SessionWindow};
     #[cfg(feature = "timestamp")]
     pub use super::operator::window::{EventTimeWindow, TransactionWindow};
+    pub use super::operator::sql::SqlFilterExt; 
     pub use super::Replication;
     pub use super::{BatchMode, RuntimeConfig, StreamContext};
 }
