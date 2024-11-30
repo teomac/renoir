@@ -10,4 +10,4 @@ number = { (ASCII_DIGIT)+ }
 expr = { variable ~ operator ~ number }
 condition = { expr }
 
-query = { SOI ~ select ~ variable ~ from ~ table ~ where ~ condition ~ EOI}
+query = { SOI ~ select ~ variable ~ from ~ table ~ where ~ condition ~ EOI }
