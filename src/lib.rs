@@ -130,6 +130,7 @@ pub use stream::{KeyedStream, Stream, WindowedStream};
 pub(crate) mod block;
 pub(crate) mod channel;
 pub mod config;
+pub mod dsl;
 pub(crate) mod environment;
 pub(crate) mod network;
 pub mod operator;

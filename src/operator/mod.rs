@@ -18,8 +18,6 @@ pub(crate) use start::*;
 
 pub use rich_map_custom::ElementGenerator;
 
-pub use super::operator::sql::SqlFilterExt; 
-
 use crate::block::{group_by_hash, BlockStructure, GroupHasherBuilder, NextStrategy, Replication};
 use crate::scheduler::ExecutionMetadata;
 
@@ -89,7 +87,6 @@ mod rich_map_custom;
 mod route;
 pub mod sink;
 pub mod source;
-pub mod sql;
 mod start;
 pub mod window;
 mod zip;
