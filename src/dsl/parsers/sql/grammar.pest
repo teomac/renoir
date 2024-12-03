@@ -1,0 +1,15 @@
+WHITESPACE = _{ " " }
+
+select = { "SELECT" }
+variable = @{ (ASCII_ALPHA_LOWER)+ }
+agg_function = { ^"MAX" }  // Case-insensitive match
+aggregate_expr = { agg_function ~ "(" ~ variable ~ ")" }
+from = { "FROM" }
+table = @{ (ASCII_ALPHA)+ }
+where = { "WHERE" }
+operator = { (">" | "<" | "=") }
+number = { (ASCII_DIGIT)+ }
+expr = { variable ~ operator ~ number }
+condition = { expr }
+
+query = { SOI ~ select ~ (aggregate_expr | variable) ~ from ~ table ~ where ~ condition ~ EOI }
