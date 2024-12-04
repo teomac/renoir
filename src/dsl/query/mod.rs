@@ -4,9 +4,8 @@ use crate::dsl::parsers::sql::SqlAST;
 use crate::operator::{ExchangeData, Operator};
 use crate::stream::Stream;
 
-use super::ir::{Expression, IrOperator, Literal, Operation, AggregateFunction};
+use super::ir::{Expression, IrOperator, Literal, Operation};
 
-/// Extension trait for applying queries to streams
 pub trait QueryExt<Op: Operator> {
     fn query(self, query: &str) -> Stream<impl Operator<Out = Op::Out>>
     where
@@ -24,8 +23,7 @@ where
 
         match ir.operation {
             Operation::Select(select) => {
-                // First apply any filters
-                let filtered_stream = match select.filter {
+                let filtered = match select.filter {
                     Some(Expression::BinaryOp(op)) => {
                         let value = op.right.as_integer();
                         let filter = move |x: &Op::Out| match op.operator {
@@ -38,32 +36,27 @@ where
                     _ => panic!("Expected filter expression in query"),
                 };
 
-                // Then apply any aggregations
-                match &select.projections[0].expression {
-                    Expression::AggregateOp(agg_op) => {
-                        match agg_op.function {
-                            AggregateFunction::Max => {
-                            
-                                filtered_stream
-                                .fold(
-                                    None,
-                                    |acc: &mut Option<Op::Out>, x| {
-                                        match acc {
-                                            None => *acc = Some(x),
-                                            Some(curr) => {
-                                                if &x > curr {
-                                                    *acc = Some(x);
-                                                }
-                                            }
-                                        }
-                                    }
-                                )
-                                .map(|opt| opt.expect("Expected at least one element"))
+                let is_aggregate = match &select.projections[0].expression {
+                    Expression::AggregateOp(_) => true,
+                    Expression::Column(_) => false,
+                    _ => panic!("Expected column or aggregate expression in query"),
+                };
+
+                filtered
+                    .fold(
+                        (Vec::new(), is_aggregate),
+                        |acc: &mut (Vec<Op::Out>, bool), x| {
+                            if acc.1 {
+                                if acc.0.is_empty() || &x > acc.0.last().unwrap() {
+                                    acc.0.clear();
+                                    acc.0.push(x);
+                                }
+                            } else {
+                                acc.0.push(x);
                             }
                         }
-                    },
-                    _ => panic!("Expected aggregate expression in query"),
-                }
+                    )
+                    .flat_map(|(vec, _)| vec.into_iter())
             }
         }
     }

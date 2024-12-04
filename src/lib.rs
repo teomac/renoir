@@ -134,7 +134,6 @@ pub mod dsl;
 pub(crate) mod environment;
 pub(crate) mod network;
 pub mod operator;
-pub mod dsl;
 mod profiler;
 #[cfg(feature = "ssh")]
 pub(crate) mod runner;
