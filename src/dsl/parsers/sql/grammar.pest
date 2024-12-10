@@ -1,15 +1,30 @@
-WHITESPACE = _{ " " }
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 
 select = { "SELECT" }
-variable = @{ (ASCII_ALPHA_LOWER)+ }
-agg_function = { ^"MAX" }  // Case-insensitive match
-aggregate_expr = { agg_function ~ "(" ~ variable ~ ")" }
 from = { "FROM" }
-table = @{ (ASCII_ALPHA)+ }
-where = { "WHERE" }
-operator = { (">" | "<" | "=") }
-number = { (ASCII_DIGIT)+ }
-expr = { variable ~ operator ~ number }
-condition = { expr }
+where_keyword = { "WHERE" } // Renamed to avoid conflict with Rust keyword
 
-query = { SOI ~ select ~ (aggregate_expr | variable) ~ from ~ table ~ where ~ condition ~ EOI }
+variable = @{ ('a'..'z')+ }
+number = @{ ('0'..'9')+ }
+symbol = @{ ("^"| "+" | "-" | "*" | "/")}
+
+
+// Aggregate function definition
+agg_function = { ^"MAX" }
+aggregate_expr = { agg_function ~ "(" ~ variable ~ ")" }
+
+operator = { ">" | "<" | "=" }
+
+// Condition parts
+expr = { variable ~ operator ~ number }
+where_expr = { where_keyword ~ expr }
+select_expr = {variable ~ symbol ~ number }
+
+// Main query structure - making where clause optional
+query = {
+    SOI ~
+    select ~ (aggregate_expr | variable | select_expr) ~
+    from ~ variable ~
+    where_expr? ~
+    EOI
+}

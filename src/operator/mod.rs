@@ -60,7 +60,7 @@ use self::{
 #[cfg(feature = "timestamp")]
 mod add_timestamps;
 mod batch_mode;
-mod boxed;
+pub mod boxed;
 pub mod cache;
 pub(crate) mod end;
 mod filter;

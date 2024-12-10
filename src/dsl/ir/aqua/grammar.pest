@@ -1,0 +1,38 @@
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+COMMENT = _{ "//" ~ (!"\n" ~ ANY)* }
+
+// Main query structure - allow clauses in any order
+query = {
+    SOI ~
+    (from_clause | select_clause | where_clause)+ ~
+    EOI
+}
+
+// Basic clauses
+from_clause = { "from" ~ stream_identifier ~ ":" ~ stream_type }
+select_clause = { "select" ~ (aggregate_expr | identifier | complex_op) }
+where_clause = { "where" ~ condition }
+
+// Stream definitions
+stream_identifier = @{ ('a'..'z' | "_") ~ ('a'..'z' | '0'..'9' | "_")* }
+stream_type = { "Stream" }
+
+complex_op = {identifier ~ symbol ~ (number | identifier) }
+
+// Aggregate expressions
+aggregate_expr = { aggregate_func ~ "(" ~ identifier ~ ")" }
+aggregate_func = { "max" | "min" | "avg" }
+
+// Basic building blocks
+identifier = @{ ('a'..'z' | "_") ~ ('a'..'z' | '0'..'9' | "_")* }
+number = @{ '0'..'9'+ ~ ("." ~ '0'..'9'+)? }
+symbol = @{ ("^"| "+" | "-" | "*" | "/")}
+
+// Conditions for WHERE clause
+condition = { identifier ~ comparison_op ~ number }
+comparison_op = { ">" | "<" | "==" | "<=" | ">=" }
+
+// Optional method chain syntax for filter and aggregation operations
+method_chain = { "." ~ (filter_op | agg_op) }
+filter_op = { "filter" ~ "(" ~ condition ~ ")" }
+agg_op = { ("max" | "min" | "avg") ~ "(" ~ identifier ~ ")" }

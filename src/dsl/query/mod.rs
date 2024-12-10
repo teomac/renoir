@@ -1,14 +1,19 @@
 use crate::dsl::ir::IrAST;
 use crate::dsl::parsers::sql::SqlAST;
 use crate::operator::{ExchangeData, Operator};
+use crate::operator::boxed::BoxedOperator;
 use crate::stream::Stream;
 use std::fs;
 use std::process::Command;
 
 use super::ir::{Expression, IrOperator, Literal, Operation};
 
-pub trait QueryExt<Op: Operator> {
-    fn query(self, query: &str) -> Stream<impl Operator<Out = Op::Out>>;
+pub trait QueryExt<Op: Operator>
+where
+    Op::Out: Clone + 'static,
+{
+    fn query(self, query: &str) -> Stream<BoxedOperator<Op::Out>>;
+    fn query_to_aqua(self, query_str: &str) -> String;
     fn query_to_binary<F>(self, query_str: &str, output_path: &str, execute_fn: F) -> std::io::Result<Vec<i32>>
     where F: FnOnce();
 }
@@ -16,14 +21,15 @@ pub trait QueryExt<Op: Operator> {
 impl<Op> QueryExt<Op> for Stream<Op> 
 where   
     Op: Operator + 'static,
-    Op::Out: ExchangeData + PartialOrd + Into<i64> + Ord + 'static,
+    Op::Out: ExchangeData + PartialOrd + Into<i64> + Ord + Clone +  'static,
 {
-    fn query(self, query_str: &str) -> Stream<impl Operator<Out = Op::Out>> {
+    fn query(self, query_str: &str) -> Stream<BoxedOperator<Op::Out>> {
         let sql_ast = SqlAST::parse(query_str).expect("Failed to parse query");
         let ir = IrAST::parse(&sql_ast);
 
         match ir.operation {
-            Operation::Select(select) => {
+            Operation::Select(mut select) => {
+                // First apply any filters
                 let filtered = match select.filter {
                     Some(Expression::BinaryOp(op)) => {
                         let value = op.right.as_integer();
@@ -32,36 +38,56 @@ where
                             IrOperator::LessThan => x.clone().into() < value,
                             IrOperator::Equals => x.clone().into() == value,
                         };
-                        self .filter(filter)
+                        self.filter(filter).into_boxed()
+                    },
+                    None => self.into_boxed(),
+                    _ => unreachable!()
+                };
+
+                // Then handle projections
+                let projection = select.projections.remove(0);
+
+                // Then handle projections
+                match projection.expression {
+                    Expression::Column(_) => filtered,
+                    Expression::AggregateOp(_agg_op) => {
+                        filtered
+                            .fold(
+                                Vec::new(),
+                                move |acc: &mut Vec<Op::Out>, x| {
+                                    if acc.is_empty() || &x > acc.last().unwrap() {
+                                        acc.clear();
+                                        acc.push(x);
+                                    }
+                                }
+                            )
+                            .flat_map(|vec| vec.into_iter())
+                            .into_boxed()
+                    },
+                    Expression::ComplexOP(_var, op, lit) => {
+                        let Literal::Integer(value) = lit;
+                            let map_fn = move |x: Op::Out| {
+                                let x_val: i64 = x.clone().into();
+                                let _result = match op {
+                                    '^' => x_val ^ value,
+                                    '+' => x_val + value, 
+                                    '-' => x_val - value,
+                                    '*' => x_val * value,
+                                    '/' => x_val / value,
+                                    _ => unreachable!("Unsupported operator"),
+                                };
+                                // Since we can't convert back directly, we'll return the original value
+                                // This is a temporary solution - ideally we'd want to handle the conversion properly
+                                x
+                            };
+                            filtered.map(map_fn).into_boxed()
+                        
                     },
                     _ => unreachable!()
-                };
-
-                let is_aggregate = match &select.projections[0].expression {
-                    Expression::AggregateOp(_) => true,
-                    Expression::Column(_) => false,
-                    _ => unreachable!()
-                };
-
-                filtered
-                    .fold(
-                        (Vec::new(), is_aggregate),
-                        |acc: &mut (Vec<Op::Out>, bool), x| {
-                            if acc.1 {
-                                if acc.0.is_empty() || &x > acc.0.last().unwrap() {
-                                    acc.0.clear();
-                                    acc.0.push(x);
-                                }
-                            } else {
-                                acc.0.push(x);
-                            }
-                        }
-                    )
-                    .flat_map(|(vec, _)| vec.into_iter())
+                }
             }
         }
     }
-
 
     
 
@@ -213,7 +239,13 @@ where
 
         Ok(result)
     }
-}
+
+
+fn query_to_aqua(self, query_str: &str)->String{
+    let sql_ast = SqlAST::parse(query_str).expect("Failed to parse query");
+    let aqua_string = sql_ast.to_aqua_string();
+    return aqua_string;
+}}
 
 fn query_to_string(query_str: &str) -> String {
     let sql_ast = SqlAST::parse(query_str).expect("Failed to parse query");
@@ -258,6 +290,10 @@ fn query_to_string(query_str: &str) -> String {
         }
     }
 }
+
+
+    
+
 
 trait AsInteger {
     fn as_integer(&self) -> i64;

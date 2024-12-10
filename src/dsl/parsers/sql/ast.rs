@@ -9,7 +9,7 @@ pub struct SqlParser;
 pub struct SqlAST {
     pub select: SelectClause,
     pub from: FromClause,
-    pub filter: WhereClause,
+    pub filter: Option<WhereClause>, // Made optional
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -21,7 +21,9 @@ pub struct SelectClause {
 pub enum SelectType {
     Simple(String),
     Aggregate(AggregateFunction, String),
+    ComplexValue(String, char, i64),
 }
+
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum AggregateFunction {
@@ -34,7 +36,7 @@ pub struct FromClause {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct WhereClause {
+pub struct  WhereClause {
     pub condition: Condition,
 }
 
@@ -73,20 +75,35 @@ impl SqlAST {
                         let var = agg.next().unwrap().as_str().to_string();
                         SelectType::Aggregate(func, var)
                     },
+                    Rule::select_expr => {
+                        let mut complex = select_part.into_inner();
+                        let var1 = complex.next().unwrap().as_str().to_string();
+                        let op = complex.next().unwrap().as_str().chars().next().unwrap();
+                        let val = complex.next().unwrap().as_str().parse().unwrap();
+                        SelectType::ComplexValue(var1, op, val)
+                        
+                    },
                     _ => unreachable!(),
                 };
                 
                 inner.next(); // Skip FROM
                 let table = inner.next().unwrap().as_str().to_string();
-                inner.next(); // Skip WHERE
                 
-                let expr = inner.next().unwrap().into_inner();
-                let condition = Self::parse_condition(expr);
+                // Handle optional where expression
+                let filter = match inner.next() {
+                    Some(where_pair) if where_pair.as_rule() == Rule::where_expr => {
+                        let expr = where_pair.into_inner().nth(1).unwrap().into_inner();
+                        Some(WhereClause {
+                            condition: Self::parse_condition(expr)
+                        })
+                    },
+                    _ => None
+                };
 
                 return Ok(SqlAST {
                     select: SelectClause { selection },
                     from: FromClause { table },
-                    filter: WhereClause { condition },
+                    filter,
                 });
             }
         }
@@ -94,19 +111,14 @@ impl SqlAST {
     }
 
     fn parse_condition(mut expr: pest::iterators::Pairs<Rule>) -> Condition {
-        let expr = expr.next().unwrap().into_inner();
-        
-        let mut parts = expr.into_iter();
-        let variable = parts.next().unwrap().as_str().to_string();
-        
-        let operator = match parts.next().unwrap().as_str() {
+        let variable = expr.next().unwrap().as_str().to_string();
+        let operator = match expr.next().unwrap().as_str() {
             ">" => ComparisonOp::GreaterThan,
             "<" => ComparisonOp::LessThan,
             "=" => ComparisonOp::Equals,
             _ => unreachable!(),
         };
-        
-        let value = parts.next().unwrap().as_str().parse().unwrap();
+        let value = expr.next().unwrap().as_str().parse().unwrap();
 
         Condition {
             variable,
@@ -114,4 +126,48 @@ impl SqlAST {
             value,
         }
     }
-}
+
+    pub fn to_aqua_string(&self) -> String {
+        let mut parts = Vec::new();
+
+        // FROM clause
+        parts.push(format!("from input:Stream"));
+
+        // WHERE clause (only if present)
+        if let Some(where_clause) = &self.filter {
+            let condition = &where_clause.condition;
+            parts.push(format!("where {} {} {}",
+                condition.variable,
+                SqlAST::convert_operator(&condition.operator),
+                condition.value
+            ));
+        }
+
+        // SELECT clause
+        match &self.select.selection {
+            SelectType::Simple(column) => {
+                parts.push(format!("select {}", column));
+            },
+            SelectType::Aggregate(func, column) => {
+                let agg = match func {
+                    AggregateFunction::Max => "max",
+                    // Add other aggregates as needed
+                };
+                parts.push(format!("select {}({})", agg, column));
+            }
+            SelectType::ComplexValue(var1, op, val) => {
+                parts.push(format!("select {} {} {}", var1, op, val));
+            }
+        }
+
+        // Join all parts with newlines
+        parts.join("\n")
+    }
+
+    pub fn convert_operator(op: &ComparisonOp) -> &'static str {
+    match op {
+        ComparisonOp::GreaterThan => ">",
+        ComparisonOp::LessThan => "<",
+        ComparisonOp::Equals => "==",
+    }
+}}

@@ -1,4 +1,5 @@
 use crate::prelude::SqlAST;
+use crate::dsl::parsers::sql::ast::*;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct IrAST {
@@ -33,6 +34,7 @@ pub enum Expression {
     Literal(Literal),
     BinaryOp(Box<BinaryOp>),
     AggregateOp(Box<AggregateOp>),
+    ComplexOP(String, char, Literal),
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -49,12 +51,12 @@ pub struct BinaryOp {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct AggregateOp {
-    pub function: AggregateFunction,
+    pub function: AggregateFun,
     pub expression: Expression,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum AggregateFunction {
+pub enum AggregateFun {
     Max,
 }
 
@@ -65,35 +67,40 @@ pub enum IrOperator {
     Equals,
 }
 
+
 impl IrAST {
     pub fn parse(query: &SqlAST) -> Self {
         IrAST {
             operation: Operation::Select(SelectOperation {
                 projections: vec![Projection {
                     expression: match &query.select.selection {
-                        crate::dsl::parsers::sql::ast::SelectType::Simple(var) => {
+                        SelectType::Simple(var) => {
                             Expression::Column(var.clone())
                         }
-                        crate::dsl::parsers::sql::ast::SelectType::Aggregate(func, var) => {
+                        SelectType::Aggregate(func, var) => {
                             Expression::AggregateOp(Box::new(AggregateOp {
                                 function: match func {
-                                    crate::dsl::parsers::sql::ast::AggregateFunction::Max => AggregateFunction::Max,
+                                    AggregateFunction::Max => AggregateFun::Max,
                                 },
                                 expression: Expression::Column(var.clone()),
                             }))
                         }
+                        
+                        SelectType::ComplexValue(var1, op, var2) => {
+                            Expression::ComplexOP(var1.clone(), *op, Literal::Integer(*var2))
+                        }
                     },
                 }],
                 source: Source::Table(query.from.table.clone()),
-                filter: Some(Expression::BinaryOp(Box::new(BinaryOp {
-                    left: Expression::Column(query.filter.condition.variable.clone()),
-                    operator: match query.filter.condition.operator {
-                        crate::dsl::parsers::sql::ast::ComparisonOp::GreaterThan => IrOperator::GreaterThan,
-                        crate::dsl::parsers::sql::ast::ComparisonOp::LessThan => IrOperator::LessThan,
-                        crate::dsl::parsers::sql::ast::ComparisonOp::Equals => IrOperator::Equals,
+                filter: query.filter.as_ref().map(|where_clause| Expression::BinaryOp(Box::new(BinaryOp {
+                    left: Expression::Column(where_clause.condition.variable.clone()),
+                    operator: match where_clause.condition.operator {
+                        ComparisonOp::GreaterThan => IrOperator::GreaterThan,
+                        ComparisonOp::LessThan => IrOperator::LessThan,
+                        ComparisonOp::Equals => IrOperator::Equals,
                     },
                     right: Expression::Literal(Literal::Integer(
-                        query.filter.condition.value,
+                        where_clause.condition.value,
                     )),
                 }))),
             }),
