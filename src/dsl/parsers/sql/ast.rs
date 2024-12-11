@@ -100,6 +100,8 @@ impl SqlAST {
                     _ => None
                 };
 
+                println!("select clause: {:?}", selection);
+
                 return Ok(SqlAST {
                     select: SelectClause { selection },
                     from: FromClause { table },

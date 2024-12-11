@@ -10,7 +10,7 @@ query = {
 
 // Basic clauses
 from_clause = { "from" ~ stream_identifier ~ ":" ~ stream_type }
-select_clause = { "select" ~ (aggregate_expr | identifier | complex_op) }
+select_clause = { "select" ~ (aggregate_expr | complex_op | identifier) }
 where_clause = { "where" ~ condition }
 
 // Stream definitions

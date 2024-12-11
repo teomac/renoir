@@ -5,12 +5,13 @@ use crate::operator::boxed::BoxedOperator;
 use crate::stream::Stream;
 use std::fs;
 use std::process::Command;
+use crate::dsl::ir::aqua::*;
 
 use super::ir::{Expression, IrOperator, Literal, Operation};
 
 pub trait QueryExt<Op: Operator>
 where
-    Op::Out: Clone + 'static,
+    Op::Out: Clone + 'static + Into<i64> + TryFrom<i64>,
 {
     fn query(self, query: &str) -> Stream<BoxedOperator<Op::Out>>;
     fn query_to_aqua(self, query_str: &str) -> String;
@@ -21,7 +22,7 @@ where
 impl<Op> QueryExt<Op> for Stream<Op> 
 where   
     Op: Operator + 'static,
-    Op::Out: ExchangeData + PartialOrd + Into<i64> + Ord + Clone +  'static,
+    Op::Out: ExchangeData + PartialOrd + Into<i64> + Ord + Clone +  'static + TryFrom<i64>,
 {
     fn query(self, query_str: &str) -> Stream<BoxedOperator<Op::Out>> {
         let sql_ast = SqlAST::parse(query_str).expect("Failed to parse query");
@@ -49,7 +50,6 @@ where
 
                 // Then handle projections
                 match projection.expression {
-                    Expression::Column(_) => filtered,
                     Expression::AggregateOp(_agg_op) => {
                         filtered
                             .fold(
@@ -66,23 +66,28 @@ where
                     },
                     Expression::ComplexOP(_var, op, lit) => {
                         let Literal::Integer(value) = lit;
-                            let map_fn = move |x: Op::Out| {
-                                let x_val: i64 = x.clone().into();
-                                let _result = match op {
-                                    '^' => x_val ^ value,
-                                    '+' => x_val + value, 
-                                    '-' => x_val - value,
-                                    '*' => x_val * value,
-                                    '/' => x_val / value,
-                                    _ => unreachable!("Unsupported operator"),
-                                };
-                                // Since we can't convert back directly, we'll return the original value
-                                // This is a temporary solution - ideally we'd want to handle the conversion properly
-                                x
+                        let map_fn = move |x: Op::Out| {
+                            let x_val: i64 = x.into();
+                            let result = match op {
+                                '^' => x_val.pow(value.try_into().unwrap_or_else(|_| 
+                                    panic!("Power operation requires a non-negative exponent less than 2^32"))),
+                                '+' => x_val + value, 
+                                '-' => x_val - value,
+                                '*' => x_val * value,
+                                '/' => {
+                                    if value == 0 {
+                                        panic!("Division by zero is not allowed");
+                                    }
+                                    x_val / value
+                                }
+                                _ => unreachable!("Unsupported operator"),
                             };
-                            filtered.map(map_fn).into_boxed()
+                            result.try_into().unwrap_or_else(|_| panic!("Failed to convert result"))
+                        };
+                        filtered.map(map_fn).into_boxed()
                         
                     },
+                    Expression::Column(_) => filtered,
                     _ => unreachable!()
                 }
             }
@@ -157,8 +162,14 @@ where
         // Create src directory
         fs::create_dir(project_path.join("src"))?;
     
-        // Generate the operator chain using the existing logic
-        let operator_chain = query_to_string(query_str);
+        // Generate the operator chain using the existing logic using the initial IR
+        //let operator_chain = query_to_string(query_str);
+
+        // Generate the operator chain using the existing logic using the aqua-like IR
+        let operator_chain = query_to_string_aqua(query_str);
+
+
+
     
         // Create the main.rs file with this template
         let main_rs = format!(

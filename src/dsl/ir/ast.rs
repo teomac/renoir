@@ -74,9 +74,6 @@ impl IrAST {
             operation: Operation::Select(SelectOperation {
                 projections: vec![Projection {
                     expression: match &query.select.selection {
-                        SelectType::Simple(var) => {
-                            Expression::Column(var.clone())
-                        }
                         SelectType::Aggregate(func, var) => {
                             Expression::AggregateOp(Box::new(AggregateOp {
                                 function: match func {
@@ -89,7 +86,11 @@ impl IrAST {
                         SelectType::ComplexValue(var1, op, var2) => {
                             Expression::ComplexOP(var1.clone(), *op, Literal::Integer(*var2))
                         }
+                        SelectType::Simple(var) => {
+                            Expression::Column(var.clone())
+                        }
                     },
+                    
                 }],
                 source: Source::Table(query.from.table.clone()),
                 filter: query.filter.as_ref().map(|where_clause| Expression::BinaryOp(Box::new(BinaryOp {

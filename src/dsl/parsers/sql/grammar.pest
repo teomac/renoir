@@ -23,7 +23,7 @@ select_expr = {variable ~ symbol ~ number }
 // Main query structure - making where clause optional
 query = {
     SOI ~
-    select ~ (aggregate_expr | variable | select_expr) ~
+    select ~ (aggregate_expr | select_expr | variable) ~
     from ~ variable ~
     where_expr? ~
     EOI
