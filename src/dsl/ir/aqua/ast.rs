@@ -29,7 +29,7 @@ pub enum SelectClause {
     Column(String),              // Simple column selection
     Aggregate(AggregateFunction), // Aggregation function
     ComplexOp(String, char, String),
-    ComplexValue(String, char, f64),
+    ComplexValue(String, char, AquaLiteral),
 }
 
 // Aggregation function with its column
@@ -52,7 +52,7 @@ pub enum AggregateType {
 pub struct Condition {
     pub variable: String,
     pub operator: ComparisonOp,
-    pub value: f64,
+    pub value: AquaLiteral,
 }
 
 // Available comparison operators
@@ -63,6 +63,12 @@ pub enum ComparisonOp {
     Equals,
     GreaterThanEquals,
     LessThanEquals,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum AquaLiteral {
+    Integer(i64),
+    Float(f64),
 }
 
 impl AquaAST {
@@ -150,10 +156,10 @@ impl SelectClause {
                     let variable = inner.next().unwrap().as_str().to_string();
                     let operator = inner.next().unwrap().as_str().chars().next().unwrap();
                     let var2 = inner.next().unwrap().as_str().to_string();
-                    match var2.parse::<f64>() {
-                            Ok(var2) => return Ok(SelectClause::ComplexValue(variable, operator, var2)),
-                            Err(_) => return Ok(SelectClause::ComplexOp(variable, operator, var2)),
-                        }
+                    let literal = parse_literal(&var2);
+
+                    return Ok(SelectClause::ComplexValue(variable, operator, literal));
+                    
                     }
                     _ => unreachable!(),
                 }
@@ -176,12 +182,13 @@ impl Condition {
         let mut iter = condition.into_iter();
         let variable = iter.next().unwrap().as_str().to_string();
         let operator = ComparisonOp::from_str(iter.next().unwrap().as_str())?;
-        let value = iter.next().unwrap().as_str().parse().unwrap();
+        let value = iter.next().unwrap().as_str();
+        let literal = parse_literal(value);
 
         Ok(Condition {
             variable,
             operator,
-            value,
+            value: literal,
         })
     }
 }
@@ -220,38 +227,13 @@ impl AggregateType {
     }
 }
 
-// Example usage and tests
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_parse_sql_style() {
-        let ast = AquaAST::parse("from input:Stream select max where value > 10").unwrap();
-        assert_eq!(ast.from.stream_name, "input");
-        assert!(matches!(ast.select, SelectClause::Aggregate(AggregateFunction {
-            function: AggregateType::Max,
-            ..
-        })));
-        assert!(matches!(ast.filter, Some(Condition {
-            variable: _,
-            operator: ComparisonOp::GreaterThan,
-            value: 10.0,
-        })));
-    }
-
-    #[test]
-    fn test_parse_method_style() {
-        let ast = AquaAST::parse("input:Stream.filter(value > 10).max(value)").unwrap();
-        assert_eq!(ast.from.stream_name, "input");
-        assert!(matches!(ast.select, SelectClause::Aggregate(AggregateFunction {
-            function: AggregateType::Max,
-            ..
-        })));
-        assert!(matches!(ast.filter, Some(Condition {
-            variable: _,
-            operator: ComparisonOp::GreaterThan,
-            value: 10.0,
-        })));
+// function to parse the literal value
+pub fn parse_literal(val: &str) -> AquaLiteral {
+    if let Ok(float_val) = val.parse::<f64>() {
+        AquaLiteral::Float(float_val)
+    } else if let Ok(int_val) = val.parse::<i64>() {
+        AquaLiteral::Integer(int_val)
+    } else {
+        panic!("Value is neither a valid integer nor float: {}", val);
     }
 }

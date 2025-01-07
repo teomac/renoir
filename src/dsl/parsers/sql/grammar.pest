@@ -5,7 +5,10 @@ from = { "FROM" }
 where_keyword = { "WHERE" } // Renamed to avoid conflict with Rust keyword
 
 variable = @{ ('a'..'z')+ }
-number = @{ ('0'..'9')+ }
+number = @{ 
+    ('0'..'9')+ // Integer part
+    ~ ("." ~ ('0'..'9')+)? // Optional decimal part
+}
 symbol = @{ ("^"| "+" | "-" | "*" | "/")}
 
 

@@ -25,7 +25,10 @@ aggregate_func = { "max" | "min" | "avg" }
 
 // Basic building blocks
 identifier = @{ ('a'..'z' | "_") ~ ('a'..'z' | '0'..'9' | "_")* }
-number = @{ '0'..'9'+ ~ ("." ~ '0'..'9'+)? }
+number = @{ 
+    ('0'..'9')+ // Integer part
+    ~ ("." ~ ('0'..'9')+)? // Optional decimal part
+}
 symbol = @{ ("^"| "+" | "-" | "*" | "/")}
 
 // Conditions for WHERE clause

@@ -21,7 +21,7 @@ pub struct SelectClause {
 pub enum SelectType {
     Simple(String),
     Aggregate(AggregateFunction, String),
-    ComplexValue(String, char, i64),
+    ComplexValue(String, char, SqlLiteral),
 }
 
 
@@ -44,7 +44,7 @@ pub struct  WhereClause {
 pub struct Condition {
     pub variable: String,
     pub operator: ComparisonOp,
-    pub value: i64,
+    pub value: SqlLiteral,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -52,6 +52,12 @@ pub enum ComparisonOp {
     GreaterThan,
     LessThan, 
     Equals,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum SqlLiteral {
+    Integer(i64),
+    Float(f64),
 }
 
 impl SqlAST {
@@ -79,8 +85,9 @@ impl SqlAST {
                         let mut complex = select_part.into_inner();
                         let var1 = complex.next().unwrap().as_str().to_string();
                         let op = complex.next().unwrap().as_str().chars().next().unwrap();
-                        let val = complex.next().unwrap().as_str().parse().unwrap();
-                        SelectType::ComplexValue(var1, op, val)
+                        let val_str = complex.next().unwrap().as_str();
+                        let literal = SqlAST::parse_literal(val_str);
+                        SelectType::ComplexValue(var1, op, literal)
                         
                     },
                     _ => unreachable!(),
@@ -120,7 +127,8 @@ impl SqlAST {
             "=" => ComparisonOp::Equals,
             _ => unreachable!(),
         };
-        let value = expr.next().unwrap().as_str().parse().unwrap();
+        let value = expr.next().unwrap().as_str();
+        let value = SqlAST::parse_literal(value);
 
         Condition {
             variable,
@@ -138,10 +146,14 @@ impl SqlAST {
         // WHERE clause (only if present)
         if let Some(where_clause) = &self.filter {
             let condition = &where_clause.condition;
+            let value = match &condition.value {
+                SqlLiteral::Float(val) => format!("{:.2}", val),
+                SqlLiteral::Integer(val) => val.to_string(),
+            };
             parts.push(format!("where {} {} {}",
                 condition.variable,
                 SqlAST::convert_operator(&condition.operator),
-                condition.value
+                value
             ));
         }
 
@@ -158,7 +170,11 @@ impl SqlAST {
                 parts.push(format!("select {}({})", agg, column));
             }
             SelectType::ComplexValue(var1, op, val) => {
-                parts.push(format!("select {} {} {}", var1, op, val));
+                let value = match &val {
+                    SqlLiteral::Float(val) => format!("{:.2}", val),
+                    SqlLiteral::Integer(val) => val.to_string(),
+                };
+                parts.push(format!("select {} {} {}", var1, op, value));
             }
         }
 
@@ -167,9 +183,21 @@ impl SqlAST {
     }
 
     pub fn convert_operator(op: &ComparisonOp) -> &'static str {
-    match op {
-        ComparisonOp::GreaterThan => ">",
-        ComparisonOp::LessThan => "<",
-        ComparisonOp::Equals => "==",
+        match op {
+            ComparisonOp::GreaterThan => ">",
+            ComparisonOp::LessThan => "<",
+            ComparisonOp::Equals => "==",
+        }
     }
-}}
+
+    // function to parse the literal value
+    pub fn parse_literal(val: &str) -> SqlLiteral {
+        if let Ok(float_val) = val.parse::<f64>() {
+            SqlLiteral::Float(float_val)
+        } else if let Ok(int_val) = val.parse::<i64>() {
+            SqlLiteral::Integer(int_val)
+        } else {
+            panic!("Value is neither a valid integer nor float: {}", val);
+        }
+    }
+}

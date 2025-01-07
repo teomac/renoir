@@ -31,13 +31,19 @@ use crate::dsl::parsers::sql::SqlAST;
                 ComparisonOp::GreaterThanEquals => ">=",
                 ComparisonOp::LessThanEquals => "<=",
             };
+
+            let value = match condition.value {
+                
+                AquaLiteral::Float(val) => format!("{:.2}", val),
+                AquaLiteral::Integer(val) => val.to_string(),
+            };
             
             final_string.push_str(&format!(
                 ".filter(|{}| {} {} &{})",
                 condition.variable,
                 condition.variable,
                 operator_str,
-                condition.value
+                value
             ));
         }
         
@@ -57,12 +63,14 @@ use crate::dsl::parsers::sql::SqlAST;
                 }
             }
             SelectClause::ComplexValue(col, char ,val  )=> {
+                let value = match &val {
+                    AquaLiteral::Float(val) => format!("{:.2}", val),
+                    AquaLiteral::Integer(val) => val.to_string(),
+                };
                 if char == '^' {
-                    // convert val from i64 to u32
-                    let val = val as u32;
-                    final_string.push_str(&format!(".map(|{}| {}.pow({}))", col, col,val));
+                    final_string.push_str(&format!(".map(|{}| {}.pow({}))", col, col,value));
                 } else {
-                    final_string.push_str(&format!(".map(|{}| {} {} {})", col, col,char,val));
+                    final_string.push_str(&format!(".map(|{}| {} {} {})", col, col,char,value));
                 }
             }
             SelectClause::ComplexOp(col,char  ,col2 )=> {
