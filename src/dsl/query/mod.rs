@@ -1,9 +1,6 @@
 use csv_parsers::*;
 
-use crate::operator::{ExchangeData, Operator};
 use crate::dsl::parsers::csv_utils::*;
-use crate::stream::Stream;
-use std::collections::HashMap;
 use std::fs;
 use std::process::Command;
 use crate::dsl::ir::aqua::*;
@@ -13,44 +10,6 @@ use std::path::PathBuf;
 pub struct RustProject {
     pub project_path: PathBuf,
 }
-
-/*pub trait QueryExt<Op: Operator>
-where
-    Op::Out: Clone + 'static,
-{
-    fn query_full<F>(self, query_str: &str, output_path: &str, execute_fn: F) -> std::io::Result<Vec<f64>>
-    where F: FnOnce();
-}
-
-impl<Op> QueryExt<Op> for Stream<Op> 
-where   
-    Op: Operator + 'static,
-    Op::Out: ExchangeData + PartialOrd + Clone +  'static,
-{
-    fn query_full<F>(self, query_str: &str, output_path: &str, execute_fn: F) -> io::Result<Vec<f64>>
-    where
-        F: FnOnce()
-    {
-        // step 1: if not existing, create a Rust project
-        let rust_project = RustProject::create_empty_project()?;
-
-        // step 2: parse the query
-        let query = query_to_string_aqua(query_str);
-
-        //
-
-        // step 4: generate main.rs and update it in the Rust project
-        let main = create_template(&query);
-        rust_project.update_main_rs(&main)?;
-
-        // step 5: compile the binary
-        let result = binary_execution(output_path, rust_project);
-
-        result
-
-    }
-
-}*/
 
 impl RustProject {
     pub fn create_empty_project() -> io::Result<RustProject> {
