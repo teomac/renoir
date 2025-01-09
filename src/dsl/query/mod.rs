@@ -1,5 +1,9 @@
+use csv_parsers::*;
+
 use crate::operator::{ExchangeData, Operator};
+use crate::dsl::parsers::csv_utils::*;
 use crate::stream::Stream;
+use std::collections::HashMap;
 use std::fs;
 use std::process::Command;
 use crate::dsl::ir::aqua::*;
@@ -10,15 +14,10 @@ pub struct RustProject {
     pub project_path: PathBuf,
 }
 
-//use super::ir::{Expression, IrOperator, Literal, Operation};
-
-pub trait QueryExt<Op: Operator>
+/*pub trait QueryExt<Op: Operator>
 where
-    Op::Out: Clone + 'static + Into<f64> + TryFrom<f64>,
+    Op::Out: Clone + 'static,
 {
-    fn generate_json_file<F>(self, output_path: &str,  execute_fn: F) -> io::Result<()> 
-    where
-        F: FnOnce();
     fn query_full<F>(self, query_str: &str, output_path: &str, execute_fn: F) -> std::io::Result<Vec<f64>>
     where F: FnOnce();
 }
@@ -26,7 +25,7 @@ where
 impl<Op> QueryExt<Op> for Stream<Op> 
 where   
     Op: Operator + 'static,
-    Op::Out: ExchangeData + PartialOrd + Into<f64> + Clone +  'static + TryFrom<f64>,
+    Op::Out: ExchangeData + PartialOrd + Clone +  'static,
 {
     fn query_full<F>(self, query_str: &str, output_path: &str, execute_fn: F) -> io::Result<Vec<f64>>
     where
@@ -38,8 +37,7 @@ where
         // step 2: parse the query
         let query = query_to_string_aqua(query_str);
 
-        // step 3: generate the JSON file containing the stream data
-        let _ = self.generate_json_file(output_path, execute_fn);
+        //
 
         // step 4: generate main.rs and update it in the Rust project
         let main = create_template(&query);
@@ -52,41 +50,7 @@ where
 
     }
 
-    fn generate_json_file<F>(self, output_path: &str,  execute_fn: F) -> io::Result<()> 
-    where
-        F: FnOnce()
-    {
-        let stream = self.collect_vec();
-
-        // This calls ctx.execute_blocking(), passed as input
-        execute_fn();
-
-        // Convert the stream data to Vec<f64> directly from self
-        let stream_data: Vec<f64> = stream
-            .get()
-            .unwrap_or_default()
-            .into_iter()
-            .map(|x| x.into())
-            .collect(); 
-    
-        // Save stream data to JSON file
-        let stream_json_path = std::path::Path::new(output_path)
-            .parent()
-            .ok_or_else(|| io::Error::new(
-                io::ErrorKind::NotFound,
-                "Parent directory not found"
-            ))?
-            .join("stream_data.json");
-
-        fs::write(
-            &stream_json_path,
-            serde_json::to_string(&stream_data)?
-        )?;
-
-        Ok(())
-    }
-
-}
+}*/
 
 impl RustProject {
     pub fn create_empty_project() -> io::Result<RustProject> {
@@ -117,6 +81,7 @@ impl RustProject {
                 [dependencies]
                 renoir = {{ path = "{}" }}
                 serde_json = "1.0.133"
+                serde = "1.0.217"
                 "#,
                 renoir_path
             );
@@ -147,22 +112,27 @@ impl RustProject {
     }
 }
 
-pub fn create_template(operator_chain: &str) -> String {
+pub fn create_template(operator_chain: &str, csv_path: &str, struct_string: &str) -> String {
+
+    let absolute_path = std::env::current_dir()
+            .unwrap()
+            .join(csv_path)
+            .to_string_lossy()
+            .replace('\\', "/");
+
     // Create the main.rs content
     let main_rs = format!(
-        r#"use renoir::{{dsl::query::QueryExt, prelude::*}};
+        r#"use renoir::prelude::*;
+        use serde::{{Deserialize, Serialize}};
         use serde_json;
         use std::fs;
 
-        fn main() {{
-            // Read the original stream data
-            let stream_data: Vec<f64> = serde_json::from_str(
-                &fs::read_to_string("stream_data.json").expect("Failed to read stream data")
-            ).expect("Failed to parse stream data");
+        {}
 
+        fn main() {{
             let ctx = StreamContext::new_local();
 
-            let output = ctx.stream_iter(stream_data.into_iter()){}.collect_vec();
+            let output = ctx.stream_csv::<Struct_var_0>("{}"){}.collect_vec();
             
             ctx.execute_blocking();
 
@@ -177,6 +147,8 @@ pub fn create_template(operator_chain: &str) -> String {
                 ).expect("Failed to write output to file");
             }}
         }}"#,
+        struct_string,
+        absolute_path,
         operator_chain
     );
 
@@ -213,12 +185,14 @@ pub fn binary_execution(output_path: &str, rust_project: RustProject) -> io::Res
     let output = Command::new(
         rust_project.project_path.join("target/debug").join(binary_name),
     )
+        //.current_dir(std::env::current_dir()?)
         .output()?;
 
     if !output.status.success() {
+        let error = String::from_utf8_lossy(&output.stderr);
         return Err(io::Error::new(
             io::ErrorKind::Other,
-            "Binary execution failed"
+            format!("Binary execution failed: {}", error)
         ));
     }
 
@@ -232,3 +206,31 @@ pub fn binary_execution(output_path: &str, rust_project: RustProject) -> io::Res
     Ok(result)
 } 
 
+pub fn query_csv(query_str: &str, output_path: &str, csv_path: &str, user_defined_types: &str) -> io::Result<Vec<f64>>
+{
+    // step 1: if not existing, create a Rust project
+    let rust_project = RustProject::create_empty_project()?;
+
+    // step 2: open csv input, read column names and data types
+    let user_defined_types = parse_type_string(user_defined_types)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
+    
+    let columns = get_csv_columns(csv_path);
+    let hash_map = combine_arrays(&columns, &user_defined_types);
+
+    // step 3: create the struct
+    let struct_string = create_struct(&user_defined_types);
+
+    // step 4: parse the query
+    let query = query_to_string_aqua(query_str, hash_map);
+
+    // step 5: generate main.rs and update it in the Rust project
+    let main = create_template(&query, csv_path, &struct_string);
+    rust_project.update_main_rs(&main)?;
+
+    // step 6: compile the binary
+    let result = binary_execution(output_path, rust_project);
+
+    result
+
+}

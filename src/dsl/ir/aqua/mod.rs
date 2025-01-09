@@ -1,4 +1,6 @@
 pub mod ast;
+use std::collections::HashMap;
+
 pub use ast::*;
 use crate::dsl::parsers::sql::SqlAST;
 
@@ -7,7 +9,7 @@ use crate::dsl::parsers::sql::SqlAST;
 
 
 
-    pub fn query_to_string_aqua(query_str: &str) -> String {
+    pub fn query_to_string_aqua(query_str: &str, hash_map: HashMap<String, String>) -> String {
         println!("Input SQL query: {}", query_str);
         
         let sql_ast = SqlAST::parse(query_str).expect("Failed to parse query");
@@ -39,9 +41,8 @@ use crate::dsl::parsers::sql::SqlAST;
             };
             
             final_string.push_str(&format!(
-                ".filter(|{}| {} {} &{})",
-                condition.variable,
-                condition.variable,
+                ".filter(|x| x.{}.unwrap() {} {})",
+                hash_map[&condition.variable],
                 operator_str,
                 value
             ));
@@ -68,17 +69,17 @@ use crate::dsl::parsers::sql::SqlAST;
                     AquaLiteral::Integer(val) => val.to_string(),
                 };
                 if char == '^' {
-                    final_string.push_str(&format!(".map(|{}| {}.pow({}))", col, col,value));
+                    final_string.push_str(&format!(".map(|x| x.{}.unwrap().pow({}))", hash_map[&col],value));
                 } else {
-                    final_string.push_str(&format!(".map(|{}| {} {} {})", col, col,char,value));
+                    final_string.push_str(&format!(".map(|x| x.{}.unwrap() {} {})", hash_map[&col], char, value));
                 }
             }
             SelectClause::ComplexOp(col,char  ,col2 )=> {
-                final_string.push_str(&format!(".map(|{}| {} {} {})", col, col,char,col2));
+                final_string.push_str(&format!(".map(|x| x.{}.unwrap() {} x.{}.unwrap())", hash_map[&col], char, hash_map[&col2]));
             }
             SelectClause::Column(col) => {
                 if col != "*" {
-                    final_string.push_str(&format!(".map(|x| {})", col));
+                    final_string.push_str(&format!(".map(|x| x.{}.unwrap())", hash_map[&col]));
                 }
             }
         }
