@@ -130,6 +130,7 @@ pub use stream::{KeyedStream, Stream, WindowedStream};
 pub(crate) mod block;
 pub(crate) mod channel;
 pub mod config;
+#[path = "../dsl/mod.rs"]
 pub mod dsl;
 pub(crate) mod environment;
 pub(crate) mod network;
@@ -152,7 +153,6 @@ pub mod prelude {
     pub use super::operator::window::{CountWindow, ProcessingTimeWindow, SessionWindow};
     #[cfg(feature = "timestamp")]
     pub use super::operator::window::{EventTimeWindow, TransactionWindow};
-    pub use super::dsl::parsers::sql::SqlAST;
     pub use super::Replication;
     pub use super::{BatchMode, RuntimeConfig, StreamContext};
 }
