@@ -104,7 +104,7 @@ fn parse_field(field: &str) -> (&str, &str) {
 pub fn create_struct(fields: &Vec<String>) -> String {
     let mut output = String::from(
         "#[derive(Clone, Debug, Serialize, Deserialize, PartialOrd, PartialEq, Default)]\n\
-        struct Struct_var_0 {\n"
+        struct StructVar0 {\n"
     );
 
     for field_desc in fields {
