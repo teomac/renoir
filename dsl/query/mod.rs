@@ -9,63 +9,59 @@ use super::binary_generation::creation;
 
 pub fn query_csv(query_str: &Vec<String>, output_path: &str, csv_path: &Vec<String>, user_defined_types: &Vec<String>) -> io::Result<String>
 {
-    let mut index = 0;
-    //safety check on inputs
-    //TODO
+    //step 0: safety check on inputs
+    if csv_path.len() != user_defined_types.len()
+    {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "Number of csv files and user defined types do not match"));
+    }
+    if query_str.len() != csv_path.len()
+    {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "Number of queries and csv files do not match"));
+    }
 
 
     // step 1: if not existing, create a Rust project
     let rust_project = creation::RustProject::create_empty_project()?;
 
     // step 2: open csv input, read column names and data types, create the struct for each csv file
+    let user_types: Vec<Vec<String>> = user_defined_types
+    .iter()
+    .map(|types| parse_type_string(types)
+        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e)))
+    .collect::<Result<Vec<_>, _>>()?;
 
-    //for each string in user_defined_types, parse it and return a vector of strings
-    let mut user_types = Vec::<Vec<String>>::new();
+    let csv_structs: Vec<String> = user_types
+    .iter()
+    .enumerate()
+    .map(|(index, types)| create_struct(types, index.to_string()))
+    .collect();
 
-    let mut csv_structs = Vec::<String>::new();
 
-    for types in user_defined_types {
-        let parsed_types = parse_type_string(types)
-            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
-        user_types.push(parsed_types);
-        //for each parsed type, create a struct
-        let csv_struct = create_struct(&user_types[index], index.to_string());
-        csv_structs.push(csv_struct);
-        index += 1;
-    }
+    // step 3: Get CSV columns and combine with user defined types
+    let columns: Vec<Vec<String>> = csv_path
+    .iter()
+    .map(|path| get_csv_columns(path))
+    .collect();
 
-    //for each csv file in csv_path, get the columns and combine them with the user_defined_types
-    let mut columns = Vec::<Vec<String>>::new();
-    let mut hash_maps = Vec::<HashMap<String, String>>::new();
-    
-    //reset index
-    index = 0;
-    for path in csv_path {
-        let csv_columns = get_csv_columns(path);
-        columns.push(csv_columns);
-        let hash_map = combine_arrays(&columns[index], &user_types[index]);
-        hash_maps.push(hash_map);
-        index += 1;
-    }
+    let hash_maps: Vec<HashMap<String, String>> = columns
+    .iter()
+    .zip(user_types.iter())
+    .map(|(cols, types)| combine_arrays(cols, types))
+    .collect();
     
    
     // step 4: parse the queries
-    let mut queries = Vec::<String>::new();
-    //reset index
-    index = 0;
-    for query in query_str {
-        let query = query_to_string_aqua(query, &hash_maps[index]);
-        queries.push(query);
-        index += 1;
-    }
+    let queries: Vec<String> = query_str
+        .iter()
+        .zip(hash_maps.iter())
+        .map(|(query, hash_map)| query_to_string_aqua(query, hash_map))
+        .collect();
 
     // step 5: generate main.rs and update it in the Rust project
     let main = create_template(&queries, csv_path, &csv_structs);
     rust_project.update_main_rs(&main)?;
 
     // step 6: compile the binary
-    let result = binary_execution(output_path, rust_project);
-
-    result
+    binary_execution(output_path, rust_project)
 
 }
