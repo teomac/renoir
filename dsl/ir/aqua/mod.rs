@@ -9,17 +9,17 @@ use crate::dsl::parsers::sql::SqlAST;
 
 
 
-    pub fn query_to_string_aqua(query_str: &str, hash_map: HashMap<String, String>) -> String {
-        println!("Input SQL query: {}", query_str);
+    pub fn query_to_string_aqua(query_str: &str, hash_map: &HashMap<String, String>) -> String {
+        //println!("Input SQL query: {}", query_str);
         
         let sql_ast = SqlAST::parse(query_str).expect("Failed to parse query");
-        println!("SQL AST: {:?}", sql_ast);
+        //println!("SQL AST: {:?}", sql_ast);
         
         let aqua_string = sql_ast.to_aqua_string();
-        println!("Generated Aqua string:\n{}", aqua_string);
+        //println!("Generated Aqua string:\n{}", aqua_string);
         
         let ast = AquaAST::parse(&aqua_string).expect("Failed to parse aqua string");
-        println!("Aqua AST: {:?}", ast);
+        //println!("Aqua AST: {:?}", ast);
         
         let mut final_string = String::new();
         

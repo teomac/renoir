@@ -107,7 +107,7 @@ impl SqlAST {
                     _ => None
                 };
 
-                println!("select clause: {:?}", selection);
+                //println!("select clause: {:?}", selection);
 
                 return Ok(SqlAST {
                     select: SelectClause { selection },

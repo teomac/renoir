@@ -101,10 +101,12 @@ fn parse_field(field: &str) -> (&str, &str) {
     (base_type, number)
 }
 
-pub fn create_struct(fields: &Vec<String>) -> String {
-    let mut output = String::from(
+pub fn create_struct(fields: &Vec<String>, index: String) -> String {
+    //insert the index into the struct name
+    let mut output = format!(
         "#[derive(Clone, Debug, Serialize, Deserialize, PartialOrd, PartialEq, Default)]\n\
-        struct StructVar0 {\n"
+        struct StructVar{} {{\n",
+        index
     );
 
     for field_desc in fields {
