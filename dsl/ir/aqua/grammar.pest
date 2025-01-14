@@ -34,15 +34,12 @@ symbol = @{ ("^"| "+" | "-" | "*" | "/")}
 // Binary logical operators
 binary_op = { 
     ^"AND" | 
-    ^"OR" | 
-    ^"XOR" | 
-    ^"NAND" | 
-    ^"NOR"
+    ^"OR"
 }
 
 // Conditions for WHERE clause
 condition = { identifier ~ comparison_op ~ (number | identifier) }
-comparison_op = { ">" | "<" | "==" | "<=" | ">=" }
+comparison_op = { ">=" | "<=" | "!=" | ">" | "<" | "=" }
 where_conditions = { condition ~ (binary_op ~ condition)* }
 
 // Optional method chain syntax for filter and aggregation operations

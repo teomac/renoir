@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::hash::BuildHasherDefault;
 use std::io::{BufWriter, Write};
-use std::os::windows::prelude::MetadataExt;
 use std::path::Path;
 use std::sync::Arc;
 

@@ -21,7 +21,7 @@ pub struct SelectClause {
 pub enum SelectType {
     Simple(String),
     Aggregate(AggregateFunction, String),
-    ComplexValue(String, char, SqlLiteral),
+    ComplexValue(String, String, SqlLiteral),
 }
 
 
@@ -32,8 +32,37 @@ pub enum AggregateFunction {
 
 #[derive(Debug, PartialEq, Clone)] 
 pub struct FromClause {
-    pub table: String,
+    pub scan: ScanClause,
+    pub join: Option<JoinClause>,
 }
+
+#[derive(Debug, PartialEq, Clone)] 
+pub struct ScanClause {
+    pub variable: String,
+    pub alias: Option<String>,
+}
+
+#[derive(Debug, PartialEq, Clone)] 
+pub struct JoinClause {
+    pub join_type: JoinType,
+    pub join_scan: ScanClause,
+    pub join_expr: JoinExpr,
+}
+
+#[derive(Debug, PartialEq, Clone)] 
+pub enum JoinType {
+    Inner,
+    Left,
+    LeftOuter,
+}
+
+#[derive(Debug, PartialEq, Clone)] 
+pub struct JoinExpr {
+    pub left_var: String,
+    pub right_var: String,
+}
+
+
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct  WhereClause {
@@ -52,8 +81,11 @@ pub struct Condition {
 #[derive(Debug, PartialEq, Clone)]
 pub enum ComparisonOp {
     GreaterThan,
-    LessThan, 
-    Equals,
+    LessThan,
+    GreaterOrEqualThan,
+    LessOrEqualThan,
+    Equal,
+    NotEqual,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -68,9 +100,6 @@ pub enum SqlLiteral {
 pub enum BinaryOp {
     And,
     Or,
-    Xor,
-    Nand,
-    Nor,
 }
 
 impl SqlAST {
@@ -97,7 +126,7 @@ impl SqlAST {
                     Rule::select_expr => {
                         let mut complex = select_part.into_inner();
                         let var1 = complex.next().unwrap().as_str().to_string();
-                        let op = complex.next().unwrap().as_str().chars().next().unwrap();
+                        let op = complex.next().unwrap().as_str().to_string();
                         let val_str = complex.next().unwrap().as_str();
                         let literal = SqlAST::parse_literal(val_str);
                         SelectType::ComplexValue(var1, op, literal)
@@ -105,9 +134,10 @@ impl SqlAST {
                     },
                     _ => unreachable!(),
                 };
-                
-                inner.next(); // Skip FROM
-                let table = inner.next().unwrap().as_str().to_string();
+
+                let from_expr = inner.next().unwrap();
+                println!("from_expr: {:?}", from_expr);
+                let from_clause = Self::parse_from_clause(from_expr)?;
                 
                 // Handle optional where expression
                 let filter = match inner.next() {
@@ -122,11 +152,9 @@ impl SqlAST {
                     _ => None
                 };
 
-                //println!("select clause: {:?}", selection);
-
                 return Ok(SqlAST {
                     select: SelectClause { selection },
-                    from: FromClause { table },
+                    from: from_clause,
                     filter,
                 });
             }
@@ -134,12 +162,138 @@ impl SqlAST {
         unreachable!()
     }
 
+fn parse_from_clause(pair: pest::iterators::Pair<Rule>) -> Result<FromClause, pest::error::Error<Rule>> {
+    let mut inner = pair.into_inner();
+
+    let _ = inner.next(); // Skip 'FROM'
+    
+    // Get and parse the scan expression (the first table)
+    let scan_expr = inner.next().unwrap();
+    if scan_expr.as_rule() != Rule::scan_expr {
+        return Err(pest::error::Error::new_from_pos(
+            pest::error::ErrorVariant::CustomError {
+                message: format!("Expected scan_expr, got {:?}", scan_expr.as_rule()),
+            },
+            pest::Position::from_start(""),
+        ));
+    }
+    let scan = Self::parse_scan_clause(scan_expr)?;
+    
+    // Look for JOIN expression
+    let join = if let Some(join_expr) = inner.next() {
+        if join_expr.as_rule() == Rule::join_expr {
+            Some(Self::parse_join_clause(join_expr)?)
+        } else {
+            None
+        }
+    } else {
+        None
+    };
+
+    Ok(FromClause { scan, join })
+}
+
+// Also update parse_join_clause to handle the join parsing better
+fn parse_join_clause(pair: pest::iterators::Pair<Rule>) -> Result<JoinClause, pest::error::Error<Rule>> {
+    let mut inner = pair.into_inner();
+    
+    // Skip the JOIN keyword if it's there
+    match inner.next() {
+        Some(token) if token.as_rule() == Rule::join => {},
+        _ => return Err(pest::error::Error::new_from_pos(
+            pest::error::ErrorVariant::CustomError {
+                message: "Expected JOIN keyword".to_string(),
+            },
+            pest::Position::from_start(""),
+        )),
+    }
+
+    // Parse the table to join with
+    let scan_expr = inner.next().ok_or_else(|| pest::error::Error::new_from_pos(
+        pest::error::ErrorVariant::CustomError {
+            message: "Missing join table specification".to_string(),
+        },
+        pest::Position::from_start(""),
+    ))?;
+    let join_scan = Self::parse_scan_clause(scan_expr)?;
+
+    // Skip ON keyword
+    match inner.next() {
+        Some(token) if token.as_rule() == Rule::on => {},
+        _ => return Err(pest::error::Error::new_from_pos(
+            pest::error::ErrorVariant::CustomError {
+                message: "Expected ON keyword".to_string(),
+            },
+            pest::Position::from_start(""),
+        )),
+    }
+
+    // Parse join condition
+    let join_condition = inner.next().ok_or_else(|| pest::error::Error::new_from_pos(
+        pest::error::ErrorVariant::CustomError {
+            message: "Missing join condition".to_string(),
+        },
+        pest::Position::from_start(""),
+    ))?;
+
+    let mut condition_parts = join_condition.into_inner();
+    
+    // Parse the join condition components
+    let left_table = condition_parts.next().unwrap().as_str().to_string();
+    let left_column = condition_parts.next().unwrap().as_str().to_string();
+    let right_table = condition_parts.next().unwrap().as_str().to_string();
+    let right_column = condition_parts.next().unwrap().as_str().to_string();
+
+    Ok(JoinClause {
+        join_type: JoinType::Inner, // Default to inner join for now
+        join_scan,
+        join_expr: JoinExpr {
+            left_var: format!("{}.{}", left_table, left_column),
+            right_var: format!("{}.{}", right_table, right_column),
+        }
+    })
+}
+
+    fn parse_scan_clause(pair: pest::iterators::Pair<Rule>) -> Result<ScanClause, pest::error::Error<Rule>> {
+        let mut inner = pair.into_inner();
+     
+        let variable = inner.next()
+            .ok_or_else(|| pest::error::Error::new_from_pos(
+                pest::error::ErrorVariant::CustomError {
+                    message: "Missing table name".to_string(),
+                },
+                pest::Position::from_start("")
+            ))?
+            .as_str()
+            .to_string();
+        
+        // Process alias if present
+        let mut alias = None;
+        while let Some(next_token) = inner.next() {
+            match next_token.as_rule() {
+                Rule::as_keyword => {
+                    if let Some(alias_token) = inner.next() {
+                        alias = Some(alias_token.as_str().to_string());
+                    }
+                }
+                Rule::variable => {
+                    alias = Some(next_token.as_str().to_string());
+                }
+                _ => {}
+            }
+        }
+
+        Ok(ScanClause { variable, alias })
+    }
+
+
+
     fn parse_where_conditions(conditions_pair: pest::iterators::Pair<Rule>) -> WhereClause {
         let mut pairs = conditions_pair.into_inner().peekable();
         
         // Parse first condition
         let first_condition = pairs.next().unwrap();
-        let mut current = WhereClause {
+        let current = WhereClause {
             condition: Self::parse_single_condition(first_condition),
             binary_op: None,
             next: None
@@ -155,9 +309,6 @@ impl SqlAST {
                 let op = match op_pair.as_str().to_uppercase().as_str() {
                     "AND" => BinaryOp::And,
                     "OR" => BinaryOp::Or,
-                    "XOR" => BinaryOp::Xor,
-                    "NAND" => BinaryOp::Nand,
-                    "NOR" => BinaryOp::Nor,
                     _ => unreachable!(),
                 };
                 
@@ -186,8 +337,11 @@ impl SqlAST {
         let operator = match inner.next().unwrap().as_str() {
             ">" => ComparisonOp::GreaterThan,
             "<" => ComparisonOp::LessThan,
-            "=" => ComparisonOp::Equals,
-            _ => unreachable!(),
+            ">=" => ComparisonOp::GreaterOrEqualThan,
+            "<=" => ComparisonOp::LessOrEqualThan,
+            "=" => ComparisonOp::Equal,
+            "!=" | "<>" => ComparisonOp::NotEqual,
+            op => panic!("Unexpected operator: {}", op),
         };
         let value_str = inner.next().unwrap().as_str();
         let value = SqlAST::parse_literal(value_str);
@@ -196,15 +350,6 @@ impl SqlAST {
             variable,
             operator,
             value,
-        }
-    }
-
-    // Helper to convert a single condition into a WhereClause
-    fn parse_single_condition_to_where_clause(condition_pair: pest::iterators::Pair<Rule>) -> WhereClause {
-        WhereClause {
-            condition: Self::parse_single_condition(condition_pair),
-            binary_op: None,
-            next: None,
         }
     }
 
@@ -227,7 +372,6 @@ impl SqlAST {
             SelectType::Aggregate(func, column) => {
                 let agg = match func {
                     AggregateFunction::Max => "max",
-                    // Add other aggregates as needed
                 };
                 parts.push(format!("select {}({})", agg, column));
             }
@@ -242,7 +386,6 @@ impl SqlAST {
             }
         }
 
-        // Join all parts with newlines
         parts.join("\n")
     }
 
@@ -250,14 +393,10 @@ impl SqlAST {
     fn where_clause_to_string(clause: &WhereClause) -> String {
         let mut result = Self::condition_to_string(&clause.condition);
         
-        // If there's a binary operator and next condition, append them
         if let (Some(op), Some(next)) = (&clause.binary_op, &clause.next) {
             let op_str = match op {
                 BinaryOp::And => "AND",
                 BinaryOp::Or => "OR",
-                BinaryOp::Xor => "XOR",
-                BinaryOp::Nand => "NAND",
-                BinaryOp::Nor => "NOR",
             };
             result = format!("{} {} {}", result, op_str, Self::where_clause_to_string(next));
         }
@@ -269,11 +408,13 @@ impl SqlAST {
         match op {
             ComparisonOp::GreaterThan => ">",
             ComparisonOp::LessThan => "<",
-            ComparisonOp::Equals => "==",
+            ComparisonOp::GreaterOrEqualThan => ">=",
+            ComparisonOp::LessOrEqualThan => "<=",
+            ComparisonOp::Equal => "==",
+            ComparisonOp::NotEqual => "!=",
         }
     }
 
-    // function to parse the literal value
     pub fn parse_literal(val: &str) -> SqlLiteral {
         if let Ok(float_val) = val.parse::<f64>() {
             SqlLiteral::Float(float_val)

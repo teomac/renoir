@@ -2,7 +2,10 @@ WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 
 select = { "SELECT" }
 from = { "FROM" }
-where_keyword = { "WHERE" } // Renamed to avoid conflict with Rust keyword
+where_keyword = { "WHERE" }
+as_keyword = { "AS" }
+join = { "JOIN" }
+on = { "ON" }
 
 variable = @{ ('a'..'z' | "_") ~ ('a'..'z' | '0'..'9' | "_")* }
 number = @{ 
@@ -16,14 +19,11 @@ symbol = @{ ("^"| "+" | "-" | "*" | "/")}
 agg_function = { ^"MAX" }
 aggregate_expr = { agg_function ~ "(" ~ variable ~ ")" }
 
-operator = { ">" | "<" | "=" }
+operator = @{ ">=" | "<=" | "!=" | "<>" | ">" | "<" | "=" }
 
 binary_op = { 
     ^"AND" | 
-    ^"OR" | 
-    ^"XOR" | 
-    ^"NAND" | 
-    ^"NOR"
+    ^"OR"
 }
 
 // Condition parts
@@ -34,11 +34,23 @@ where_expr = { where_keyword ~ where_conditions }
 
 select_expr = {variable ~ symbol ~ number }
 
-// Main query structure - making where clause optional
+
+join_condition = { variable ~ "." ~ variable ~ "=" ~ variable ~ "." ~ variable }
+
+
+from_expr = { from ~ scan_expr ~ join_expr?}
+scan_expr = { variable ~ (as_keyword ~ variable)? }
+join_expr = { join_kind? ~ join ~ scan_expr ~ on ~ join_condition }
+join_kind = _{ ( InnerJoinKind | LeftJoinKind ) }
+                InnerJoinKind = { ^"inner" }
+                LeftJoinKind = { ^"left" ~ (^"outer")? }
+
+
+
 query = {
     SOI ~
     select ~ (aggregate_expr | select_expr | variable) ~
-    from ~ variable ~
+    from_expr ~
     where_expr? ~
     EOI
 }

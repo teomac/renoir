@@ -45,20 +45,20 @@ pub fn query_to_string_aqua(query_str: &str, hash_map: &HashMap<String, String>)
                 final_string.push_str(&format!(".{}()", agg_str));
             }
         }
-        SelectClause::ComplexValue(col, char ,val  )=> {
+        SelectClause::ComplexValue(col, str ,val  )=> {
             let value = match &val {
                 AquaLiteral::Float(val) => format!("{:.2}", val),
                 AquaLiteral::Integer(val) => val.to_string(),
                 _ => unreachable!(), // TODO: remove unreachable
             };
-            if char == '^' {
+            if str == "^" {
                 final_string.push_str(&format!(".map(|x| x.{}.unwrap().pow({}))", hash_map[&col],value));
             } else {
-                final_string.push_str(&format!(".map(|x| x.{}.unwrap() {} {})", hash_map[&col], char, value));
+                final_string.push_str(&format!(".map(|x| x.{}.unwrap() {} {})", hash_map[&col], str, value));
             }
         }
-        SelectClause::ComplexOp(col,char  ,col2 )=> {
-            final_string.push_str(&format!(".map(|x| x.{}.unwrap() {} x.{}.unwrap())", hash_map[&col], char, hash_map[&col2]));
+        SelectClause::ComplexOp(col,str  ,col2 )=> {
+            final_string.push_str(&format!(".map(|x| x.{}.unwrap() {} x.{}.unwrap())", hash_map[&col], str, hash_map[&col2]));
         }
         SelectClause::Column(col) => {
             if col != "*" {
@@ -84,9 +84,6 @@ fn process_where_clause(clause: &WhereClause, hash_map: &HashMap<String, String>
         let op_str = match op {
             BinaryOp::And => "&&",
             BinaryOp::Or => "||",
-            BinaryOp::Xor => unreachable!(),
-            BinaryOp::Nand => unreachable!(),
-            BinaryOp::Nor => unreachable!(),
         };
         conditions.push(op_str.to_string());
         conditions.push(process_condition(&next.condition, hash_map));
@@ -101,9 +98,10 @@ fn process_condition(condition: &Condition, hash_map: &HashMap<String, String>) 
     let operator_str = match condition.operator {
         ComparisonOp::GreaterThan => ">",
         ComparisonOp::LessThan => "<",
-        ComparisonOp::Equals => "==",
+        ComparisonOp::Equal => "==",
         ComparisonOp::GreaterThanEquals => ">=",
         ComparisonOp::LessThanEquals => "<=",
+        ComparisonOp::NotEqual => "!=",
     };
 
     let value = match &condition.value {

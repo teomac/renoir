@@ -28,8 +28,8 @@ pub struct FromClause {
 pub enum SelectClause {
     Column(String),              // Simple column selection
     Aggregate(AggregateFunction), // Aggregation function
-    ComplexOp(String, char, String),
-    ComplexValue(String, char, AquaLiteral),
+    ComplexOp(String, String, String),
+    ComplexValue(String, String, AquaLiteral),
 }
 
 // Aggregation function with its column
@@ -66,7 +66,8 @@ pub struct Condition {
 pub enum ComparisonOp {
     GreaterThan,
     LessThan,
-    Equals,
+    Equal,
+    NotEqual,
     GreaterThanEquals,
     LessThanEquals,
 }
@@ -75,9 +76,6 @@ pub enum ComparisonOp {
 pub enum BinaryOp {
     And,
     Or,
-    Xor,
-    Nand,
-    Nor,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -171,7 +169,7 @@ impl SelectClause {
                 Rule::complex_op => {
                     let mut inner = inner_pair.into_inner();
                     let variable = inner.next().unwrap().as_str().to_string();
-                    let operator = inner.next().unwrap().as_str().chars().next().unwrap();
+                    let operator = inner.next().unwrap().as_str().to_string();
                     let var2 = inner.next().unwrap().as_str().to_string();
                     let literal = parse_literal(&var2);
 
@@ -219,9 +217,6 @@ impl WhereClause {
                 let op = match op_pair.as_str().to_uppercase().as_str() {
                     "AND" => BinaryOp::And,
                     "OR" => BinaryOp::Or,
-                    "XOR" => BinaryOp::Xor,
-                    "NAND" => BinaryOp::Nand,
-                    "NOR" => BinaryOp::Nor,
                     _ => {
                         return Err(pest::error::Error::new_from_pos(
                             pest::error::ErrorVariant::CustomError {
@@ -270,9 +265,10 @@ impl ComparisonOp {
         match s {
             ">" => Ok(ComparisonOp::GreaterThan),
             "<" => Ok(ComparisonOp::LessThan),
-            "==" => Ok(ComparisonOp::Equals),
+            "==" => Ok(ComparisonOp::Equal),
             ">=" => Ok(ComparisonOp::GreaterThanEquals),
             "<=" => Ok(ComparisonOp::LessThanEquals),
+            "!=" => Ok(ComparisonOp::NotEqual),
             _ => Err(pest::error::Error::new_from_pos(
                 pest::error::ErrorVariant::CustomError {
                     message: format!("Invalid comparison operator: {}", s),
