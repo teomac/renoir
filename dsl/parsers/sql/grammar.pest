@@ -18,9 +18,20 @@ aggregate_expr = { agg_function ~ "(" ~ variable ~ ")" }
 
 operator = { ">" | "<" | "=" }
 
+binary_op = { 
+    ^"AND" | 
+    ^"OR" | 
+    ^"XOR" | 
+    ^"NAND" | 
+    ^"NOR"
+}
+
 // Condition parts
-expr = { variable ~ operator ~ number }
-where_expr = { where_keyword ~ expr }
+condition = { variable ~ operator ~ (variable | number) }
+where_conditions = { condition ~ (binary_op ~ condition)* }
+where_expr = { where_keyword ~ where_conditions }
+
+
 select_expr = {variable ~ symbol ~ number }
 
 // Main query structure - making where clause optional

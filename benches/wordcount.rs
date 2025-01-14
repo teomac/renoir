@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::hash::BuildHasherDefault;
 use std::io::{BufWriter, Write};
-use std::os::unix::prelude::MetadataExt;
+use std::os::windows::prelude::MetadataExt;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -50,7 +50,7 @@ fn wordcount_bench(c: &mut Criterion) {
 
     for lines in [0, 10_000, 1_000_000] {
         let file = make_file(lines as usize);
-        let file_size = file.as_file().metadata().unwrap().size();
+        let file_size = file.as_file().metadata().unwrap().len();
         g.throughput(Throughput::Bytes(file_size));
 
         g.bench_with_input(

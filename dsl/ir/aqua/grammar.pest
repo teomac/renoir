@@ -11,7 +11,7 @@ query = {
 // Basic clauses
 from_clause = { "from" ~ stream_identifier ~ ":" ~ stream_type }
 select_clause = { "select" ~ (aggregate_expr | complex_op | identifier) }
-where_clause = { "where" ~ condition }
+where_clause = { "where" ~ where_conditions }
 
 // Stream definitions
 stream_identifier = @{ ('a'..'z' | "_") ~ ('a'..'z' | '0'..'9' | "_")* }
@@ -31,9 +31,19 @@ number = @{
 }
 symbol = @{ ("^"| "+" | "-" | "*" | "/")}
 
+// Binary logical operators
+binary_op = { 
+    ^"AND" | 
+    ^"OR" | 
+    ^"XOR" | 
+    ^"NAND" | 
+    ^"NOR"
+}
+
 // Conditions for WHERE clause
-condition = { identifier ~ comparison_op ~ number }
+condition = { identifier ~ comparison_op ~ (number | identifier) }
 comparison_op = { ">" | "<" | "==" | "<=" | ">=" }
+where_conditions = { condition ~ (binary_op ~ condition)* }
 
 // Optional method chain syntax for filter and aggregation operations
 method_chain = { "." ~ (filter_op | agg_op) }

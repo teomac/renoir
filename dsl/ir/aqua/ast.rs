@@ -14,7 +14,7 @@ pub struct AquaAST {
     // Selection (required) - either column or aggregation
     pub select: SelectClause,
     // Optional filtering condition
-    pub filter: Option<Condition>,
+    pub filter: Option<WhereClause>,
 }
 
 // Stream source definition
@@ -47,7 +47,13 @@ pub enum AggregateType {
     Avg,
 }
 
-// Represents a filtering condition
+#[derive(Debug, PartialEq, Clone)]
+pub struct WhereClause {
+    pub condition: Condition,
+    pub binary_op: Option<BinaryOp>,
+    pub next: Option<Box<WhereClause>>,
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct Condition {
     pub variable: String,
@@ -66,9 +72,20 @@ pub enum ComparisonOp {
 }
 
 #[derive(Debug, PartialEq, Clone)]
+pub enum BinaryOp {
+    And,
+    Or,
+    Xor,
+    Nand,
+    Nor,
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub enum AquaLiteral {
     Integer(i64),
     Float(f64),
+    String(String),
+    Boolean(bool),
 }
 
 impl AquaAST {
@@ -88,7 +105,7 @@ impl AquaAST {
                     select = Some(SelectClause::parse(pair)?);
                 }
                 Rule::where_clause => {
-                    filter = Some(Condition::parse(pair)?);
+                    filter = Some(WhereClause::parse(pair)?);
                 }
                 Rule::EOI => {}
                 _ => {}
@@ -171,18 +188,73 @@ impl SelectClause {
                 },
                 pest::Position::from_start(""),
             ))
-        }
     }
+}
+
+
+impl WhereClause {
+    fn parse(pair: Pair<Rule>) -> Result<Self, pest::error::Error<Rule>> {
+        let mut inner = pair.into_inner();
+        let where_conditions = inner.next().unwrap();
+        
+        Self::parse_where_conditions(where_conditions)
+    }
+
+    fn parse_where_conditions(conditions_pair: Pair<Rule>) -> Result<Self, pest::error::Error<Rule>> {
+        let mut pairs = conditions_pair.into_inner().peekable();
+        
+        // Parse first condition
+        let first_condition = pairs.next().unwrap();
+        let mut result = WhereClause {
+            condition: Condition::parse(first_condition)?,
+            binary_op: None,
+            next: None,
+        };
+        
+        let mut current = &mut result;
+        
+        // Process remaining operators and conditions sequentially
+        while let Some(op_pair) = pairs.next() {
+            if let Some(cond_pair) = pairs.next() {
+                let op = match op_pair.as_str().to_uppercase().as_str() {
+                    "AND" => BinaryOp::And,
+                    "OR" => BinaryOp::Or,
+                    "XOR" => BinaryOp::Xor,
+                    "NAND" => BinaryOp::Nand,
+                    "NOR" => BinaryOp::Nor,
+                    _ => {
+                        return Err(pest::error::Error::new_from_pos(
+                            pest::error::ErrorVariant::CustomError {
+                                message: format!("Invalid binary operator: {}", op_pair.as_str()),
+                            },
+                            pest::Position::from_start(""),
+                        ))
+                    }
+                };
+                
+                current.binary_op = Some(op);
+                current.next = Some(Box::new(WhereClause {
+                    condition: Condition::parse(cond_pair)?,
+                    binary_op: None,
+                    next: None,
+                }));
+                
+                if let Some(ref mut next) = current.next {
+                    current = next;
+                }
+            }
+        }
+        
+        Ok(result)
+    }
+}
 
 impl Condition {
     fn parse(pair: Pair<Rule>) -> Result<Self, pest::error::Error<Rule>> {
         let mut inner = pair.into_inner();
-        let condition = inner.next().unwrap().into_inner();
-        
-        let mut iter = condition.into_iter();
-        let variable = iter.next().unwrap().as_str().to_string();
-        let operator = ComparisonOp::from_str(iter.next().unwrap().as_str())?;
-        let value = iter.next().unwrap().as_str();
+        let variable = inner.next().unwrap().as_str().to_string();
+        let operator = ComparisonOp::from_str(inner.next().unwrap().as_str())?;
+        let value = inner.next().unwrap().as_str();
         let literal = parse_literal(value);
 
         Ok(Condition {
@@ -233,7 +305,9 @@ pub fn parse_literal(val: &str) -> AquaLiteral {
         AquaLiteral::Float(float_val)
     } else if let Ok(int_val) = val.parse::<i64>() {
         AquaLiteral::Integer(int_val)
+    } else if let Ok(bool_val) = val.parse::<bool>() {
+        AquaLiteral::Boolean(bool_val)
     } else {
-        panic!("Value is neither a valid integer nor float: {}", val);
+        AquaLiteral::String(val.to_string())
     }
 }
