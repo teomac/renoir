@@ -23,6 +23,7 @@ pub fn query_to_string_aqua(query_str: &str, hash_map: &HashMap<String, String>)
     
     let mut final_string = String::new();
 
+    /*
     if let Some(where_clause) = ast.filter {
         final_string.push_str(&format!(
             ".filter(|x| {})",
@@ -67,10 +68,10 @@ pub fn query_to_string_aqua(query_str: &str, hash_map: &HashMap<String, String>)
         }
     }
     
-    println!("Final string: {}", final_string);
+    println!("Final string: {}", final_string);*/
     final_string
 }
-
+/* 
 // Helper function to recursively process where conditions
 fn process_where_clause(clause: &WhereClause, hash_map: &HashMap<String, String>) -> String {
     let mut current = clause;
@@ -117,4 +118,4 @@ fn process_condition(condition: &Condition, hash_map: &HashMap<String, String>) 
         operator_str,
         value
     )
-}
+}*/

@@ -1,6 +1,11 @@
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 COMMENT = _{ "//" ~ (!"\n" ~ ANY)* }
 
+as_keyword = { "as" }
+in_keyword = { "in" }
+join = { "join" }
+on = { "on" }
+
 // Main query structure - allow clauses in any order
 query = {
     SOI ~
@@ -9,15 +14,38 @@ query = {
 }
 
 // Basic clauses
-from_clause = { "from" ~ stream_identifier ~ ":" ~ stream_type }
-select_clause = { "select" ~ (aggregate_expr | complex_op | identifier) }
+from_clause = { 
+    "from" ~ 
+    scan_expr ~
+    (join ~ scan_expr ~ on ~ join_condition)?
+}
+
+scan_expr = { 
+    identifier ~ 
+    (as_keyword ~ identifier)? ~ 
+    in_keyword ~ 
+    stream_input 
+}
+
+join_condition = {
+    qualified_column ~ "==" ~ qualified_column
+}
+
+qualified_column = {
+    identifier ~ "." ~ identifier
+}
+
+stream_input = @{ ('a'..'z' | "_") ~ ('a'..'z' | '0'..'9' | "_")* }
+
+
+select_clause = { "select" ~ (aggregate_expr | complex_op | qualified_column | identifier) }
 where_clause = { "where" ~ where_conditions }
 
 // Stream definitions
 stream_identifier = @{ ('a'..'z' | "_") ~ ('a'..'z' | '0'..'9' | "_")* }
 stream_type = { "Stream" }
 
-complex_op = {identifier ~ symbol ~ (number | identifier) }
+complex_op = {(qualified_column | identifier) ~ symbol ~ (identifier | number) }
 
 // Aggregate expressions
 aggregate_expr = { aggregate_func ~ "(" ~ identifier ~ ")" }
@@ -38,7 +66,7 @@ binary_op = {
 }
 
 // Conditions for WHERE clause
-condition = { identifier ~ comparison_op ~ (number | identifier) }
+condition = { (qualified_column | identifier) ~ comparison_op ~ (qualified_column | identifier | number) }
 comparison_op = { ">=" | "<=" | "!=" | ">" | "<" | "=" }
 where_conditions = { condition ~ (binary_op ~ condition)* }
 

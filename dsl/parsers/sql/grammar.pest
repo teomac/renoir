@@ -26,13 +26,17 @@ binary_op = {
     ^"OR"
 }
 
+table_column = {
+    variable ~ "." ~ variable
+}
+
 // Condition parts
-condition = { variable ~ operator ~ (variable | number) }
+condition = { (table_column | variable) ~ operator ~ (table_column | variable | number) }
 where_conditions = { condition ~ (binary_op ~ condition)* }
 where_expr = { where_keyword ~ where_conditions }
 
 
-select_expr = {variable ~ symbol ~ number }
+select_expr = {(table_column | variable) ~ symbol ~ number }
 
 
 join_condition = { variable ~ "." ~ variable ~ "=" ~ variable ~ "." ~ variable }
@@ -49,7 +53,7 @@ join_kind = _{ ( InnerJoinKind | LeftJoinKind ) }
 
 query = {
     SOI ~
-    select ~ (aggregate_expr | select_expr | variable) ~
+    select ~ (aggregate_expr | select_expr | table_column | variable) ~
     from_expr ~
     where_expr? ~
     EOI

@@ -6,40 +6,92 @@ use pest::iterators::Pair;
 #[grammar = "dsl/ir/aqua/grammar.pest"]
 pub struct AquaParser;
 
-// Main AST structure for a query
 #[derive(Debug, PartialEq, Clone)]
 pub struct AquaAST {
-    // Every query starts with a stream
     pub from: FromClause,
-    // Selection (required) - either column or aggregation
     pub select: SelectClause,
-    // Optional filtering condition
     pub filter: Option<WhereClause>,
 }
 
-// Stream source definition
 #[derive(Debug, PartialEq, Clone)]
 pub struct FromClause {
-    pub stream_name: String,
+    pub scan: ScanClause,
+    pub join: Option<JoinClause>,
 }
 
-// Select clause can be either a simple column or an aggregation
+#[derive(Debug, PartialEq, Clone)]
+pub struct ScanClause {
+    pub stream_name: String,
+    pub alias: Option<String>,
+    pub input_source: String,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct JoinClause {
+    pub scan: ScanClause,
+    pub condition: JoinCondition,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct JoinCondition {
+    pub left_col: ColumnRef,
+    pub right_col: ColumnRef,
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum SelectClause {
-    Column(String),              // Simple column selection
-    Aggregate(AggregateFunction), // Aggregation function
-    ComplexOp(String, String, String),
-    ComplexValue(String, String, AquaLiteral),
+    Column(ColumnRef),
+    Aggregate(AggregateFunction),
+    ComplexValue(ColumnRef, String, AquaLiteral),
 }
 
-// Aggregation function with its column
 #[derive(Debug, PartialEq, Clone)]
 pub struct AggregateFunction {
     pub function: AggregateType,
+    pub column: ColumnRef,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct ColumnRef {
+    pub table: Option<String>,
     pub column: String,
 }
 
-// Available aggregation functions
+impl ColumnRef {
+    pub fn to_string(&self) -> String {
+        match &self.table {
+            Some(table) => format!("{}.{}", table, self.column),
+            None => self.column.clone(),
+        }
+    }
+
+    fn parse(pair: Pair<Rule>) -> Result<Self, pest::error::Error<Rule>> {
+        match pair.as_rule() {
+            Rule::qualified_column => {
+                let mut inner = pair.into_inner();
+                let table = inner.next().unwrap().as_str().to_string();
+                let column = inner.next().unwrap().as_str().to_string();
+                Ok(ColumnRef {
+                    table: Some(table),
+                    column,
+                })
+            }
+            Rule::identifier => {
+                Ok(ColumnRef {
+                    table: None,
+                    column: pair.as_str().to_string(),
+                })
+            }
+            _ => Err(pest::error::Error::new_from_pos(
+                pest::error::ErrorVariant::CustomError {
+                    message: format!("Expected column reference, got {:?}", pair.as_rule()),
+                },
+                pest::Position::from_start(""),
+            )),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Clone)]
 pub enum AggregateType {
     Max,
@@ -56,12 +108,11 @@ pub struct WhereClause {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Condition {
-    pub variable: String,
+    pub variable: ColumnRef,
     pub operator: ComparisonOp,
     pub value: AquaLiteral,
 }
 
-// Available comparison operators
 #[derive(Debug, PartialEq, Clone)]
 pub enum ComparisonOp {
     GreaterThan,
@@ -84,6 +135,7 @@ pub enum AquaLiteral {
     Float(f64),
     String(String),
     Boolean(bool),
+    ColumnRef(ColumnRef),
 }
 
 impl AquaAST {
@@ -93,7 +145,6 @@ impl AquaAST {
         let mut select = None;
         let mut filter = None;
 
-        // Parse the query pairs
         for pair in pairs.into_iter().next().unwrap().into_inner() {
             match pair.as_rule() {
                 Rule::from_clause => {
@@ -110,11 +161,6 @@ impl AquaAST {
             }
         }
 
-        // If no explicit select clause, default to selecting all
-        if select.is_none() {
-            select = Some(SelectClause::Column("*".to_string()));
-        }
-
         Ok(AquaAST {
             from: from.ok_or_else(|| pest::error::Error::new_from_pos(
                 pest::error::ErrorVariant::CustomError {
@@ -122,7 +168,12 @@ impl AquaAST {
                 },
                 pest::Position::from_start(""),
             ))?,
-            select: select.unwrap_or_else(|| SelectClause::Column("*".to_string())),
+            select: select.ok_or_else(|| pest::error::Error::new_from_pos(
+                pest::error::ErrorVariant::CustomError {
+                    message: "Missing SELECT clause".to_string(),
+                },
+                pest::Position::from_start(""),
+            ))?,
             filter,
         })
     }
@@ -130,21 +181,52 @@ impl AquaAST {
 
 impl FromClause {
     fn parse(pair: Pair<Rule>) -> Result<Self, pest::error::Error<Rule>> {
-        let mut stream_name = None;
+        let mut inner = pair.into_inner();
+        let mut scan = None;
+        let mut join = None;
 
-        for inner_pair in pair.into_inner() {
-            if let Rule::stream_identifier = inner_pair.as_rule() {
-                stream_name = Some(inner_pair.as_str().to_string());
+        // Parse base scan
+        if let Some(scan_expr) = inner.next() {
+            if scan_expr.as_rule() == Rule::scan_expr {
+                scan = Some(ScanClause::parse(scan_expr)?);
+            }
+        }
+
+        // Parse optional join
+        while let Some(next_pair) = inner.next() {
+            match next_pair.as_rule() {
+                Rule::join => {
+                    if let Some(join_scan) = inner.next() {
+                        if join_scan.as_rule() == Rule::scan_expr {
+                            let join_scan_clause = ScanClause::parse(join_scan)?;
+                            
+                            // Parse ON condition
+                            if let Some(on_pair) = inner.next() {
+                                if on_pair.as_rule() == Rule::on {
+                                    if let Some(condition_pair) = inner.next() {
+                                        let condition = JoinCondition::parse(condition_pair)?;
+                                        join = Some(JoinClause {
+                                            scan: join_scan_clause,
+                                            condition,
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                _ => {}
             }
         }
 
         Ok(FromClause {
-            stream_name: stream_name.ok_or_else(|| pest::error::Error::new_from_pos(
+            scan: scan.ok_or_else(|| pest::error::Error::new_from_pos(
                 pest::error::ErrorVariant::CustomError {
-                    message: "Missing stream identifier".to_string(),
+                    message: "Missing scan clause".to_string(),
                 },
                 pest::Position::from_start(""),
             ))?,
+            join,
         })
     }
 }
@@ -157,38 +239,98 @@ impl SelectClause {
                     let mut inner = inner_pair.into_inner();
                     let func = inner.next().unwrap();
                     let column = inner.next().unwrap();
+                    let col_ref = ColumnRef::parse(column)?;
                     
-                    return Ok(SelectClause::Aggregate(AggregateFunction {
-                        function: AggregateType::from_str(func.as_str())?,
-                        column: column.as_str().to_string(),
-                    }));
+                    return Ok(SelectClause::Column(col_ref))
                 }
-                Rule::identifier => {
-                    return Ok(SelectClause::Column(inner_pair.as_str().to_string()));
+                Rule::identifier | Rule::qualified_column => {
+                    let col_ref = ColumnRef::parse(inner_pair)?;
+                    return Ok(SelectClause::Column(col_ref))
                 }
                 Rule::complex_op => {
                     let mut inner = inner_pair.into_inner();
-                    let variable = inner.next().unwrap().as_str().to_string();
+                    let var_pair = inner.next().unwrap();
+                    let col_ref = ColumnRef::parse(var_pair)?;
                     let operator = inner.next().unwrap().as_str().to_string();
-                    let var2 = inner.next().unwrap().as_str().to_string();
-                    let literal = parse_literal(&var2);
+                    let value = inner.next().unwrap().as_str();
+                    let literal = parse_literal(value);
 
-                    return Ok(SelectClause::ComplexValue(variable, operator, literal));
-                    
-                    }
-                    _ => unreachable!(),
+                    return Ok(SelectClause::ComplexValue(col_ref, operator, literal))
                 }
+                _ => return  Err(pest::error::Error::new_from_pos(
+                    pest::error::ErrorVariant::CustomError {
+                        message: "Invalid SELECT clause".to_string(),
+                    },
+                    pest::Position::from_start(""),
+                )),
             }
-
-            Err(pest::error::Error::new_from_pos(
-                pest::error::ErrorVariant::CustomError {
-                    message: "Invalid SELECT clause".to_string(),
-                },
-                pest::Position::from_start(""),
-            ))
+        }
+        
+        Err(pest::error::Error::new_from_pos(
+            pest::error::ErrorVariant::CustomError {
+                message: "Empty SELECT clause".to_string(),
+            },
+            pest::Position::from_start(""),
+        ))
     }
 }
 
+impl ScanClause {
+    fn parse(pair: Pair<Rule>) -> Result<Self, pest::error::Error<Rule>> {
+        let mut inner = pair.into_inner();
+        let mut stream_name = None;
+        let mut alias = None;
+        let mut input_source = None;
+
+        while let Some(pair) = inner.next() {
+            match pair.as_rule() {
+                Rule::identifier => {
+                    if stream_name.is_none() {
+                        stream_name = Some(pair.as_str().to_string());
+                    } else {
+                        alias = Some(pair.as_str().to_string());
+                    }
+                }
+                Rule::stream_input => {
+                    input_source = Some(pair.as_str().to_string());
+                }
+                Rule::as_keyword => {}
+                Rule::in_keyword => {}
+                _ => {}
+            }
+        }
+
+        Ok(ScanClause {
+            stream_name: stream_name.ok_or_else(|| pest::error::Error::new_from_pos(
+                pest::error::ErrorVariant::CustomError {
+                    message: "Missing stream name".to_string(),
+                },
+                pest::Position::from_start(""),
+            ))?,
+            alias,
+            input_source: input_source.ok_or_else(|| pest::error::Error::new_from_pos(
+                pest::error::ErrorVariant::CustomError {
+                    message: "Missing input source".to_string(),
+                },
+                pest::Position::from_start(""),
+            ))?,
+        })
+    }
+}
+
+impl JoinCondition {
+    fn parse(pair: Pair<Rule>) -> Result<Self, pest::error::Error<Rule>> {
+        let mut inner = pair.into_inner();
+        
+        let left_pair = inner.next().unwrap();
+        let right_pair = inner.next().unwrap();
+
+        Ok(JoinCondition {
+            left_col: ColumnRef::parse(left_pair)?,
+            right_col: ColumnRef::parse(right_pair)?,
+        })
+    }
+}
 
 impl WhereClause {
     fn parse(pair: Pair<Rule>) -> Result<Self, pest::error::Error<Rule>> {
@@ -201,7 +343,6 @@ impl WhereClause {
     fn parse_where_conditions(conditions_pair: Pair<Rule>) -> Result<Self, pest::error::Error<Rule>> {
         let mut pairs = conditions_pair.into_inner().peekable();
         
-        // Parse first condition
         let first_condition = pairs.next().unwrap();
         let mut result = WhereClause {
             condition: Condition::parse(first_condition)?,
@@ -211,7 +352,6 @@ impl WhereClause {
         
         let mut current = &mut result;
         
-        // Process remaining operators and conditions sequentially
         while let Some(op_pair) = pairs.next() {
             if let Some(cond_pair) = pairs.next() {
                 let op = match op_pair.as_str().to_uppercase().as_str() {
@@ -247,7 +387,10 @@ impl WhereClause {
 impl Condition {
     fn parse(pair: Pair<Rule>) -> Result<Self, pest::error::Error<Rule>> {
         let mut inner = pair.into_inner();
-        let variable = inner.next().unwrap().as_str().to_string();
+        
+        let col_ref_pair = inner.next().unwrap();
+        let variable = ColumnRef::parse(col_ref_pair)?;
+        
         let operator = ComparisonOp::from_str(inner.next().unwrap().as_str())?;
         let value = inner.next().unwrap().as_str();
         let literal = parse_literal(value);
