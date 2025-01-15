@@ -39,7 +39,7 @@ where_expr = { where_keyword ~ where_conditions }
 select_expr = {(table_column | variable) ~ symbol ~ number }
 
 
-join_condition = { variable ~ "." ~ variable ~ "=" ~ variable ~ "." ~ variable }
+join_condition = { table_column ~ "=" ~ table_column }
 
 
 from_expr = { from ~ scan_expr ~ join_expr?}

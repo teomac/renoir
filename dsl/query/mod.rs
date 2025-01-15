@@ -1,11 +1,11 @@
-use csv_parsers::*;
+use crate::dsl::csv_utils::csv_parsers::*;
 use crate::dsl::binary_generation::execution::*;
 use crate::dsl::binary_generation::creation::*;
-use crate::dsl::parsers::csv_utils::*;
 use crate::dsl::ir::aqua::*;
 use std::io;
 use std::collections::HashMap;
 use super::binary_generation::creation;
+use crate::dsl::languages::sql::sql_parser::sql_to_aqua;
 
 pub fn query_csv(query_str: &Vec<String>, output_path: &str, csv_path: &Vec<String>, user_defined_types: &Vec<String>) -> io::Result<String>
 {
@@ -49,12 +49,12 @@ pub fn query_csv(query_str: &Vec<String>, output_path: &str, csv_path: &Vec<Stri
     .map(|(cols, types)| combine_arrays(cols, types))
     .collect();
     
-   
+   //TODO FIX query_to_string_aqua method
     // step 4: parse the queries
     let queries: Vec<String> = query_str
         .iter()
         .zip(hash_maps.iter())
-        .map(|(query, hash_map)| query_to_string_aqua(query, hash_map))
+        .map(|(query, hash_map)| query_aqua_to_renoir(&sql_to_aqua(query), hash_map))
         .collect();
 
     // step 5: generate main.rs and update it in the Rust project

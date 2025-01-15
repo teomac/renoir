@@ -1,6 +1,16 @@
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 COMMENT = _{ "//" ~ (!"\n" ~ ANY)* }
 
+// Basic building blocks
+identifier = @{ ('a'..'z' | "_") ~ ('a'..'z' | '0'..'9' | "_")* }
+number = @{ 
+    ('0'..'9')+ // Integer part
+    ~ ("." ~ ('0'..'9')+)? // Optional decimal part
+}
+boolean_keyword = @{ ^"true" | ^"false" }
+symbol = @{ ("^"| "+" | "-" | "*" | "/")}
+value = _{ qualified_column | number | boolean_keyword | identifier }
+
 as_keyword = { "as" }
 in_keyword = { "in" }
 join = { "join" }
@@ -51,14 +61,6 @@ complex_op = {(qualified_column | identifier) ~ symbol ~ (identifier | number) }
 aggregate_expr = { aggregate_func ~ "(" ~ identifier ~ ")" }
 aggregate_func = { "max" | "min" | "avg" }
 
-// Basic building blocks
-identifier = @{ ('a'..'z' | "_") ~ ('a'..'z' | '0'..'9' | "_")* }
-number = @{ 
-    ('0'..'9')+ // Integer part
-    ~ ("." ~ ('0'..'9')+)? // Optional decimal part
-}
-symbol = @{ ("^"| "+" | "-" | "*" | "/")}
-
 // Binary logical operators
 binary_op = { 
     ^"AND" | 
@@ -66,8 +68,8 @@ binary_op = {
 }
 
 // Conditions for WHERE clause
-condition = { (qualified_column | identifier) ~ comparison_op ~ (qualified_column | identifier | number) }
-comparison_op = { ">=" | "<=" | "!=" | ">" | "<" | "=" }
+condition = { (qualified_column | identifier) ~ comparison_op ~ value }
+comparison_op = @{ ">=" | "<=" | "!=" | ">" | "<" | "=" | "=="}
 where_conditions = { condition ~ (binary_op ~ condition)* }
 
 // Optional method chain syntax for filter and aggregation operations
