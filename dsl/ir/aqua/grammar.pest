@@ -9,17 +9,18 @@ number = @{
 }
 boolean_keyword = @{ ^"true" | ^"false" }
 symbol = @{ ("^"| "+" | "-" | "*" | "/")}
-value = _{ qualified_column | number | boolean_keyword | identifier }
+value = { boolean_keyword | qualified_column | number | identifier }
 
 as_keyword = { "as" }
 in_keyword = { "in" }
 join = { "join" }
 on = { "on" }
+asterisk = { "*" }
 
 // Main query structure - allow clauses in any order
 query = {
     SOI ~
-    (from_clause | select_clause | where_clause)+ ~
+    (from_clause | select_clause | where_clause)+ ~ // TODO correct, it can accept two from clauses
     EOI
 }
 
@@ -29,6 +30,8 @@ from_clause = {
     scan_expr ~
     (join ~ scan_expr ~ on ~ join_condition)?
 }
+
+stream_input = @{ ('a'..'z' | "_") ~ ('a'..'z' | '0'..'9' | "_")* }
 
 scan_expr = { 
     identifier ~ 
@@ -45,10 +48,8 @@ qualified_column = {
     identifier ~ "." ~ identifier
 }
 
-stream_input = @{ ('a'..'z' | "_") ~ ('a'..'z' | '0'..'9' | "_")* }
 
-
-select_clause = { "select" ~ (aggregate_expr | complex_op | qualified_column | identifier) }
+select_clause = { "select" ~ (aggregate_expr | complex_op | qualified_column | identifier | asterisk) }
 where_clause = { "where" ~ where_conditions }
 
 // Stream definitions
@@ -69,7 +70,7 @@ binary_op = {
 
 // Conditions for WHERE clause
 condition = { (qualified_column | identifier) ~ comparison_op ~ value }
-comparison_op = @{ ">=" | "<=" | "!=" | ">" | "<" | "=" | "=="}
+comparison_op = @{ ">=" | "<=" | "!=" | ">" | "<" | "==" | "="}
 where_conditions = { condition ~ (binary_op ~ condition)* }
 
 // Optional method chain syntax for filter and aggregation operations

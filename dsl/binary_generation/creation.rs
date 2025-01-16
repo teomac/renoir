@@ -88,7 +88,7 @@ pub fn create_template(operator_chain: &Vec<String>, csv_path: &Vec<String>, str
     let mut stream_declarations = Vec::new();
     for (i, (path, ops)) in paths.iter().zip(operator_chain.iter()).enumerate() {
         let stream = format!(
-            r#"let stream{} = ctx.stream_csv::<StructVar{}>("{}"){}.collect_vec();"#,
+            r#"let stream{} = ctx.stream_csv::<Struct_var_{}>("{}"){}.collect_vec();"#,
             i, i, path, ops
         );
         stream_declarations.push(stream);

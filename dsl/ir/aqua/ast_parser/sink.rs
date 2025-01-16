@@ -19,7 +19,7 @@ impl SinkParser {
             .ok_or_else(|| AquaParseError::InvalidInput("Missing sink expression".to_string()))?;
 
         let selection = match sink_expr.as_rule() {
-            Rule::identifier | Rule::qualified_column => {
+            Rule::identifier | Rule::qualified_column | Rule::asterisk => {
                 let col_ref = Self::parse_column_ref(sink_expr)?;
                 SelectClause::Column(col_ref)
             },
@@ -54,7 +54,7 @@ impl SinkParser {
                     column,
                 })
             }
-            Rule::identifier => {
+            Rule::identifier | Rule::asterisk => {
                 Ok(ColumnRef {
                     table: None,
                     column: pair.as_str().to_string(),

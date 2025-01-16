@@ -1,17 +1,22 @@
 pub mod ast_parser;
 pub mod into_renoir;
 
-use std::collections::HashMap;
 pub use ast_parser::*;
 pub use into_renoir::*;
 
-pub fn query_aqua_to_renoir(query_str: &str, hash_map: &HashMap<String, String>) -> String {
+use crate::dsl::struct_object::object::query_object;
+
+pub fn query_aqua_to_ast(query_str: &str) -> AquaAST {
     println!("Input Aqua query: {}", query_str);
     
     let ast = AquaParser::parse_query(query_str).expect("Failed to parse query");
     println!("Aqua AST: {:?}", ast);
-    
-    let renoir_string = AquaToRenoir::convert(&ast, hash_map);
+
+    ast
+}
+
+pub fn aqua_ast_to_renoir(ast: &AquaAST, query_object: &query_object) -> String {
+    let renoir_string = AquaToRenoir::convert(ast, query_object);
     println!("Generated Renoir string:\n{}", renoir_string);
 
     renoir_string

@@ -6,6 +6,7 @@ where_keyword = { "WHERE" }
 as_keyword = { "AS" }
 join = { "JOIN" }
 on = { "ON" }
+asterisk = { "*" }
 
 variable = @{ ('a'..'z' | "_") ~ ('a'..'z' | '0'..'9' | "_")* }
 number = @{ 
@@ -36,7 +37,7 @@ where_conditions = { condition ~ (binary_op ~ condition)* }
 where_expr = { where_keyword ~ where_conditions }
 
 
-select_expr = {(table_column | variable) ~ symbol ~ number }
+select_expr = { ((table_column | variable ) ~ symbol ~ number) | asterisk }
 
 
 join_condition = { table_column ~ "=" ~ table_column }

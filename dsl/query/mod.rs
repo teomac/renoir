@@ -6,19 +6,18 @@ use std::io;
 use std::collections::HashMap;
 use super::binary_generation::creation;
 use crate::dsl::languages::sql::sql_parser::sql_to_aqua;
+use crate::dsl::struct_object::object::*;
 
-pub fn query_csv(query_str: &Vec<String>, output_path: &str, csv_path: &Vec<String>, user_defined_types: &Vec<String>) -> io::Result<String>
+pub fn query_csv(query_str: &String, output_path: &str, csv_path: &Vec<String>, user_defined_types: &Vec<String>) -> io::Result<String>
 {
+
     //step 0: safety check on inputs
     if csv_path.len() != user_defined_types.len()
     {
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "Number of csv files and user defined types do not match"));
     }
-    if query_str.len() != csv_path.len()
-    {
-        return Err(io::Error::new(io::ErrorKind::InvalidInput, "Number of queries and csv files do not match"));
-    }
 
+    let mut query_object = query_object::new();
 
     // step 1: if not existing, create a Rust project
     let rust_project = creation::RustProject::create_empty_project()?;
@@ -50,15 +49,15 @@ pub fn query_csv(query_str: &Vec<String>, output_path: &str, csv_path: &Vec<Stri
     .collect();
     
    //TODO FIX query_to_string_aqua method
-    // step 4: parse the queries
-    let queries: Vec<String> = query_str
-        .iter()
-        .zip(hash_maps.iter())
-        .map(|(query, hash_map)| query_aqua_to_renoir(&sql_to_aqua(query), hash_map))
-        .collect();
+    // step 4: parse the query
+    let aqua_query = sql_to_aqua(query_str);
+    let aqua_ast = query_aqua_to_ast(&aqua_query);
+    query_object.populate(aqua_ast, csv_path.clone(), hash_maps.clone());
+    let renoir_string = aqua_ast_to_renoir(&aqua_ast, &query_object);
+
 
     // step 5: generate main.rs and update it in the Rust project
-    let main = create_template(&queries, csv_path, &csv_structs);
+    let main = create_template(&renoir_string, csv_path, &csv_structs);
     rust_project.update_main_rs(&main)?;
 
     // step 6: compile the binary
