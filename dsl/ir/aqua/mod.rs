@@ -4,7 +4,7 @@ pub mod into_renoir;
 pub use ast_parser::*;
 pub use into_renoir::*;
 
-use crate::dsl::struct_object::object::query_object;
+use crate::dsl::struct_object::object::QueryObject;
 
 pub fn query_aqua_to_ast(query_str: &str) -> AquaAST {
     println!("Input Aqua query: {}", query_str);
@@ -15,7 +15,7 @@ pub fn query_aqua_to_ast(query_str: &str) -> AquaAST {
     ast
 }
 
-pub fn aqua_ast_to_renoir(ast: &AquaAST, query_object: &query_object) -> String {
+pub fn aqua_ast_to_renoir(ast: &AquaAST, query_object: &QueryObject) -> String {
     let renoir_string = AquaToRenoir::convert(ast, query_object);
     println!("Generated Renoir string:\n{}", renoir_string);
 

@@ -17,7 +17,7 @@ pub fn query_csv(query_str: &String, output_path: &str, csv_path: &Vec<String>, 
         return Err(io::Error::new(io::ErrorKind::InvalidInput, "Number of csv files and user defined types do not match"));
     }
 
-    let mut query_object = query_object::new();
+    let mut query_object = QueryObject::new();
 
     // step 1: if not existing, create a Rust project
     let rust_project = creation::RustProject::create_empty_project()?;
@@ -52,13 +52,15 @@ pub fn query_csv(query_str: &String, output_path: &str, csv_path: &Vec<String>, 
     // step 4: parse the query
     let aqua_query = sql_to_aqua(query_str);
     let aqua_ast = query_aqua_to_ast(&aqua_query);
-    query_object.populate(aqua_ast, csv_path.clone(), hash_maps.clone());
+    query_object = query_object.populate(&aqua_ast, &csv_path, &hash_maps);
     let renoir_string = aqua_ast_to_renoir(&aqua_ast, &query_object);
+    query_object.set_renoir_string(&renoir_string);
 
 
     // step 5: generate main.rs and update it in the Rust project
-    let main = create_template(&renoir_string, csv_path, &csv_structs);
+    let main = create_template(&query_object);
     rust_project.update_main_rs(&main)?;
+
 
     // step 6: compile the binary
     binary_execution(output_path, rust_project)

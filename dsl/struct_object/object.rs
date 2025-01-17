@@ -1,24 +1,27 @@
-use std::{collections::HashMap, hash::Hash};
+use std::{collections::HashMap, io};
+use std::error::Error;
 
-use crate::dsl::ir::aqua::AquaAST;
+use crate::dsl::ir::aqua::{AquaAST, ColumnRef};
 
-pub struct query_object {
+pub struct QueryObject {
     pub has_join: bool, // true if the query has a join
     pub table_to_alias: HashMap<String, String>,    // key: table name, value: alias
     pub table_to_csv: HashMap<String, String>,  // key: table name, value: csv file path
     pub table_to_struct: HashMap<String, HashMap<String, String>>,  // key: table name, value: HashMap of column name and data type
     pub table_to_struct_name: HashMap<String, String>,   // key: table name, value: struct name
+    pub renoir_string: String, // renoir final string
 }
 
-impl query_object {
+impl QueryObject {
 
     pub fn new() -> Self {
-        query_object {
+        QueryObject {
             has_join: false,
             table_to_alias: HashMap::new(),
             table_to_csv: HashMap::new(),
             table_to_struct: HashMap::new(),
             table_to_struct_name: HashMap::new(),
+            renoir_string: String::new(),
         }
     }
 
@@ -42,46 +45,96 @@ impl query_object {
         self.table_to_struct_name.get(table)
     }
 
-    pub fn populate(mut self, aqua_ast: AquaAST, csv_paths: Vec<String>, hash_maps: Vec<HashMap<String, String>>) -> Self {
-        // Set has_join based on join condition in AST
-        self.has_join = aqua_ast.from.join.is_some();
+    pub fn set_renoir_string(&mut self, renoir_string: &String) {
+        self.renoir_string = renoir_string.to_string();
+    }
 
-        // Get main table name from scan clause
-        let main_table = aqua_ast.from.scan.stream_name.clone();
-        
-        // Add main table alias if present
-        if let Some(alias) = aqua_ast.from.scan.alias {
-            self.table_to_alias.insert(main_table.clone(), alias);
+    pub fn get_all_structs(&self) -> Vec<String> {
+        self.table_to_struct_name.values().cloned().collect()
+    }
+
+    pub fn get_all_table_names(&self) -> Vec<String> {
+        self.table_to_csv.keys().cloned().collect()
+    }
+
+    pub fn get_type(&self, column: &ColumnRef) -> String {
+        let tab;
+        match &column.table {
+            Some(table) => tab = table.clone(),
+            None => tab = self.get_all_table_names().first().unwrap().clone(),
         }
 
-        // Add joined table alias if present
+        let field = &column.column;
+        let str = self.get_struct_field(&tab, field).unwrap().to_string();
+
+        if str.contains("int") {
+            "i64".to_string()
+        } else if str.contains("float") {
+            "f64".to_string()
+        } else if str.contains("bool") {
+            "bool".to_string()
+        } else {
+            "String".to_string()
+        }
+
+    }
+
+    pub fn populate(mut self, aqua_ast: &AquaAST, csv_paths: &Vec<String>, hash_maps: &Vec<HashMap<String, String>>) -> Self {
+        
+        self.has_join = aqua_ast.from.join.is_some();
+    
+        let main_table = aqua_ast.from.scan.stream_name.clone();
+        
+        if let Some(alias) = &aqua_ast.from.scan.alias {
+            self.table_to_alias.insert(main_table.clone(), alias.to_string());
+        }
+    
         if let Some(join) = &aqua_ast.from.join {
             let join_table = join.scan.stream_name.clone();
             if let Some(join_alias) = &join.scan.alias {
                 self.table_to_alias.insert(join_table.clone(), join_alias.clone());
             }
         }
-
-        // Initialize a vector of table names
+    
         let mut table_names = vec![main_table.clone()];
         if let Some(join) = &aqua_ast.from.join {
             table_names.push(join.scan.stream_name.clone());
         }
-
-        // Zip table names with CSV paths
-        for (table, path) in table_names.iter().zip(csv_paths.iter()) {
+    
+        let paths: Vec<String> = csv_paths.iter().map(|path| {
+            std::env::current_dir()
+                .unwrap()
+                .join(path)
+                .to_string_lossy()
+                .replace('\\', "/")
+        }).collect();
+    
+        assert_eq!(
+            table_names.len(), 
+            paths.len(), 
+            "Number of tables ({}) and CSV paths ({}) must match", 
+            table_names.len(), 
+            paths.len()
+        );
+        assert_eq!(
+            table_names.len(), 
+            hash_maps.len(), 
+            "Number of tables ({}) and hash maps ({}) must match",
+            table_names.len(), 
+            hash_maps.len()
+        );
+    
+        for i in 0..table_names.len() {
+            let table = &table_names[i];
+            let path = &paths[i];
+            let hash_map = &hash_maps[i];
+            
             self.table_to_csv.insert(table.clone(), path.clone());
-        }
-
-        for (table, hash_map) in table_names.iter().zip(hash_maps.iter()) {
             self.table_to_struct.insert(table.clone(), hash_map.clone());
+            self.table_to_struct_name.insert(table.clone(), format!("Struct_var_{}", i));
         }
-
-        for (i, table) in table_names.iter().enumerate() {
-            let struct_name = format!("Struct_var_{}", i);
-            self.table_to_struct_name.insert(table.clone(), struct_name);
-        }
-
+    
+        println!("table to struct name: {:?}", self.table_to_struct_name);
         self
     }
 

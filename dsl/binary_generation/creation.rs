@@ -1,6 +1,10 @@
+use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::path::PathBuf;
+
+use crate::dsl::struct_object::object::QueryObject;
+use crate::stream;
 
 
 pub struct RustProject {
@@ -67,51 +71,63 @@ impl RustProject {
     }
 }
 
-pub fn create_template(operator_chain: &Vec<String>, csv_path: &Vec<String>, struct_string: &Vec<String>) -> String {
+pub fn create_template(query_object: &QueryObject) -> String {
 
-    let mut paths = Vec::<String>::new();
+    let paths = query_object.table_to_csv.values();
+    let table_names = query_object.get_all_table_names();
+    let struct_names = query_object.get_all_structs().join("\n");
 
-    for path in csv_path  {
-        let absolute_path = std::env::current_dir()
-            .unwrap()
-            .join(path)
-            .to_string_lossy()
-            .replace('\\', "/");
+    let struct_definitions = generate_struct_declarations(&query_object.table_to_struct, &query_object.table_to_struct_name);
 
-        paths.push(absolute_path);
-    }
 
-    // Join all struct definitions with newlines
-    let struct_definitions = struct_string.join("\n");
-
-      // Generate stream declarations
     let mut stream_declarations = Vec::new();
-    for (i, (path, ops)) in paths.iter().zip(operator_chain.iter()).enumerate() {
+
+    // case 1: no join inside the query
+    if !query_object.has_join {
+        let table_name = table_names.first().unwrap();
         let stream = format!(
-            r#"let stream{} = ctx.stream_csv::<Struct_var_{}>("{}"){}.collect_vec();"#,
-            i, i, path, ops
+            r#"let stream0 = ctx.stream_csv::<{}>("{}"){}.collect_vec();"#,
+            query_object.get_struct_name(table_name).unwrap(), query_object.get_csv(table_name).unwrap(), query_object.renoir_string
         );
         stream_declarations.push(stream);
     }
-    
+
+    // case 2: join inside the query
+    else {
+        for (i, table_name) in table_names.iter().enumerate() {
+            if i == 0 {
+                let stream = format!(
+                    r#"let stream{} = ctx.stream_csv::<{}>("{}"){}.collect_vec();"#,
+                    i, query_object.get_struct_name(table_name).unwrap(), query_object.get_csv(table_name).unwrap(), query_object.renoir_string
+                );
+                stream_declarations.push(stream);
+            }
+            else {
+                let stream = format!(
+                    r#"let stream{} = ctx.stream_csv::<{}>("{}");"#,
+                    i, query_object.get_struct_name(table_name).unwrap(), query_object.get_csv(table_name).unwrap()
+                );
+                stream_declarations.push(stream);
+            }
+        }
+        stream_declarations.reverse();
+    }
+
     // Join all stream declarations with newlines
-    let streams = stream_declarations.join("\n            ");
+    let streams = stream_declarations.join("\n");
 
      // Generate output handling for all streams
      let mut output_handling = Vec::new();
-     for i in 0..paths.len() {
          let output = format!(
-             r#"if let Some(output{}) = stream{}.get() {{
-                 println!("Stream {} output: {{:?}}", output{});
+             r#"if let Some(output0) = stream0.get() {{
+                 println!("Stream output: {{:?}}", output0);
                  fs::write(
-                     "output{}.json",
-                     serde_json::to_string(&output{}).unwrap()
-                 ).expect("Failed to write output{} to file");
+                     "output0.json",
+                     serde_json::to_string(&output0).unwrap()
+                 ).expect("Failed to write output0 to file");
              }}"#,
-             i, i, i, i, i, i, i
          );
          output_handling.push(output);
-     }
      
      // Join all output handling with newlines
      let outputs = output_handling.join("\n            ");
@@ -139,4 +155,38 @@ pub fn create_template(operator_chain: &Vec<String>, csv_path: &Vec<String>, str
         outputs
     )
 
+}
+
+pub fn generate_struct_declarations(
+    table_to_struct: &HashMap<String, HashMap<String, String>>,
+    table_to_struct_name: &HashMap<String, String>
+) -> String {
+    let mut result = String::new();
+
+    for (table, fields) in table_to_struct {
+        if let Some(struct_name) = table_to_struct_name.get(table) {
+            let field_names: Vec<_> = fields.keys().collect();
+            let field_types: Vec<_> = fields.values().collect();
+
+            result.push_str(&format!("#[derive(Clone, Debug, Serialize, Deserialize, PartialOrd, PartialEq, Default)]\n"));
+            result.push_str(&format!("struct {} {{\n", struct_name));
+
+            for (name, type_str) in field_names.iter().zip(field_types.iter()) {
+                let rust_type = if type_str.contains("int") {
+                    "i64"
+                } else if type_str.contains("float") {
+                    "f64"
+                } else if type_str.contains("bool") {
+                    "bool"
+                } else {
+                    "String"
+                };
+                result.push_str(&format!("    {}: Option<{}>,\n", name, rust_type));
+            }
+
+            result.push_str("}\n\n");
+        }
+    }
+
+    result
 }
