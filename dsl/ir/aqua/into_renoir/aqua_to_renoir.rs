@@ -53,7 +53,7 @@ impl AquaToRenoir {
                         }}
                     }}
                     )",
-                    Self::convert_column_ref(&agg.column, query_object),
+                    Self::convert_column_ref(&agg.column, &query_object),
                     data_type));
                 } else {
                     unreachable!(); // TODO
@@ -65,21 +65,21 @@ impl AquaToRenoir {
                     AquaLiteral::Integer(val) => val.to_string(),
                     AquaLiteral::Boolean(val) => val.to_string(),
                     AquaLiteral::String(val) => val.to_string(),
-                    AquaLiteral::ColumnRef(column_ref) => Self::convert_column_ref(&column_ref, query_object),
+                    AquaLiteral::ColumnRef(column_ref) => Self::convert_column_ref(&column_ref, &query_object),
                 };
                 if char == "^" {
                     let data_type = query_object.get_type(&col);
                     if data_type != "f64" || data_type != "i64" {
                         panic!("Invalid type for power operation");
                     }
-                    final_string.push_str(&format!(".map(|x| {}.pow({}))", Self::convert_column_ref(&col, query_object), value));
+                    final_string.push_str(&format!(".map(|x| {}.pow({}))", Self::convert_column_ref(&col, &query_object), value));
                 } else {
-                    final_string.push_str(&format!(".map(|x| {} {} {})", Self::convert_column_ref(&col, query_object), char, value));
+                    final_string.push_str(&format!(".map(|x| {} {} {})", Self::convert_column_ref(&col, &query_object), char, value));
                 }
             }
             SelectClause::Column(col) => {
                 if col.column != "*" {
-                    final_string.push_str(&format!(".map(|x| {})", Self::convert_column_ref(&col, query_object)));
+                    final_string.push_str(&format!(".map(|x| {})", Self::convert_column_ref(&col, &query_object)));
                 } else {
                     final_string.push_str(".map(|x| x)");
                 }
@@ -170,10 +170,10 @@ impl AquaToRenoir {
             let first_index = first_struct.chars().last().unwrap();
 
             // check if left_col.table is not an alias in the query object hashmap
-            let left_table_name = Self::check_alias(&left_col.table.clone().unwrap(), query_object);
+            let left_table_name = Self::check_alias(&left_col.table.clone().unwrap(), &query_object);
 
             // same for right_col
-            let right_table_name = Self::check_alias(&right_col.table.clone().unwrap(), query_object);
+            let right_table_name = Self::check_alias(&right_col.table.clone().unwrap(), &query_object);
 
 
             let left_field = query_object
@@ -214,7 +214,7 @@ impl AquaToRenoir {
             // take value from column_ref.table
             let val = column_ref.table.clone().unwrap();
             // check if value is an alias in the query object hashmap
-            let mut table_name = String::new();
+            let table_name;
             if query_object.table_to_alias.contains_key(&val) {
                 table_name = val;
             }

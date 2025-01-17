@@ -3,8 +3,8 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 
+use crate::dsl::query;
 use crate::dsl::struct_object::object::QueryObject;
-use crate::stream;
 
 
 pub struct RustProject {
@@ -73,11 +73,12 @@ impl RustProject {
 
 pub fn create_template(query_object: &QueryObject) -> String {
 
-    let paths = query_object.table_to_csv.values();
-    let table_names = query_object.get_all_table_names();
-    let struct_names = query_object.get_all_structs().join("\n");
+    let table_names = query_object.table_names_list.clone();
+    let struct_names = query_object.struct_names_list.clone();
 
-    let struct_definitions = generate_struct_declarations(&query_object.table_to_struct, &query_object.table_to_struct_name);
+
+    //TODO: fix generate struct definitions
+    let struct_definitions = generate_struct_declarations(&table_names, &struct_names, &query_object);
 
 
     let mut stream_declarations = Vec::new();
@@ -94,6 +95,7 @@ pub fn create_template(query_object: &QueryObject) -> String {
 
     // case 2: join inside the query
     else {
+        println!("{:?}", table_names);
         for (i, table_name) in table_names.iter().enumerate() {
             if i == 0 {
                 let stream = format!(
@@ -158,35 +160,30 @@ pub fn create_template(query_object: &QueryObject) -> String {
 }
 
 pub fn generate_struct_declarations(
-    table_to_struct: &HashMap<String, HashMap<String, String>>,
-    table_to_struct_name: &HashMap<String, String>
+    table_names: &Vec<String>,
+    struct_names: &Vec<String>,
+    query_object: &QueryObject
 ) -> String {
-    let mut result = String::new();
+    // Use iterators to zip through table_names, struct_names, and field_lists to maintain order
+    table_names.iter()
+        .enumerate()
+        .map(|(i, _table_name)| {
+            // Generate struct definition
+            let mut struct_def = String::new();
+            struct_def.push_str("#[derive(Clone, Debug, Serialize, Deserialize, PartialOrd, PartialEq, Default)]\n");
+            struct_def.push_str(&format!("struct {} {{\n", struct_names[i]));
 
-    for (table, fields) in table_to_struct {
-        if let Some(struct_name) = table_to_struct_name.get(table) {
-            let field_names: Vec<_> = fields.keys().collect();
-            let field_types: Vec<_> = fields.values().collect();
+            // Generate field definitions directly from field_lists
+            let fields_str: String = query_object.field_lists[i].iter()
+                .map(|(field_name, field_type)| {
+                    format!("    {}: Option<{}>,\n", field_name, field_type)
+                })
+                .collect();
 
-            result.push_str(&format!("#[derive(Clone, Debug, Serialize, Deserialize, PartialOrd, PartialEq, Default)]\n"));
-            result.push_str(&format!("struct {} {{\n", struct_name));
-
-            for (name, type_str) in field_names.iter().zip(field_types.iter()) {
-                let rust_type = if type_str.contains("int") {
-                    "i64"
-                } else if type_str.contains("float") {
-                    "f64"
-                } else if type_str.contains("bool") {
-                    "bool"
-                } else {
-                    "String"
-                };
-                result.push_str(&format!("    {}: Option<{}>,\n", name, rust_type));
-            }
-
-            result.push_str("}\n\n");
-        }
-    }
-
-    result
+            struct_def.push_str(&fields_str);
+            struct_def.push_str("}\n\n");
+            
+            struct_def
+        })
+        .collect()
 }

@@ -29,11 +29,21 @@ pub fn query_csv(query_str: &String, output_path: &str, csv_path: &Vec<String>, 
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e)))
     .collect::<Result<Vec<_>, _>>()?;
 
+    query_object.initialize(csv_path, &user_types);
+
     let csv_structs: Vec<String> = user_types
     .iter()
     .enumerate()
     .map(|(index, types)| create_struct(types, index.to_string()))
     .collect();
+
+    for i in 0..user_types.len()
+    {
+        query_object.add_field_list(generate_field_list(&user_types[i]));
+    }
+
+    query_object.parsed_structs = csv_structs.clone();
+    println!("Parsed structs: {:?}", csv_structs);
 
 
     // step 3: Get CSV columns and combine with user defined types

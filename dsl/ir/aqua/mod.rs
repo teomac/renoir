@@ -16,7 +16,7 @@ pub fn query_aqua_to_ast(query_str: &str) -> AquaAST {
 }
 
 pub fn aqua_ast_to_renoir(ast: &AquaAST, query_object: &QueryObject) -> String {
-    let renoir_string = AquaToRenoir::convert(ast, query_object);
+    let renoir_string = AquaToRenoir::convert(ast, &query_object);
     println!("Generated Renoir string:\n{}", renoir_string);
 
     renoir_string

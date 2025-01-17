@@ -6,6 +6,8 @@ use std::path::Path;
 use csv::Reader;
 use std::fmt::Write;
 
+use crate::dsl::struct_object::object::QueryObject;
+
 #[derive(Debug)]
 pub struct ParseTypeError {
     message: String,
@@ -109,6 +111,8 @@ pub fn create_struct(fields: &Vec<String>, index: String) -> String {
         index
     );
 
+    let mut field_list = Vec::new();
+
     for field_desc in fields {
         let (base_type, number) = parse_field(field_desc);
         let field_name = format!("{}{}", base_type, number);
@@ -119,10 +123,35 @@ pub fn create_struct(fields: &Vec<String>, index: String) -> String {
             "string" => "String",
             _ => panic!("Unsupported type: {}", base_type),
         };
+
+        field_list.push((field_name.clone(), rust_type.to_string()));
+
         
         writeln!(&mut output, "    {}: Option<{}>,", field_name, rust_type).unwrap();
     }
 
     output.push_str("}\n");
     output
+}
+
+pub fn generate_field_list(fields: &Vec<String>) -> Vec<(String, String)> {
+    //insert the index into the struct name
+
+    let mut field_list = Vec::new();
+
+    for field_desc in fields {
+        let (base_type, number) = parse_field(field_desc);
+        let field_name = format!("{}{}", base_type, number);
+        let rust_type = match base_type {
+            "int" => "i64",
+            "float" => "f64",
+            "bool" => "bool",
+            "string" => "String",
+            _ => panic!("Unsupported type: {}", base_type),
+        };
+
+        field_list.push((field_name.clone(), rust_type.to_string()));
+    }
+
+    field_list
 }

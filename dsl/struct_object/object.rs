@@ -1,10 +1,16 @@
-use std::{collections::HashMap, io};
-use std::error::Error;
-
+use std::collections::HashMap;
 use crate::dsl::ir::aqua::{AquaAST, ColumnRef};
 
+#[derive(Clone)]
 pub struct QueryObject {
     pub has_join: bool, // true if the query has a join
+    pub table_names_list: Vec<String>, // list of table names
+    pub struct_names_list: Vec<String>, // list of struct names
+    pub parsed_structs: Vec<String>, // list of parsed structs
+    pub csv_list: Vec<String>, // list of csv file paths
+    pub user_defined_types: Vec<Vec<String>>, // list of user defined types
+    pub field_lists: Vec<Vec<(String, String)>>, // list of field lists
+
     pub table_to_alias: HashMap<String, String>,    // key: table name, value: alias
     pub table_to_csv: HashMap<String, String>,  // key: table name, value: csv file path
     pub table_to_struct: HashMap<String, HashMap<String, String>>,  // key: table name, value: HashMap of column name and data type
@@ -17,12 +23,24 @@ impl QueryObject {
     pub fn new() -> Self {
         QueryObject {
             has_join: false,
+            table_names_list: Vec::new(),
+            struct_names_list: Vec::new(),
+            parsed_structs: Vec::new(),
+            csv_list: Vec::new(),
+            user_defined_types: Vec::new(),
+            field_lists: Vec::new(),
+
             table_to_alias: HashMap::new(),
             table_to_csv: HashMap::new(),
             table_to_struct: HashMap::new(),
             table_to_struct_name: HashMap::new(),
             renoir_string: String::new(),
         }
+    }
+
+    pub fn initialize(&mut self, csv_path: &Vec<String>, user_defined_types: &Vec<Vec<String>>) {
+        self.csv_list = csv_path.clone();
+        self.user_defined_types = user_defined_types.clone();
     }
 
     pub fn get_alias(&self, table: &str) -> Option<&String> {
@@ -57,6 +75,10 @@ impl QueryObject {
         self.table_to_csv.keys().cloned().collect()
     }
 
+    pub fn add_field_list(&mut self, field_list: Vec<(String, String)>) {
+        self.field_lists.push(field_list);
+    }
+
     pub fn get_type(&self, column: &ColumnRef) -> String {
         let tab;
         match &column.table {
@@ -84,6 +106,8 @@ impl QueryObject {
         self.has_join = aqua_ast.from.join.is_some();
     
         let main_table = aqua_ast.from.scan.stream_name.clone();
+
+        self.table_names_list.push(main_table.clone());
         
         if let Some(alias) = &aqua_ast.from.scan.alias {
             self.table_to_alias.insert(main_table.clone(), alias.to_string());
@@ -91,6 +115,7 @@ impl QueryObject {
     
         if let Some(join) = &aqua_ast.from.join {
             let join_table = join.scan.stream_name.clone();
+            self.table_names_list.push(join_table.clone());
             if let Some(join_alias) = &join.scan.alias {
                 self.table_to_alias.insert(join_table.clone(), join_alias.clone());
             }
@@ -131,7 +156,8 @@ impl QueryObject {
             
             self.table_to_csv.insert(table.clone(), path.clone());
             self.table_to_struct.insert(table.clone(), hash_map.clone());
-            self.table_to_struct_name.insert(table.clone(), format!("Struct_var_{}", i));
+            self.table_to_struct_name.insert(table.clone(), format!("StructVar{}", i));
+            self.struct_names_list.push(format!("StructVar{}", i));
         }
     
         println!("table to struct name: {:?}", self.table_to_struct_name);
@@ -139,3 +165,4 @@ impl QueryObject {
     }
 
 }
+
