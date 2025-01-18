@@ -2,6 +2,19 @@ use crate::dsl::ir::aqua::FromClause;
 use crate::dsl::ir::aqua::QueryObject;
 use crate::dsl::ir::aqua::r_utils::check_alias;
 
+/// Processes the `FromClause` and generates a join clause string for the query.
+///
+/// # Arguments
+///
+/// * `from_clause` - A reference to the `FromClause` which contains the join information.
+/// * `query_object` - A reference to the `QueryObject` which contains the query structure and metadata.
+///
+/// # Returns
+///
+/// A `String` representing the join clause for the query. If there is no join in the `from_clause`,
+/// an empty string is returned.
+///
+
 pub fn process_from_clause(from_clause: &FromClause, query_object: &QueryObject) -> String {
     if !query_object.has_join {
         "".to_string();

@@ -1,7 +1,25 @@
 use crate::dsl::ir::aqua::{AggregateType, AquaLiteral, QueryObject, SelectClause};
 use crate::dsl::ir::aqua::r_utils::convert_column_ref;
 
-// Add aggregation or column selection
+/// Processes a `SelectClause` and generates a corresponding string representation
+/// of the query operation.
+///
+/// # Arguments
+///
+/// * `ast` - A reference to the `SelectClause` which represents the selection clause in the query.
+/// * `query_object` - A reference to the `QueryObject` which contains metadata and type information for the query.
+///
+/// # Returns
+///
+/// A `String` that represents the query operation based on the provided `SelectClause`.
+///
+/// # Panics
+///
+/// This function will panic if:
+/// - The data type for aggregation is not `f64` or `i64`.
+/// - The data type for power operation is not `f64` or `i64`.
+///
+
 pub fn process_select_clause (ast: &SelectClause, query_object: &QueryObject) -> String {
     let mut final_string = String::new();
     match &ast {

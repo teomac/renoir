@@ -4,9 +4,22 @@ use crate::dsl::ir::aqua::QueryObject;
 use crate::dsl::ir::aqua::{AquaLiteral,ComparisonOp, Condition};
 use crate::dsl::ir::aqua::r_utils::*;
 
+/// Processes a `WhereClause` and generates a string representation of the conditions.
+///
+/// This function recursively processes the conditions in the `WhereClause` and converts them
+/// into a string format that contains renoir operators. It handles both the initial condition
+/// and any subsequent conditions connected by binary operators (AND/OR).
+///
+/// # Arguments
+///
+/// * `clause` - A reference to the `WhereClause` to be processed.
+/// * `query_object` - A reference to the `QueryObject` containing metadata about the query.
+///
+/// # Returns
+///
+/// A `String` representing the processed where clause conditions.
+    // function implementation
 
-
-// Helper function to recursively process where conditions
 pub fn process_where_clause(clause: &WhereClause, query_object: &QueryObject) -> String {
     let mut current = clause;
     let mut conditions = Vec::new();
@@ -28,7 +41,23 @@ pub fn process_where_clause(clause: &WhereClause, query_object: &QueryObject) ->
     conditions.join(" ")
 }
 
-// Helper function to process a single condition
+
+/// Processes a single `Condition` and generates a string representation of the condition.
+///
+/// This function converts a single `Condition` into a string format that contains renoir operators.
+/// It handles different types of comparison operators and literal values, and formats them
+/// appropriately based on whether the query involves a join or not.
+///
+/// # Arguments
+///
+/// * `condition` - A reference to the `Condition` to be processed.
+/// * `query_object` - A reference to the `QueryObject` containing metadata about the query.
+///
+/// # Returns
+///
+/// A `String` representing the processed condition.
+    // function implementation
+
 fn process_condition(condition: &Condition, query_object: &QueryObject) -> String {
     let operator_str = match condition.operator {
         ComparisonOp::GreaterThan => ">",
