@@ -9,7 +9,7 @@ pub struct SelectParser;
 impl SelectParser {
     pub fn parse(pair: Pair<Rule>) -> Result<SelectClause, SqlParseError> {
         let selection = match pair.as_rule() {
-            Rule::variable | Rule::table_column | Rule::asterisk => {
+            Rule::asterisk | Rule::variable | Rule::table_column => {
                 let col_ref = Self::parse_column_ref(pair)?;
                 SelectType::Simple(col_ref)
             },
@@ -28,6 +28,10 @@ impl SelectParser {
     //function to parse column references
     fn parse_column_ref(pair: Pair<Rule>) -> Result<ColumnRef, SqlParseError> {
         match pair.as_rule() {
+            Rule::asterisk => Ok(ColumnRef {
+                table: None,
+                column: "*".to_string(),
+            }),
             Rule::table_column => {
                 let mut inner = pair.into_inner();
                 let table = inner.next()
@@ -43,16 +47,14 @@ impl SelectParser {
                     column,
                 })
             }
+            
             Rule::variable => {
                 Ok(ColumnRef {
                     table: None,
                     column: pair.as_str().to_string(),
                 })
             }
-            Rule::asterisk => Ok(ColumnRef {
-                table: None,
-                column: "*".to_string(),
-            }),
+            
             _ => Err(SqlParseError::InvalidInput(format!("Expected column reference, got {:?}", pair.as_rule()))),
         }
     }

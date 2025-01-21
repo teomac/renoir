@@ -82,7 +82,6 @@ pub fn query_csv(query_str: &String, output_path: &str, csv_path: &Vec<String>, 
         .collect();
 
     query_object.parsed_structs = csv_structs.clone();
-    println!("Parsed structs: {:?}", csv_structs);
 
 
     // step 2.1: Get CSV columns and combine with user defined types
