@@ -1,20 +1,17 @@
-use std::collections::HashMap;
+use indexmap::IndexMap;
+
 use crate::dsl::ir::aqua::{AquaAST, ColumnRef};
 
 #[derive(Clone)]
 pub struct QueryObject {
     pub has_join: bool, // true if the query has a join
     pub table_names_list: Vec<String>, // list of table names
-    pub struct_names_list: Vec<String>, // list of struct names
-    pub parsed_structs: Vec<String>, // list of parsed structs
-    pub csv_list: Vec<String>, // list of csv file paths
-    pub user_defined_types: Vec<Vec<String>>, // list of user defined types
-    pub field_lists: Vec<Vec<(String, String)>>, // list of field lists
+    pub field_lists: Vec<Vec<(String, String)>>, // list of field lists (eg. [("int1", "i64"), ("float1", "f64")]
 
-    pub table_to_alias: HashMap<String, String>,    // key: table name, value: alias
-    pub table_to_csv: HashMap<String, String>,  // key: table name, value: csv file path
-    pub table_to_struct: HashMap<String, HashMap<String, String>>,  // key: table name, value: HashMap of column name and data type
-    pub table_to_struct_name: HashMap<String, String>,   // key: table name, value: struct name
+    pub table_to_alias: IndexMap<String, String>,    // key: table name, value: alias
+    pub table_to_csv: IndexMap<String, String>,  // key: table name, value: csv file path
+    pub table_to_struct: IndexMap<String, IndexMap<String, String>>,  // key: table name, value: HashMap of column name and data type 
+    pub table_to_struct_name: IndexMap<String, String>,   // key: table name, value: struct name
     pub renoir_string: String, // renoir final string
 }
 
@@ -24,23 +21,14 @@ impl QueryObject {
         QueryObject {
             has_join: false,
             table_names_list: Vec::new(),
-            struct_names_list: Vec::new(),
-            parsed_structs: Vec::new(),
-            csv_list: Vec::new(),
-            user_defined_types: Vec::new(),
             field_lists: Vec::new(),
 
-            table_to_alias: HashMap::new(),
-            table_to_csv: HashMap::new(),
-            table_to_struct: HashMap::new(),
-            table_to_struct_name: HashMap::new(),
+            table_to_alias: IndexMap::new(),
+            table_to_csv: IndexMap::new(),
+            table_to_struct: IndexMap::new(),
+            table_to_struct_name: IndexMap::new(),
             renoir_string: String::new(),
         }
-    }
-
-    pub fn initialize(&mut self, csv_path: &Vec<String>, user_defined_types: &Vec<Vec<String>>) {
-        self.csv_list = csv_path.clone();
-        self.user_defined_types = user_defined_types.clone();
     }
 
     pub fn get_alias(&self, table: &str) -> Option<&String> {
@@ -51,7 +39,7 @@ impl QueryObject {
         self.table_to_csv.get(table)
     }
 
-    pub fn get_struct(&self, table: &str) -> Option<&HashMap<String, String>> {
+    pub fn get_struct(&self, table: &str) -> Option<&IndexMap<String, String>> {
         self.table_to_struct.get(table)
     }
 
@@ -101,7 +89,7 @@ impl QueryObject {
 
     }
 
-    pub fn populate(mut self, aqua_ast: &AquaAST, csv_paths: &Vec<String>, hash_maps: &Vec<HashMap<String, String>>) -> Self {
+    pub fn populate(mut self, aqua_ast: &AquaAST, csv_paths: &Vec<String>, hash_maps: &Vec<IndexMap<String, String>>) -> Self {
         
         self.has_join = aqua_ast.from.join.is_some();
     
@@ -157,7 +145,6 @@ impl QueryObject {
             self.table_to_csv.insert(table.clone(), path.clone());
             self.table_to_struct.insert(table.clone(), hash_map.clone());
             self.table_to_struct_name.insert(table.clone(), format!("StructVar{}", i));
-            self.struct_names_list.push(format!("StructVar{}", i));
         }
     
         println!("table to struct name: {:?}", self.table_to_struct_name);

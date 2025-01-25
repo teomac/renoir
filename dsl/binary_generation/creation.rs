@@ -72,7 +72,7 @@ impl RustProject {
 pub fn create_template(query_object: &QueryObject) -> String {
 
     let table_names = query_object.table_names_list.clone();
-    let struct_names = query_object.struct_names_list.clone();
+    let struct_names = query_object.table_to_struct_name.values().cloned().collect::<Vec<String>>();
 
 
     //TODO: fix generate struct definitions

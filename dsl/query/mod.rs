@@ -1,9 +1,10 @@
+use indexmap::IndexMap;
+
 use crate::dsl::csv_utils::csv_parsers::*;
 use crate::dsl::binary_generation::execution::*;
 use crate::dsl::binary_generation::creation::*;
 use crate::dsl::ir::aqua::*;
 use std::io;
-use std::collections::HashMap;
 use super::binary_generation::creation;
 use crate::dsl::languages::sql::sql_parser::sql_to_aqua;
 use crate::dsl::struct_object::object::*;
@@ -65,8 +66,6 @@ pub fn query_csv(query_str: &String, output_path: &str, csv_path: &Vec<String>, 
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e)))
     .collect::<Result<Vec<_>, _>>()?;
 
-    query_object.initialize(csv_path, &user_types);
-
     let mut field_list: Vec<Vec<(String, String)>> = Vec::new();
     for i in 0..user_types.len()
     {
@@ -81,7 +80,6 @@ pub fn query_csv(query_str: &String, output_path: &str, csv_path: &Vec<String>, 
         .map(|(index, types)| create_struct(&types, index.to_string()))
         .collect();
 
-    query_object.parsed_structs = csv_structs.clone();
     println!("Parsed structs: {:?}", csv_structs);
 
 
@@ -91,11 +89,21 @@ pub fn query_csv(query_str: &String, output_path: &str, csv_path: &Vec<String>, 
     .map(|path| get_csv_columns(path))
     .collect();
 
-    let hash_maps: Vec<HashMap<String, String>> = columns
+    let hash_maps: Vec<IndexMap<String, String>> = columns
     .iter()
     .zip(user_types.iter())
-    .map(|(cols, types)| combine_arrays(cols, types))
+    .map(|(cols, types)| {
+        cols.iter()
+            .zip(types.iter())
+            .map(|(c, t)| (c.to_string(), t.to_string()))
+            .collect()
+    })
     .collect();
+
+    // debug print hash_maps
+    for hash_map in &hash_maps {
+        println!("AAAAAAAAAAAAAAAAAAAAAAAAAA{:?}", hash_map);
+    }
     
     // step 3: parse the query
     let aqua_query = sql_to_aqua(query_str);
