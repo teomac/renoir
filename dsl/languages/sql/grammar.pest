@@ -36,7 +36,7 @@ condition = { (table_column | variable) ~ operator ~ (table_column | variable | 
 where_conditions = { condition ~ (binary_op ~ condition)* }
 where_expr = { where_keyword ~ where_conditions }
 
-
+column_list = { (aggregate_expr | select_expr | table_column | variable) ~ ("," ~ (aggregate_expr | select_expr | table_column | variable))* }
 select_expr = { ((table_column | variable ) ~ symbol ~ number) }
 
 
@@ -54,7 +54,7 @@ join_kind = _{ ( InnerJoinKind | LeftJoinKind ) }
 
 query = {
     SOI ~
-    select ~ (asterisk| aggregate_expr | select_expr | table_column | variable) ~
+    select ~ (asterisk| column_list) ~
     from_expr ~
     where_expr? ~
     EOI

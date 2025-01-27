@@ -13,7 +13,7 @@ pub struct AquaASTBuilder;
 impl AquaASTBuilder {
     pub fn build_ast_from_pairs(pairs: Pairs<Rule>) -> Result<AquaAST, AquaParseError> {
         let mut from = None;
-        let mut select = None;
+        let mut select = Vec::new();
         let mut filter = None;
 
         // Process each clause in the query
@@ -26,7 +26,7 @@ impl AquaASTBuilder {
                                 from = Some(SourceParser::parse(clause)?);
                             }
                             Rule::select_clause => {
-                                select = Some(SinkParser::parse(clause)?);
+                                select = SinkParser::parse(clause)?;
                             }
                             Rule::where_clause => {
                                 filter = Some(ConditionParser::parse(clause)?);
@@ -47,9 +47,7 @@ impl AquaASTBuilder {
             from: from.ok_or_else(|| 
                 AquaParseError::InvalidInput("Missing FROM clause".to_string())
             )?,
-            select: select.ok_or_else(|| 
-                AquaParseError::InvalidInput("Missing SELECT clause".to_string())
-            )?,
+            select,
             filter,
         };
 
@@ -60,18 +58,30 @@ impl AquaASTBuilder {
     }
 
     pub fn validate_ast(ast: &AquaAST) -> Result<(), AquaParseError> {
-        // Validate SELECT clause
-        match &ast.select {
-            SelectClause::Column(col_ref) => {
-                Self::validate_field_reference(col_ref, &ast.from)?;
-            }
-            SelectClause::Aggregate(agg_func) => {
-                Self::validate_field_reference(&agg_func.column, &ast.from)?;
-            }
-            SelectClause::ComplexValue(col_ref, _, _) => {
-                Self::validate_field_reference(col_ref, &ast.from)?;
+
+        // Add validation to ensure there's at least one SELECT clause
+        if ast.select.is_empty() {
+            return Err(AquaParseError::InvalidInput(
+                "Query must have at least one SELECT expression".to_string()
+            ));
+        }
+
+
+        // Validate all SELECT clauses
+        for select_clause in &ast.select {
+            match select_clause {
+                SelectClause::Column(col_ref) => {
+                    Self::validate_field_reference(col_ref, &ast.from)?;
+                }
+                SelectClause::Aggregate(agg_func) => {
+                    Self::validate_field_reference(&agg_func.column, &ast.from)?;
+                }
+                SelectClause::ComplexValue(col_ref, _, _) => {
+                    Self::validate_field_reference(col_ref, &ast.from)?;
+                }
             }
         }
+
 
         // Validate stream references in joins match declared streams
         if let Some(ref join) = ast.from.join {

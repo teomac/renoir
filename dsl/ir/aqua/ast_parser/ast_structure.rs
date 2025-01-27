@@ -1,7 +1,7 @@
 #[derive(Debug, PartialEq, Clone)]
 pub struct AquaAST {
     pub from: FromClause,
-    pub select: SelectClause,
+    pub select: Vec<SelectClause>,
     pub filter: Option<WhereClause>,
 }
 

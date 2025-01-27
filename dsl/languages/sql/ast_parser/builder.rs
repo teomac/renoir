@@ -20,13 +20,29 @@ impl SqlASTBuilder {
                     
                     let select_part = inner.next()
                         .ok_or_else(|| SqlParseError::InvalidInput("Missing SELECT clause".to_string()))?;
+
+                    // Parse the select part differently based on if it's asterisk or column_list
+                    let select_clauses = match select_part.as_rule() {
+                        Rule::asterisk => {
+                            vec![SelectParser::parse(select_part)?]
+                        },
+                        Rule::column_list => {
+                            // Parse each column in the list
+                            select_part.into_inner()
+                                .map(|col| SelectParser::parse(col))
+                                .collect::<Result<Vec<_>, _>>()?
+                        },
+                        _ => return Err(SqlParseError::InvalidInput("Invalid SELECT clause".to_string())),
+                    };
+
+
                     let from_part = inner.next()
                         .ok_or_else(|| SqlParseError::InvalidInput("Missing FROM clause".to_string()))?;
                     
                     let where_part = inner.next();
 
                     return Ok(SqlAST {
-                        select: SelectParser::parse(select_part)?,
+                        select: select_clauses,
                         from: FromParser::parse(from_part)?,
                         filter: if let Some(where_expr) = where_part {
                             if where_expr.as_rule() == Rule::where_expr {

@@ -1,6 +1,6 @@
 #[derive(Debug, PartialEq, Clone)]
 pub struct SqlAST {
-    pub select: SelectClause,
+    pub select: Vec<SelectClause>,
     pub from: FromClause,
     pub filter: Option<WhereClause>, // Made optional
 }

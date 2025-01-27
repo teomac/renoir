@@ -7,7 +7,7 @@ use crate::dsl::ir::aqua::ast_parser::Rule;
 pub struct SinkParser;
 
 impl SinkParser {
-    pub fn parse(pair: Pair<Rule>) -> Result<SelectClause, AquaParseError> {
+    pub fn parse(pair: Pair<Rule>) -> Result<Vec<SelectClause>, AquaParseError> {
         let mut inner = pair.into_inner();
         
         // Skip the 'select' keyword if present
@@ -18,24 +18,39 @@ impl SinkParser {
         let sink_expr = inner.next()
             .ok_or_else(|| AquaParseError::InvalidInput("Missing sink expression".to_string()))?;
 
-        let selection = match sink_expr.as_rule() {
-            Rule::identifier | Rule::qualified_column | Rule::asterisk => {
-                let col_ref = Self::parse_column_ref(sink_expr)?;
-                SelectClause::Column(col_ref)
-            },
-            Rule::aggregate_expr => {
-                Self::parse_aggregate(sink_expr)?
-            },
-            Rule::complex_op => {
-                Self::parse_complex_expression(sink_expr)?
-            },
-            _ => return Err(AquaParseError::InvalidInput(
-                format!("Invalid sink expression: {:?}", sink_expr.as_rule())
-            )),
-        };
-
-        Ok(selection)
-    }
+            match sink_expr.as_rule() {
+                Rule::asterisk => {
+                    Ok(vec![SelectClause::Column(ColumnRef {
+                        table: None,
+                        column: "*".to_string(),
+                    })])
+                },
+                Rule::column_list => {
+                    // Parse each column in the list
+                    sink_expr.into_inner()
+                        .map(|column| {
+                            match column.as_rule() {
+                                Rule::identifier | Rule::qualified_column => {
+                                    Ok(SelectClause::Column(Self::parse_column_ref(column)?))
+                                },
+                                Rule::aggregate_expr => {
+                                    Ok(Self::parse_aggregate(column)?)
+                                },
+                                Rule::complex_op => {
+                                    Ok(Self::parse_complex_expression(column)?)
+                                },
+                                _ => Err(AquaParseError::InvalidInput(
+                                    format!("Invalid column expression: {:?}", column.as_rule())
+                                )),
+                            }
+                        })
+                        .collect()
+                },
+                _ => Err(AquaParseError::InvalidInput(
+                    format!("Invalid sink expression: {:?}", sink_expr.as_rule())
+                )),
+            }
+        }
 
     fn parse_column_ref(pair: Pair<Rule>) -> Result<ColumnRef, AquaParseError> {
         match pair.as_rule() {

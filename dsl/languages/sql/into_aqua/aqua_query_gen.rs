@@ -37,15 +37,17 @@ impl SqlToAqua {
         }
 
         // SELECT clause
-        let select_str = match &sql_ast.select.selection {
+        // SELECT clause - handle multiple columns
+        let select_strs: Vec<String> = sql_ast.select.iter().map(|select_clause| {
+            match &select_clause.selection {
             SelectType::Simple(col_ref) => {
-                format!("select {}", col_ref.to_string())
+                col_ref.to_string()
             },
             SelectType::Aggregate(func, col_ref) => {
                 let agg = match func {
                     AggregateFunction::Max => "max",
                 };
-                format!("select {}({})", agg, col_ref.to_string())
+                format!("{}({})", agg, col_ref.to_string())
             },
             SelectType::ComplexValue(col_ref, op, val) => {
                 let value = match val {
@@ -54,10 +56,11 @@ impl SqlToAqua {
                     SqlLiteral::String(val) => val.clone(),
                     SqlLiteral::Boolean(val) => val.to_string(),
                 };
-                format!("select {} {} {}", col_ref.to_string(), op, value)
+                format!("{} {} {}", col_ref.to_string(), op, value)
             }
-        };
-        parts.push(select_str);
+        } }).collect();
+
+        parts.push(format!("select {}", select_strs.join(", ")));
 
         parts.join("\n")
     }

@@ -48,8 +48,10 @@ qualified_column = {
     identifier ~ "." ~ identifier
 }
 
+column_list = {(aggregate_expr | complex_op | qualified_column | identifier) ~ ("," ~ (aggregate_expr | complex_op | qualified_column | identifier))*}
 
-select_clause = { "select" ~ (aggregate_expr | complex_op | qualified_column | identifier | asterisk) }
+
+select_clause = { "select" ~ (asterisk | column_list) }
 where_clause = { "where" ~ where_conditions }
 
 // Stream definitions
