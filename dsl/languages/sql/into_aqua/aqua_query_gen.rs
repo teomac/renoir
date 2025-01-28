@@ -15,15 +15,17 @@ impl SqlToAqua {
             None => format!("from {} in input1", sql_ast.from.scan.variable),
         };
         
-        // Add JOIN if present
-        if let Some(join) = &sql_ast.from.join {
+        // iterate over join(s)
+        for (i, join) in sql_ast.from.joins.clone().unwrap().iter().enumerate() {
+            let input_num = i + 2; // input1 is used by base table, so joins start from input2
             let join_table = match &join.join_scan.alias {
                 Some(alias) => format!("{} as {}", join.join_scan.variable, alias),
                 None => join.join_scan.variable.clone(),
             };
             
-            from_str.push_str(&format!(" join {} in input2 on {} == {}", 
+            from_str.push_str(&format!(" join {} in input{} on {} == {}", 
                 join_table,
+                input_num,
                 join.join_expr.left_var,
                 join.join_expr.right_var
             ));

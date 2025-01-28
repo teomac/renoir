@@ -68,21 +68,25 @@ fn process_condition(condition: &Condition, query_object: &QueryObject) -> Strin
         ComparisonOp::NotEqual => "!=",
     };
 
+    let mut is_string: bool = false;
+
     let value = match &condition.value {
         AquaLiteral::Float(val) => format!("{:.2}", val),
         AquaLiteral::Integer(val) => val.to_string(),
-        AquaLiteral::String(val) => val.to_string(),
+        AquaLiteral::String(val) => {
+            is_string = true;
+            format!("\"{}\"", val)},
         AquaLiteral::Boolean(val) => val.to_string(),
         AquaLiteral::ColumnRef(column_ref) => convert_column_ref(&column_ref, query_object),
     };
-
 
     let table_names = query_object.get_all_table_names();
 
     if !query_object.has_join {
         return format!(
-            "x.{}.unwrap() {} {}",
+            "x.{}{}.unwrap() {} {}",
             query_object.table_to_struct.get(table_names.first().unwrap()).unwrap().get(&condition.variable.column).unwrap(),
+            if is_string { ".clone()" } else { "" },
             operator_str,
             value
         );
@@ -90,9 +94,10 @@ fn process_condition(condition: &Condition, query_object: &QueryObject) -> Strin
     else {
         let table_name = check_alias(&condition.variable.table.clone().unwrap(), query_object);
         return format!(
-            "x.{}.{}.unwrap() {} {}",
-            query_object.table_to_struct_name.get(&table_name).unwrap().chars().last().unwrap(),
+            "x{}.{}{}.unwrap() {} {}",
+            query_object.table_to_tuple_access.get(&table_name).unwrap(),
             query_object.table_to_struct.get(&table_name).unwrap().get(&condition.variable.column).unwrap(),
+            if is_string { ".clone()" } else { "" },
             operator_str,
             value
         );

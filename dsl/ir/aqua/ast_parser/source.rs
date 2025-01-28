@@ -17,35 +17,34 @@ impl SourceParser {
         let scan_expr = inner.next()
             .ok_or_else(|| AquaParseError::InvalidInput("Missing source expression".to_string()))?;
         let scan = Self::parse_scan(scan_expr)?;
+
+        let mut joins = Vec::new();
         
-        // Look for join part - in your grammar it's part of from_clause, not a separate join_expr
-        let join = if let Some(next_token) = inner.next() {
-            if next_token.as_str() == "join" {
+        while let Some(token) = inner.next() {
+            if token.as_str() == "join" {
+                // Parse the join scan
                 let join_scan_expr = inner.next()
                     .ok_or_else(|| AquaParseError::InvalidInput("Missing join stream".to_string()))?;
                 let join_scan = Self::parse_scan(join_scan_expr)?;
 
-                // Skip 'on' keyword
+                // Expect and skip 'on' keyword
                 if inner.next().map_or(true, |p| p.as_str() != "on") {
                     return Err(AquaParseError::InvalidInput("Missing ON in join clause".to_string()));
                 }
 
                 // Parse join condition
-                let condition = inner.next()
+                let condition_pair = inner.next()
                     .ok_or_else(|| AquaParseError::InvalidInput("Missing join condition".to_string()))?;
+                let condition = Self::parse_join_condition(condition_pair)?;
 
-                Some(JoinClause {
+                joins.push(JoinClause {
                     scan: join_scan,
-                    condition: Self::parse_join_condition(condition)?,
-                })
-            } else {
-                None
+                    condition,
+                });
             }
-        } else {
-            None
-        };
+        }
 
-        Ok(FromClause { scan, join })
+        Ok(FromClause { scan, joins: Some(joins) })
     }
 
     fn parse_scan(pair: Pair<Rule>) -> Result<ScanClause, AquaParseError> {

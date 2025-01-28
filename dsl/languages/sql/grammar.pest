@@ -43,7 +43,7 @@ select_expr = { ((table_column | variable ) ~ symbol ~ number) }
 join_condition = { table_column ~ "=" ~ table_column }
 
 
-from_expr = { from ~ scan_expr ~ join_expr?}
+from_expr = { from ~ scan_expr ~ join_expr* }
 scan_expr = { variable ~ (as_keyword ~ variable)? }
 join_expr = { join_kind? ~ join ~ scan_expr ~ on ~ join_condition }
 join_kind = _{ ( InnerJoinKind | LeftJoinKind ) }

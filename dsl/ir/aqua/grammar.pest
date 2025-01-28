@@ -28,7 +28,7 @@ query = {
 from_clause = { 
     "from" ~ 
     scan_expr ~
-    (join ~ scan_expr ~ on ~ join_condition)?
+    (join ~ scan_expr ~ on ~ join_condition)*
 }
 
 stream_input = @{ ('a'..'z' | "_") ~ ('a'..'z' | '0'..'9' | "_")* }

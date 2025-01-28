@@ -1,10 +1,11 @@
 use indexmap::IndexMap;
 
-use crate::dsl::ir::aqua::{AquaAST, ColumnRef};
+use crate::dsl::ir::aqua::{ast_structure::JoinClause, AquaAST, ColumnRef};
 
 #[derive(Clone)]
 pub struct QueryObject {
     pub has_join: bool, // true if the query has a join
+    pub joined_tables: Vec<String>, // list of joined tables
     pub table_names_list: Vec<String>, // list of table names
     pub field_lists: Vec<Vec<(String, String)>>, // list of field lists (eg. [("int1", "i64"), ("float1", "f64")]
 
@@ -12,6 +13,7 @@ pub struct QueryObject {
     pub table_to_csv: IndexMap<String, String>,  // key: table name, value: csv file path
     pub table_to_struct: IndexMap<String, IndexMap<String, String>>,  // key: table name, value: HashMap of column name and data type 
     pub table_to_struct_name: IndexMap<String, String>,   // key: table name, value: struct name
+    pub table_to_tuple_access: IndexMap<String, String>, // key: table name, value: tuple field access
     pub renoir_string: String, // renoir final string
 }
 
@@ -20,6 +22,7 @@ impl QueryObject {
     pub fn new() -> Self {
         QueryObject {
             has_join: false,
+            joined_tables: Vec::new(),
             table_names_list: Vec::new(),
             field_lists: Vec::new(),
 
@@ -27,6 +30,7 @@ impl QueryObject {
             table_to_csv: IndexMap::new(),
             table_to_struct: IndexMap::new(),
             table_to_struct_name: IndexMap::new(),
+            table_to_tuple_access: IndexMap::new(),
             renoir_string: String::new(),
         }
     }
@@ -89,31 +93,50 @@ impl QueryObject {
 
     }
 
-    pub fn populate(mut self, aqua_ast: &AquaAST, csv_paths: &Vec<String>, hash_maps: &Vec<IndexMap<String, String>>) -> Self {
-        
-        self.has_join = aqua_ast.from.join.is_some();
-    
-        let main_table = aqua_ast.from.scan.stream_name.clone();
+    pub fn update_tuple_access(&mut self, map: &IndexMap<String, String>) {
+        self.table_to_tuple_access = map.clone();
+    }
 
+    pub fn populate(mut self, aqua_ast: &AquaAST, csv_paths: &Vec<String>, hash_maps: &Vec<IndexMap<String, String>>) -> Self {
+        let mut joins_vec: Vec<JoinClause> = Vec::new();
+
+        // Check if query has join
+        match &aqua_ast.from.joins {
+            Some(joins) => {
+                self.has_join = true;
+                joins_vec = joins.clone();
+
+            },
+            None => {
+                self.has_join = false;
+            }
+        }
+    
+        // Add main table
+        let main_table = aqua_ast.from.scan.stream_name.clone();
         self.table_names_list.push(main_table.clone());
         
         if let Some(alias) = &aqua_ast.from.scan.alias {
             self.table_to_alias.insert(main_table.clone(), alias.to_string());
         }
     
-        if let Some(join) = &aqua_ast.from.join {
+        // Add all joined tables
+        for join in &joins_vec {
             let join_table = join.scan.stream_name.clone();
+            self.joined_tables.push(join_table.clone());
             self.table_names_list.push(join_table.clone());
             if let Some(join_alias) = &join.scan.alias {
                 self.table_to_alias.insert(join_table.clone(), join_alias.clone());
             }
         }
     
+        // Collect all table names in order
         let mut table_names = vec![main_table.clone()];
-        if let Some(join) = &aqua_ast.from.join {
+        for join in &joins_vec {
             table_names.push(join.scan.stream_name.clone());
         }
     
+        // Process paths
         let paths: Vec<String> = csv_paths.iter().map(|path| {
             std::env::current_dir()
                 .unwrap()
@@ -122,6 +145,7 @@ impl QueryObject {
                 .replace('\\', "/")
         }).collect();
     
+        // Validate input counts
         assert_eq!(
             table_names.len(), 
             paths.len(), 
@@ -137,6 +161,7 @@ impl QueryObject {
             hash_maps.len()
         );
     
+        // Set up mappings for each table
         for i in 0..table_names.len() {
             let table = &table_names[i];
             let path = &paths[i];
@@ -150,6 +175,4 @@ impl QueryObject {
         println!("table to struct name: {:?}", self.table_to_struct_name);
         self
     }
-
 }
-

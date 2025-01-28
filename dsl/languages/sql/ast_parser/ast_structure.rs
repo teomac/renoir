@@ -26,7 +26,7 @@ pub enum AggregateFunction {
 #[derive(Debug, PartialEq, Clone)] 
 pub struct FromClause {
     pub scan: ScanClause,
-    pub join: Option<JoinClause>,
+    pub joins: Option<Vec<JoinClause>>,
 }
 
 #[derive(Debug, PartialEq, Clone)] 

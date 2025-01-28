@@ -83,13 +83,14 @@ impl AquaASTBuilder {
         }
 
 
-        // Validate stream references in joins match declared streams
-        if let Some(ref join) = ast.from.join {
-            let main_stream = &ast.from.scan.stream_name;
-            let main_alias = ast.from.scan.alias.as_ref().unwrap_or(main_stream);
+        // Validate stream references in all joins
+        let main_stream = &ast.from.scan.stream_name;
+        let main_alias = ast.from.scan.alias.as_ref().unwrap_or(main_stream);
+
+        for join in &ast.from.joins.clone().unwrap() {
             let joined_stream = &join.scan.stream_name;
             let joined_alias = join.scan.alias.as_ref().unwrap_or(joined_stream);
-    
+
             let left_stream = join.condition.left_col.table.as_ref()
                 .ok_or_else(|| AquaParseError::InvalidInput(
                     "Join condition must use fully qualified field names".to_string()
@@ -98,11 +99,12 @@ impl AquaASTBuilder {
                 .ok_or_else(|| AquaParseError::InvalidInput(
                     "Join condition must use fully qualified field names".to_string()
                 ))?;
-    
-            if !((left_stream == main_stream || left_stream == main_alias) && 
-                 (right_stream == joined_stream || right_stream == joined_alias) ||
-                (left_stream == joined_stream || left_stream == joined_alias) && 
-                 (right_stream == main_stream || right_stream == main_alias)) {
+
+            // For each join, check if the join condition references valid tables/aliases
+            let valid_refs = (left_stream != right_stream) &&
+                (right_stream == joined_stream || right_stream == joined_alias);
+
+            if !valid_refs {
                 return Err(AquaParseError::InvalidInput(
                     format!("Join condition references invalid streams: {}.{} = {}.{}",
                         left_stream,
@@ -124,21 +126,27 @@ impl AquaASTBuilder {
 
     fn validate_field_reference(col_ref: &ColumnRef, from_clause: &FromClause) -> Result<(), AquaParseError> {
         if let Some(ref stream) = col_ref.table {
-            // Check against both table names and aliases
+            // Check against main table name and alias
             let scan_valid = stream == &from_clause.scan.stream_name 
                 || stream == from_clause.scan.alias.as_ref().unwrap_or(&from_clause.scan.stream_name);
 
-            let join_valid = from_clause.join.as_ref().map_or(false, |join| {
+            // Check against all joined table names and aliases
+            let join_valid = from_clause.joins.clone().unwrap().iter().any(|join| {
                 stream == &join.scan.stream_name 
                 || stream == join.scan.alias.as_ref().unwrap_or(&join.scan.stream_name)
             });
 
             if !scan_valid && !join_valid {
+                let available_streams = from_clause.joins.clone().unwrap().iter()
+                    .map(|j| j.scan.stream_name.clone())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+
                 return Err(AquaParseError::InvalidInput(
                     format!("Reference to undefined stream: {} (available streams: {}, {})", 
                         stream,
                         from_clause.scan.stream_name,
-                        from_clause.join.as_ref().map_or("".to_string(), |j| j.scan.stream_name.clone())
+                        available_streams
                     )
                 ));
             }
@@ -154,10 +162,8 @@ impl AquaASTBuilder {
             AquaLiteral::ColumnRef(ref col_ref) => {
                 Self::validate_field_reference(col_ref, from_clause)?;
             },
-            AquaLiteral::Boolean(_) => {}, // Boolean literals are always valid
-            AquaLiteral::Integer(_) => {}, // Integer literals are always valid
-            AquaLiteral::Float(_) => {}, // Float literals are always valid
-            AquaLiteral::String(_) => {}, // String literals are always valid
+            // Other literal types are always valid
+            _ => {},
         }
 
         // Recursively validate next condition if it exists

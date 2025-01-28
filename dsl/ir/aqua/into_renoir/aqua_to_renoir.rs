@@ -3,7 +3,7 @@ use crate::dsl::{ir::aqua::{ast_parser::ast_structure::AquaAST, into_renoir::{r_
 pub struct AquaToRenoir;
 
 impl AquaToRenoir {
-    pub fn convert(ast: &AquaAST, query_object: &QueryObject) -> String {
+    pub fn convert(ast: &AquaAST, query_object: &mut QueryObject) -> String {
 
 
         let mut final_string = String::new();
@@ -11,7 +11,7 @@ impl AquaToRenoir {
         let from_clause = &ast.from; 
         final_string.push_str(&format!(
             "{}",
-            process_from_clause(&from_clause, &query_object)
+            process_from_clause(&from_clause, query_object)
         ));
 
         if let Some(where_clause) = &ast.filter {

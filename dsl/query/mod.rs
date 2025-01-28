@@ -99,11 +99,6 @@ pub fn query_csv(query_str: &String, output_path: &str, csv_path: &Vec<String>, 
             .collect()
     })
     .collect();
-
-    // debug print hash_maps
-    for hash_map in &hash_maps {
-        println!("AAAAAAAAAAAAAAAAAAAAAAAAAA{:?}", hash_map);
-    }
     
     // step 3: parse the query
     let aqua_query = sql_to_aqua(query_str);
@@ -111,7 +106,7 @@ pub fn query_csv(query_str: &String, output_path: &str, csv_path: &Vec<String>, 
     query_object = query_object.populate(&aqua_ast, &csv_path, &hash_maps);
     
     // step 4: convert aqua AST to renoir string
-    let renoir_string = aqua_ast_to_renoir(&aqua_ast, &query_object);
+    let renoir_string = aqua_ast_to_renoir(&aqua_ast, &mut query_object);
     query_object.set_renoir_string(&renoir_string);
 
 

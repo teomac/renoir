@@ -24,7 +24,12 @@ pub fn convert_column_ref(column_ref: &ColumnRef, query_object: &QueryObject) ->
 
         let col = query_object.table_to_struct.get(&table_name).unwrap().get(&column_ref.column).unwrap();
         let i = query_object.table_to_struct_name.get(&table_name).unwrap().chars().last().unwrap();
-        format!("x.{}.{}.unwrap()", i, col)
+        if !query_object.has_join {
+            return format!("x.{}.{}.unwrap()", i, col)
+        } else {
+            return format!("x{}.{}.unwrap()", query_object.table_to_tuple_access.get(&table_name).unwrap(), col)
+        }
+        
     }
     
 }
