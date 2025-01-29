@@ -92,6 +92,8 @@ impl SinkParser {
             "max" => AggregateType::Max,
             "min" => AggregateType::Min,
             "avg" => AggregateType::Avg,
+            "sum" => AggregateType::Sum,
+            "count" => AggregateType::Count,
             unknown => return Err(AquaParseError::InvalidInput(
                 format!("Unknown aggregate function: {}", unknown)
             )),

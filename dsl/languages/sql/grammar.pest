@@ -17,8 +17,8 @@ symbol = @{ ("^"| "+" | "-" | "*" | "/")}
 
 
 // Aggregate function definition
-agg_function = { ^"MAX" }
-aggregate_expr = { agg_function ~ "(" ~ variable ~ ")" }
+agg_function = { ("MAX" | "MIN" | "AVG" | "SUM" | "COUNT") }
+aggregate_expr = { agg_function ~ "(" ~ (table_column | variable) ~ ")" }
 
 operator = @{ ">=" | "<=" | "!=" | "<>" | ">" | "<" | "=" }
 

@@ -68,6 +68,10 @@ impl SelectParser {
             .as_str() 
         {
             "MAX" => AggregateFunction::Max,
+            "MIN" => AggregateFunction::Min,
+            "SUM" => AggregateFunction::Sum,
+            "COUNT" => AggregateFunction::Count,
+            "AVG" => AggregateFunction::Avg,
             _ => return Err(SqlParseError::InvalidInput("Unknown aggregate function".to_string())),
         };
         

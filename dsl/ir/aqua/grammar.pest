@@ -61,8 +61,8 @@ stream_type = { "Stream" }
 complex_op = {(qualified_column | identifier) ~ symbol ~ (identifier | number) }
 
 // Aggregate expressions
-aggregate_expr = { aggregate_func ~ "(" ~ identifier ~ ")" }
-aggregate_func = { "max" | "min" | "avg" }
+aggregate_expr = { aggregate_func ~ "(" ~ (qualified_column | identifier) ~ ")" }
+aggregate_func = { "max" | "min" | "avg" | "count" | "sum" }
 
 // Binary logical operators
 binary_op = { 

@@ -43,7 +43,7 @@ pub struct AggregateFunction {
     pub column: ColumnRef,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
 pub struct ColumnRef {
     pub table: Option<String>,
     pub column: String,
@@ -54,6 +54,8 @@ pub enum AggregateType {
     Max,
     Min,
     Avg,
+    Count,
+    Sum,
 }
 
 #[derive(Debug, PartialEq, Clone)]

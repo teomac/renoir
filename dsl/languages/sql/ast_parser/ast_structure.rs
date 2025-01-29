@@ -21,6 +21,10 @@ pub enum SelectType {
 #[derive(Debug, PartialEq, Clone)]
 pub enum AggregateFunction {
     Max,
+    Min,
+    Avg,
+    Count,
+    Sum,
 }
 
 #[derive(Debug, PartialEq, Clone)] 

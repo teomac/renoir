@@ -48,6 +48,10 @@ impl SqlToAqua {
             SelectType::Aggregate(func, col_ref) => {
                 let agg = match func {
                     AggregateFunction::Max => "max",
+                    AggregateFunction::Min => "min",
+                    AggregateFunction::Sum => "sum",
+                    AggregateFunction::Avg => "avg",
+                    AggregateFunction::Count => "count",
                 };
                 format!("{}({})", agg, col_ref.to_string())
             },

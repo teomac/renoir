@@ -8,6 +8,7 @@ pub struct QueryObject {
     pub joined_tables: Vec<String>, // list of joined tables
     pub table_names_list: Vec<String>, // list of table names
     pub field_lists: Vec<Vec<(String, String)>>, // list of field lists (eg. [("int1", "i64"), ("float1", "f64")]
+    pub projections: IndexMap<ColumnRef, String>, // key: columnRef, value: aggregation type (None if no aggregation)
 
     pub table_to_alias: IndexMap<String, String>,    // key: table name, value: alias
     pub table_to_csv: IndexMap<String, String>,  // key: table name, value: csv file path
@@ -25,6 +26,7 @@ impl QueryObject {
             joined_tables: Vec::new(),
             table_names_list: Vec::new(),
             field_lists: Vec::new(),
+            projections: IndexMap::new(),
 
             table_to_alias: IndexMap::new(),
             table_to_csv: IndexMap::new(),
@@ -37,6 +39,10 @@ impl QueryObject {
 
     pub fn get_alias(&self, table: &str) -> Option<&String> {
         self.table_to_alias.get(table)
+    }
+
+    pub fn get_table_from_alias(&self, alias: &str) -> Option<&String> {
+        self.table_to_alias.iter().find(|(_, v)| v == &alias).map(|(k, _)| k)
     }
 
     pub fn get_csv(&self, table: &str) -> Option<&String> {
@@ -72,10 +78,17 @@ impl QueryObject {
     }
 
     pub fn get_type(&self, column: &ColumnRef) -> String {
-        let tab;
+        let mut tab;
         match &column.table {
             Some(table) => tab = table.clone(),
             None => tab = self.get_all_table_names().first().unwrap().clone(),
+        }
+
+        let table_name = self.get_table_from_alias(&tab);
+
+        match table_name {
+            Some(name) => tab = name.clone(),
+            None => {}
         }
 
         let field = &column.column;
@@ -95,6 +108,10 @@ impl QueryObject {
 
     pub fn update_tuple_access(&mut self, map: &IndexMap<String, String>) {
         self.table_to_tuple_access = map.clone();
+    }
+
+    pub fn insert_projection(&mut self, column_ref: &ColumnRef, agg_type: &str) {
+        self.projections.insert(column_ref.clone(), agg_type.to_string());
     }
 
     pub fn populate(mut self, aqua_ast: &AquaAST, csv_paths: &Vec<String>, hash_maps: &Vec<IndexMap<String, String>>) -> Self {

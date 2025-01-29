@@ -22,7 +22,7 @@ impl AquaToRenoir {
         }
 
         // Process all select clauses together
-        final_string.push_str(&process_select_clauses(&ast.select, &query_object));
+        final_string.push_str(&process_select_clauses(&ast.select, query_object));
         
         
     
