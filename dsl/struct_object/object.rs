@@ -8,7 +8,7 @@ pub struct QueryObject {
     pub joined_tables: Vec<String>, // list of joined tables
     pub table_names_list: Vec<String>, // list of table names
     pub field_lists: Vec<Vec<(String, String)>>, // list of field lists (eg. [("int1", "i64"), ("float1", "f64")]
-    pub projections: IndexMap<ColumnRef, String>, // key: columnRef, value: aggregation type (None if no aggregation)
+    pub projections: Vec<(ColumnRef, String)>, // list of projections (column reference, operation)
 
     pub table_to_alias: IndexMap<String, String>,    // key: table name, value: alias
     pub table_to_csv: IndexMap<String, String>,  // key: table name, value: csv file path
@@ -26,7 +26,7 @@ impl QueryObject {
             joined_tables: Vec::new(),
             table_names_list: Vec::new(),
             field_lists: Vec::new(),
-            projections: IndexMap::new(),
+            projections: Vec::new(),
 
             table_to_alias: IndexMap::new(),
             table_to_csv: IndexMap::new(),
@@ -111,7 +111,7 @@ impl QueryObject {
     }
 
     pub fn insert_projection(&mut self, column_ref: &ColumnRef, agg_type: &str) {
-        self.projections.insert(column_ref.clone(), agg_type.to_string());
+        self.projections.push((column_ref.clone(), agg_type.to_string()));
     }
 
     pub fn populate(mut self, aqua_ast: &AquaAST, csv_paths: &Vec<String>, hash_maps: &Vec<IndexMap<String, String>>) -> Self {

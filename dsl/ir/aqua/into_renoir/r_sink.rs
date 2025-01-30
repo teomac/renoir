@@ -34,10 +34,10 @@ pub fn process_select_clauses(
     }
 
     // Start building the map expression
-    let mut map_internals = String::new();
+    let _map_internals = String::new();
 
     // Process each select clause
-    for (i, clause) in select_clauses.iter().enumerate() {
+    for (_i, clause) in select_clauses.iter().enumerate() {
         match clause {
             SelectClause::Column(col_ref) => {
                 query_object.insert_projection(&col_ref, "");
@@ -102,8 +102,9 @@ fn create_map_string(query_object: &QueryObject) -> String {
         .iter()
         .any(|(_, op)| matches!(op.as_str(), "Max" | "Min" | "Avg" | "Sum" | "Count"));
 
+    let mut has_avg = false;
+
     if has_aggregates {
-        // First create the fold string - this will be our final output
         let mut final_string = String::new();
 
         // Check if we have only one projection and it's an aggregate
@@ -129,6 +130,14 @@ fn create_map_string(query_object: &QueryObject) -> String {
             final_string.push_str(&convert_column_ref(col_ref, query_object));
             final_string.push_str(".unwrap()");
 
+            if operation.as_str() == "Avg" {
+                has_avg = true;
+
+                final_string.push_str(", ");
+                final_string.push_str(&convert_column_ref(col_ref, query_object));
+                final_string.push_str(".unwrap()");
+            }
+
             // Add any complex operations (but not aggregates)
             if !matches!(
                 operation.as_str(),
@@ -144,16 +153,40 @@ fn create_map_string(query_object: &QueryObject) -> String {
         final_string.push(')');
 
         // Get tuple type for fold accumulator
-        let type_declarations = query_object
+        let mut type_declarations = query_object
             .projections
             .iter()
-            .map(|(col_ref, op)| query_object.get_type(&col_ref))
-            .collect::<Vec<String>>();
+            .map(|(col_ref, op)| (query_object.get_type(&col_ref), op.clone()))
+            .collect::<Vec<(String, String)>>();
 
         let type_str = if is_single_aggregate {
-            type_declarations[0].clone()
+            type_declarations[0].0.clone().to_string()
         } else {
-            format!("({})", type_declarations.join(", "))
+            let mut temp = String::new();
+            let mut temp2:Vec<((String, String), usize)>= Vec::new();
+            for i in 0..type_declarations.len() {
+                if type_declarations[i].1 == "Avg" {
+                    temp2.push(((type_declarations[i].0.clone(), "Avg".to_string()), i));
+                }
+                if i == 0 {
+                    temp.push_str(&format!("({} ", type_declarations[i].0));
+                    if type_declarations[i].1 == "Avg" {
+                        temp.push_str(&format!(",{} ", type_declarations[i].0));
+                    }
+                } else {
+                    temp.push_str(&format!(",{} ", type_declarations[i].0));
+                    if type_declarations[i].1 == "Avg" {
+                        temp.push_str(&format!(",{} ", type_declarations[i].0));
+                    }
+                }
+            }
+            temp.push(')');
+            if !temp2.is_empty() {
+                for temp2 in temp2.iter() {
+                    type_declarations.insert(temp2.1, temp2.0.clone());
+                }
+            }
+            temp
         };
 
         // Add fold operation
@@ -165,7 +198,7 @@ fn create_map_string(query_object: &QueryObject) -> String {
         // Initialize with first values case
         final_string.push_str("\n            None => *acc = Some((");
 
-        for i in 0..query_object.projections.len() {
+        for i in 0..type_declarations.len() {
             if i > 0 {
                 final_string.push_str(", ");
             }
@@ -185,7 +218,7 @@ fn create_map_string(query_object: &QueryObject) -> String {
         }
         // Declare variables for accumulated values
         let mut acc_vars = Vec::new();
-        for i in 0..query_object.projections.len() {
+        for i in 0..type_declarations.len() {
             if i > 0 {
                 final_string.push_str(", ");
             }
@@ -200,6 +233,12 @@ fn create_map_string(query_object: &QueryObject) -> String {
             final_string.push('(');
         }
 
+        let mut type_declarations2 = type_declarations.clone();
+        println!("AAAAAAA{:?}", type_declarations2);
+
+        
+        // index that increments in the same way as i. if we have an average, it increments by one more
+        let mut k:usize = 0;
         // Process each projection
         for (i, (_, operation)) in query_object.projections.iter().enumerate() {
             if i > 0 {
@@ -209,41 +248,105 @@ fn create_map_string(query_object: &QueryObject) -> String {
             let x_value = if is_single_aggregate {
                 "x"
             } else {
-                &format!("x.{}", i)
+                &format!("x.{}", k)
             };
 
             match operation.as_str() {
                 "Max" => final_string.push_str(&format!(
                     "{}::max(*acc{}, {})",
-                    type_declarations[i], i, x_value
+                    type_declarations2[i].0, k, x_value
                 )),
                 "Min" => final_string.push_str(&format!(
                     "{}::min(*acc{}, {})",
-                    type_declarations[i], i, x_value
+                    type_declarations2[i].0, k, x_value
                 )),
-                "Sum" => final_string.push_str(&format!("*acc{} + {}", i, x_value)),
+                "Sum" => final_string.push_str(&format!("*acc{} + {}", k, x_value)),
                 "Count" => {
                     if final_string.contains("None =>") {
-                        final_string = final_string.replace(&format!("x.{}", i), "1.0");
+                        final_string = final_string.replace(&format!("x.{}", k), "1.0");
                     }
-                    final_string.push_str(&format!("*acc{} + 1.0", i));
+                    final_string.push_str(&format!("*acc{} + 1.0", k));
                 }
                 "Avg" => {
-                    //TODO
-                    unreachable!();
+                    // first, we push the sum
+                    final_string.push_str(&format!("*acc{} + {}", k, x_value));
+                    // then, we push the count
+                    if final_string.contains("None =>") {
+                        final_string = final_string.replace(&format!("x.{}", k + 1), "1.0");
+                    }
+                    final_string.push_str(&format!(", *acc{} + 1.0", k + 1));
+
+                    type_declarations2.remove(i + 1);
+
+                    k += 1;
                 }
-                _ => final_string.push_str(&format!("*acc{}", i)), // Non-aggregated columns keep original value
+                _ => final_string.push_str(&format!("*acc{}", k)), // Non-aggregated columns keep original value
             }
+            k += 1;
         }
+        k = 0;
 
         if !is_single_aggregate {
             final_string.push(')');
         }
         final_string.push_str(");\n            }\n        }})");
 
+        if has_avg {
+            // Add another map to calculate averages
+            final_string.push_str(".map(|x| match x {");
+            final_string.push_str("\n        Some(");
+
+            // If we have only one average operation
+            if query_object.projections.len() == 1 && query_object.projections[0].1 == "Avg" {
+                final_string.push_str("(sum, count)");
+                final_string.push_str(") => Some(sum / count),");
+            } else {
+                // For multiple columns where some might be averages
+                final_string.push('(');
+
+                let mut current_pos = 0;
+                for (i, (_, operation)) in query_object.projections.iter().enumerate() {
+                    if i > 0 {
+                        final_string.push_str(", ");
+                    }
+
+                    if operation == "Avg" {
+                        final_string.push_str(&format!("sum{}, count{}", current_pos, current_pos));
+                        current_pos += 1;
+                    } else {
+                        final_string.push_str(&format!("val{}", current_pos));
+                        current_pos += 1;
+                    }
+                }
+
+                final_string.push_str(")");
+                final_string.push_str(") => Some((");
+
+                current_pos = 0;
+                for (i, (_, operation)) in query_object.projections.iter().enumerate() {
+                    if i > 0 {
+                        final_string.push_str(", ");
+                    }
+
+                    if operation == "Avg" {
+                        final_string
+                            .push_str(&format!("sum{} / count{}", current_pos, current_pos));
+                        current_pos += 1;
+                    } else {
+                        final_string.push_str(&format!("val{}", current_pos));
+                        current_pos += 1;
+                    }
+                }
+
+                final_string.push_str(")),");
+            }
+
+            final_string.push_str("\n        None => None,");
+            final_string.push_str("\n    })");
+        }
+
         final_string
     } else {
-        // Rest of the code for non-aggregate case remains the same...
         let mut map_string = String::from(".map(|x| (");
 
         for (i, (col_ref, operation)) in query_object.projections.iter().enumerate() {
@@ -259,6 +362,7 @@ fn create_map_string(query_object: &QueryObject) -> String {
             }
         }
         map_string.push_str(")");
+
         map_string
     }
 }

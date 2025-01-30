@@ -80,7 +80,7 @@ impl AquaASTBuilder {
 
         // Validate stream references in all joins
         let main_stream = &ast.from.scan.stream_name;
-        let main_alias = ast.from.scan.alias.as_ref().unwrap_or(main_stream);
+        let _main_alias = ast.from.scan.alias.as_ref().unwrap_or(main_stream);
 
         if !ast.from.joins.is_none() {
             for join in &ast.from.joins.clone().unwrap() {
