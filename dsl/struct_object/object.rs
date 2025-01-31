@@ -106,15 +106,7 @@ impl QueryObject {
         let field = &column.column;
         let str = self.get_struct_field(&tab, field).unwrap().to_string();
 
-        if str.contains("int") {
-            "i64".to_string()
-        } else if str.contains("float") {
-            "f64".to_string()
-        } else if str.contains("bool") {
-            "bool".to_string()
-        } else {
-            "String".to_string()
-        }
+        str
 
     }
 
