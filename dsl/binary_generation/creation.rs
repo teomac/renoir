@@ -162,8 +162,11 @@ pub fn generate_struct_declarations(
     struct_names: &Vec<String>,
     query_object: &QueryObject
 ) -> String {
+
+    //Part1: generate struct definitions for input tables
+
     // Use iterators to zip through table_names, struct_names, and field_lists to maintain order
-    table_names.iter()
+    let mut result:String = table_names.iter()
         .enumerate()
         .map(|(i, _table_name)| {
             // Generate struct definition
@@ -183,5 +186,22 @@ pub fn generate_struct_declarations(
             
             struct_def
         })
-        .collect()
+        .collect();
+    
+
+    //Part2: generate struct definitions for output tables
+    result.push_str("#[derive(Clone, Debug, Serialize, Deserialize, PartialOrd, PartialEq, Default)]\n");
+    result.push_str("struct OutputStruct {\n");
+    
+    // Add fields from result_column_to_input
+    for (result_col, (result_type, _, _)) in &query_object.result_column_to_input {
+        result.push_str(&format!("    {}: Option<{}>,\n", result_col, result_type));
+    }
+    
+    result.push_str("}\n");
+
+
+
+    //return the result
+    result
 }

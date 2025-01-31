@@ -18,7 +18,7 @@ symbol = @{ ("^"| "+" | "-" | "*" | "/")}
 
 // Aggregate function definition
 agg_function = { ("MAX" | "MIN" | "AVG" | "SUM" | "COUNT") }
-aggregate_expr = { agg_function ~ "(" ~ (table_column | variable) ~ ")" }
+aggregate_expr = { agg_function ~ "(" ~ (asterisk | table_column | variable) ~ ")" }
 
 operator = @{ ">=" | "<=" | "!=" | "<>" | ">" | "<" | "=" }
 
@@ -36,7 +36,9 @@ condition = { (table_column | variable) ~ operator ~ (table_column | variable | 
 where_conditions = { condition ~ (binary_op ~ condition)* }
 where_expr = { where_keyword ~ where_conditions }
 
-column_list = { (aggregate_expr | select_expr | table_column | variable) ~ ("," ~ (aggregate_expr | select_expr | table_column | variable))* }
+column_item = { aggregate_expr | select_expr | table_column | variable }
+column_with_alias = { column_item ~ (as_keyword ~ variable)? }
+column_list = { column_with_alias ~ ("," ~ column_with_alias)* }
 select_expr = { ((table_column | variable ) ~ symbol ~ number) }
 
 

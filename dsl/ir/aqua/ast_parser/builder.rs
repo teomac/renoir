@@ -63,24 +63,27 @@ impl AquaASTBuilder {
             ));
         }
 
+        // Validate all SELECT clauses and check for duplicate aliases
+        let mut used_aliases = std::collections::HashSet::new();
+
         // Validate all SELECT clauses
         for select_clause in &ast.select {
             match select_clause {
-                SelectClause::Column(col_ref) => {
+                SelectClause::Column(col_ref, alias) => {
                     Self::validate_field_reference(col_ref, &ast.from)?;
+                    Self::validate_alias(alias, &mut used_aliases)?;
                 }
-                SelectClause::Aggregate(agg_func) => {
+                SelectClause::Aggregate(agg_func, alias) => {
                     Self::validate_field_reference(&agg_func.column, &ast.from)?;
+                    Self::validate_alias(alias, &mut used_aliases)?;
                 }
-                SelectClause::ComplexValue(col_ref, _, _) => {
+                SelectClause::ComplexValue(col_ref, _, _, alias) => {
                     Self::validate_field_reference(col_ref, &ast.from)?;
+                    Self::validate_alias(alias, &mut used_aliases)?;
                 }
             }
         }
 
-        // Validate stream references in all joins
-        let main_stream = &ast.from.scan.stream_name;
-        let _main_alias = ast.from.scan.alias.as_ref().unwrap_or(main_stream);
 
         if !ast.from.joins.is_none() {
             for join in &ast.from.joins.clone().unwrap() {
@@ -121,6 +124,22 @@ impl AquaASTBuilder {
 
         Ok(())
     }
+
+    // New helper function to validate aliases
+    fn validate_alias(
+        alias: &Option<String>,
+        used_aliases: &mut std::collections::HashSet<String>
+    ) -> Result<(), AquaParseError> {
+        if let Some(alias_name) = alias {
+            if !used_aliases.insert(alias_name.clone()) {
+                return Err(AquaParseError::InvalidInput(
+                    format!("Duplicate alias name: {}", alias_name)
+                ));
+            }
+        }
+        Ok(())
+    }
+    
 
     fn validate_field_reference(
         col_ref: &ColumnRef,

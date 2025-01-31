@@ -48,7 +48,20 @@ qualified_column = {
     identifier ~ "." ~ identifier
 }
 
-column_list = {(aggregate_expr | complex_op | qualified_column | identifier) ~ ("," ~ (aggregate_expr | complex_op | qualified_column | identifier))*}
+complex_op = {(qualified_column | identifier) ~ symbol ~ (identifier | number) }
+
+// Aggregate expressions
+aggregate_expr = { aggregate_func ~ "(" ~ (asterisk |qualified_column | identifier) ~ ")" }
+aggregate_func = { "max" | "min" | "avg" | "count" | "sum" }
+
+column_list = {
+    column_item ~ ("," ~ column_item)*
+}
+
+column_item = {
+    (aggregate_expr | complex_op | qualified_column | identifier) ~
+    (as_keyword ~ identifier)?
+}
 
 
 select_clause = { "select" ~ (asterisk | column_list) }
@@ -58,11 +71,6 @@ where_clause = { "where" ~ where_conditions }
 stream_identifier = @{ ('a'..'z' | "_") ~ ('a'..'z' | '0'..'9' | "_")* }
 stream_type = { "Stream" }
 
-complex_op = {(qualified_column | identifier) ~ symbol ~ (identifier | number) }
-
-// Aggregate expressions
-aggregate_expr = { aggregate_func ~ "(" ~ (qualified_column | identifier) ~ ")" }
-aggregate_func = { "max" | "min" | "avg" | "count" | "sum" }
 
 // Binary logical operators
 binary_op = { 

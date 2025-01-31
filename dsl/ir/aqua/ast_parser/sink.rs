@@ -18,39 +18,60 @@ impl SinkParser {
         let sink_expr = inner.next()
             .ok_or_else(|| AquaParseError::InvalidInput("Missing sink expression".to_string()))?;
 
-            match sink_expr.as_rule() {
-                Rule::asterisk => {
-                    Ok(vec![SelectClause::Column(ColumnRef {
-                        table: None,
-                        column: "*".to_string(),
-                    })])
-                },
-                Rule::column_list => {
-                    // Parse each column in the list
-                    sink_expr.into_inner()
-                        .map(|column| {
-                            match column.as_rule() {
-                                Rule::identifier | Rule::qualified_column => {
-                                    Ok(SelectClause::Column(Self::parse_column_ref(column)?))
+        match sink_expr.as_rule() {
+            Rule::asterisk => {
+                Ok(vec![SelectClause::Column(ColumnRef {
+                    table: None,
+                    column: "*".to_string(),
+                }, None)])
+            },
+            Rule::column_list => {
+                sink_expr.into_inner()
+                    .map(|column_item| {
+                        let mut inner_pairs = column_item.into_inner();
+                        
+                        // Get the main expression
+                        let expr = inner_pairs.next()
+                            .ok_or_else(|| AquaParseError::InvalidInput("Missing column expression".to_string()))?;
+
+                        // Look for alias - will be after AS keyword
+                        let mut alias = None;
+                        while let Some(next) = inner_pairs.next() {
+                            match next.as_rule() {
+                                Rule::as_keyword => {
+                                    if let Some(alias_ident) = inner_pairs.next() {
+                                        alias = Some(alias_ident.as_str().to_string());
+                                    }
                                 },
-                                Rule::aggregate_expr => {
-                                    Ok(Self::parse_aggregate(column)?)
-                                },
-                                Rule::complex_op => {
-                                    Ok(Self::parse_complex_expression(column)?)
-                                },
-                                _ => Err(AquaParseError::InvalidInput(
-                                    format!("Invalid column expression: {:?}", column.as_rule())
-                                )),
+                                _ => {}
                             }
-                        })
-                        .collect()
-                },
-                _ => Err(AquaParseError::InvalidInput(
-                    format!("Invalid sink expression: {:?}", sink_expr.as_rule())
-                )),
-            }
+                        }
+
+                        // Process the main expression based on its type
+                        match expr.as_rule() {
+                            Rule::identifier | Rule::qualified_column => {
+                                Ok(SelectClause::Column(Self::parse_column_ref(expr)?, alias))
+                            },
+                            Rule::aggregate_expr => {
+                                let agg_func = Self::parse_aggregate_function(expr)?;
+                                Ok(SelectClause::Aggregate(agg_func, alias))
+                            },
+                            Rule::complex_op => {
+                                let (col_ref, op, lit) = Self::parse_complex_expression(expr)?;
+                                Ok(SelectClause::ComplexValue(col_ref, op, lit, alias))
+                            },
+                            _ => Err(AquaParseError::InvalidInput(
+                                format!("Invalid column expression: {:?}", expr.as_rule())
+                            )),
+                        }
+                    })
+                    .collect()
+            },
+            _ => Err(AquaParseError::InvalidInput(
+                format!("Invalid sink expression: {:?}", sink_expr.as_rule())
+            )),
         }
+    }
 
     fn parse_column_ref(pair: Pair<Rule>) -> Result<ColumnRef, AquaParseError> {
         match pair.as_rule() {
@@ -81,7 +102,8 @@ impl SinkParser {
         }
     }
 
-    fn parse_aggregate(pair: Pair<Rule>) -> Result<SelectClause, AquaParseError> {
+    // Modified to return AggregateFunction directly instead of SelectClause
+    fn parse_aggregate_function(pair: Pair<Rule>) -> Result<AggregateFunction, AquaParseError> {
         let mut agg = pair.into_inner();
         let func = match agg.next()
             .ok_or_else(|| AquaParseError::InvalidInput("Missing aggregate function".to_string()))?
@@ -103,32 +125,31 @@ impl SinkParser {
             .ok_or_else(|| AquaParseError::InvalidInput("Missing aggregate field".to_string()))?;
         let col_ref = Self::parse_column_ref(var_pair)?;
             
-        Ok(SelectClause::Aggregate(AggregateFunction {
+        Ok(AggregateFunction {
             function: func,
             column: col_ref,
-        }))
+        })
     }
 
-    fn parse_complex_expression(pair: Pair<Rule>) -> Result<SelectClause, AquaParseError> {
+
+     // Modified to return tuple of components instead of SelectClause
+    fn parse_complex_expression(pair: Pair<Rule>) -> Result<(ColumnRef, String, AquaLiteral), AquaParseError> {
         let mut complex = pair.into_inner();
         
-        // Parse the field reference (left operand)
         let var_pair = complex.next()
             .ok_or_else(|| AquaParseError::InvalidInput("Missing first operand".to_string()))?;
         let col_ref = Self::parse_column_ref(var_pair)?;
             
-        // Parse the operator
         let op = complex.next()
             .ok_or_else(|| AquaParseError::InvalidInput("Missing operator".to_string()))?
             .as_str()
             .to_string();
             
-        // Parse the value (right operand)
         let val_str = complex.next()
             .ok_or_else(|| AquaParseError::InvalidInput("Missing second operand".to_string()))?
             .as_str();
             
         let literal = LiteralParser::parse(val_str)?;
-        Ok(SelectClause::ComplexValue(col_ref, op, literal))
+        Ok((col_ref, op, literal))
     }
 }

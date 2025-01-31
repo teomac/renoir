@@ -26,7 +26,7 @@ pub fn process_select_clauses(
 ) -> String {
     // If there's only one column and it's an asterisk, return the identity map
     if select_clauses.len() == 1 {
-        if let SelectClause::Column(col) = &select_clauses[0] {
+        if let SelectClause::Column(col, alias) = &select_clauses[0] {
             if col.column == "*" {
                 return ".map(|x| x)".to_string();
             }
@@ -39,10 +39,10 @@ pub fn process_select_clauses(
     // Process each select clause
     for (_i, clause) in select_clauses.iter().enumerate() {
         match clause {
-            SelectClause::Column(col_ref) => {
+            SelectClause::Column(col_ref, _alias) => {
                 query_object.insert_projection(&col_ref, "");
             }
-            SelectClause::Aggregate(agg) => {
+            SelectClause::Aggregate(agg, _alias) => {
                 let data_type = query_object.get_type(&agg.column);
                 if data_type != "f64" && data_type != "i64" {
                     panic!("Invalid type for aggregation");
@@ -66,7 +66,7 @@ pub fn process_select_clauses(
                     }
                 }
             }
-            SelectClause::ComplexValue(col_ref, op, val) => {
+            SelectClause::ComplexValue(col_ref, op, val, _alias) => {
                 let value = match val {
                     AquaLiteral::Float(val) => format!("{:.2}", val),
                     AquaLiteral::Integer(val) => val.to_string(),
@@ -284,7 +284,10 @@ fn create_map_string(query_object: &QueryObject) -> String {
             }
             k += 1;
         }
-        k = 0;
+
+
+        //TODO Check if this works without resetting k to zero
+        //k = 0;
 
         if !is_single_aggregate {
             final_string.push(')');
@@ -361,7 +364,7 @@ fn create_map_string(query_object: &QueryObject) -> String {
                 map_string.push_str(".unwrap()");
             }
         }
-        map_string.push_str(")");
+        map_string.push_str("))");
 
         map_string
     }

@@ -38,33 +38,40 @@ impl SqlToAqua {
             parts.push(format!("where {}", Self::where_clause_to_string(where_clause)));
         }
 
-        // SELECT clause
         // SELECT clause - handle multiple columns
         let select_strs: Vec<String> = sql_ast.select.iter().map(|select_clause| {
-            match &select_clause.selection {
-            SelectType::Simple(col_ref) => {
-                col_ref.to_string()
-            },
-            SelectType::Aggregate(func, col_ref) => {
-                let agg = match func {
-                    AggregateFunction::Max => "max",
-                    AggregateFunction::Min => "min",
-                    AggregateFunction::Sum => "sum",
-                    AggregateFunction::Avg => "avg",
-                    AggregateFunction::Count => "count",
-                };
-                format!("{}({})", agg, col_ref.to_string())
-            },
-            SelectType::ComplexValue(col_ref, op, val) => {
-                let value = match val {
-                    SqlLiteral::Float(val) => format!("{:.2}", val),
-                    SqlLiteral::Integer(val) => val.to_string(),
-                    SqlLiteral::String(val) => val.clone(),
-                    SqlLiteral::Boolean(val) => val.to_string(),
-                };
-                format!("{} {} {}", col_ref.to_string(), op, value)
+            let selection_str = match &select_clause.selection {
+                SelectType::Simple(col_ref) => {
+                    col_ref.to_string()
+                },
+                SelectType::Aggregate(func, col_ref) => {
+                    let agg = match func {
+                        AggregateFunction::Max => "max",
+                        AggregateFunction::Min => "min",
+                        AggregateFunction::Sum => "sum",
+                        AggregateFunction::Avg => "avg",
+                        AggregateFunction::Count => "count",
+                    };
+                    format!("{}({})", agg, col_ref.to_string())
+                },
+                SelectType::ComplexValue(col_ref, op, val) => {
+                    let value = match val {
+                        SqlLiteral::Float(val) => format!("{:.2}", val),
+                        SqlLiteral::Integer(val) => val.to_string(),
+                        SqlLiteral::String(val) => val.clone(),
+                        SqlLiteral::Boolean(val) => val.to_string(),
+                    };
+                    format!("{} {} {}", col_ref.to_string(), op, value)
+                }
+            };
+
+            // Add alias if present
+            if let Some(alias) = &select_clause.alias {
+                format!("{} as {}", selection_str, alias)
+            } else {
+                selection_str
             }
-        } }).collect();
+        }).collect();
 
         parts.push(format!("select {}", select_strs.join(", ")));
 

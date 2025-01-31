@@ -24,17 +24,42 @@ impl SqlASTBuilder {
                     // Parse the select part differently based on if it's asterisk or column_list
                     let select_clauses = match select_part.as_rule() {
                         Rule::asterisk => {
-                            vec![SelectParser::parse(select_part)?]
+                            vec![SelectClause {
+                                selection: SelectParser::parse(select_part)?,
+                                alias: None,
+                            }]
                         },
                         Rule::column_list => {
                             // Parse each column in the list
                             select_part.into_inner()
-                                .map(|col| SelectParser::parse(col))
+                                .map(|col_pair| {
+                                    
+                                    
+                                    // Get the initial selection from the first item (column_item)
+                                    let mut inner_pairs = col_pair.clone().into_inner();
+                                    let _column_item = inner_pairs.next()
+                                        .ok_or_else(|| SqlParseError::InvalidInput("Missing column item".to_string()))?;
+                                    let selection = SelectParser::parse(col_pair.clone())?;
+                                    
+                                    // Check for alias - look for as_keyword followed by variable
+                                    let alias = if inner_pairs.any(|p| p.as_rule() == Rule::as_keyword) {
+                                        // If we found AS keyword, take the next token as the alias
+                                        col_pair.into_inner()
+                                            .last() // Get the last token which should be the alias variable
+                                            .map(|alias_pair| alias_pair.as_str().to_string())
+                                    } else {
+                                        None
+                                    };
+                        
+                                    Ok(SelectClause {
+                                        selection,
+                                        alias,
+                                    })
+                                })
                                 .collect::<Result<Vec<_>, _>>()?
                         },
                         _ => return Err(SqlParseError::InvalidInput("Invalid SELECT clause".to_string())),
                     };
-
 
                     let from_part = inner.next()
                         .ok_or_else(|| SqlParseError::InvalidInput("Missing FROM clause".to_string()))?;

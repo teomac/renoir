@@ -7,22 +7,48 @@ use crate::dsl::languages::sql::ast_parser::Rule;
 pub struct SelectParser;
 
 impl SelectParser {
-    pub fn parse(pair: Pair<Rule>) -> Result<SelectClause, SqlParseError> {
-        let selection = match pair.as_rule() {
-            Rule::asterisk | Rule::variable | Rule::table_column => {
-                let col_ref = Self::parse_column_ref(pair)?;
-                SelectType::Simple(col_ref)
+    pub fn parse(pair: Pair<Rule>) -> Result<SelectType, SqlParseError> {
+        
+        
+        // First, handle the column_with_alias rule
+        match pair.as_rule() {
+            Rule::column_with_alias => {
+                // Get the inner column_item
+                let mut inner = pair.into_inner();
+                let column_item = inner.next()
+                    .ok_or_else(|| SqlParseError::InvalidInput("Missing column item".to_string()))?;
+                
+                // Parse the actual column content
+                return Self::parse_column_item(column_item);
+            }
+            _ => return Err(SqlParseError::InvalidInput(format!("Expected column_with_alias, got {:?}", pair.as_rule()))),
+        }
+    }
+
+    // New function to parse column_item
+    fn parse_column_item(pair: Pair<Rule>) -> Result<SelectType, SqlParseError> {
+        let mut inner = pair.into_inner();
+        let item = inner.next()
+            .ok_or_else(|| SqlParseError::InvalidInput("Empty column item".to_string()))?;
+
+        match item.as_rule() {
+            Rule::variable => {
+                Ok(SelectType::Simple(ColumnRef {
+                    table: None,
+                    column: item.as_str().to_string(),
+                }))
+            },
+            Rule::table_column => {
+                Self::parse_column_ref(item).map(SelectType::Simple)
             },
             Rule::aggregate_expr => {
-                Self::parse_aggregate(pair)?
+                Self::parse_aggregate(item)
             },
             Rule::select_expr => {
-                Self::parse_complex_expression(pair)?
+                Self::parse_complex_expression(item)
             },
-            _ => return Err(SqlParseError::InvalidInput("Invalid SELECT clause".to_string())),
-        };
-
-        Ok(SelectClause { selection })
+            _ => Err(SqlParseError::InvalidInput(format!("Invalid column item: {:?}", item.as_rule()))),
+        }
     }
 
     //function to parse column references
@@ -78,6 +104,11 @@ impl SelectParser {
         let var_pair = agg.next()
             .ok_or_else(|| SqlParseError::InvalidInput("Missing aggregate column".to_string()))?;
         let col_ref = Self::parse_column_ref(var_pair)?;
+
+        //if aggregation is different than COUNT and column is *, return error
+        if func != AggregateFunction::Count && col_ref.column == "*" {
+            return Err(SqlParseError::InvalidInput("Invalid aggregation".to_string()));
+        }
             
         Ok(SelectType::Aggregate(func, col_ref))
     }

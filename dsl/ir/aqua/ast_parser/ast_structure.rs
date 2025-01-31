@@ -32,9 +32,9 @@ pub struct JoinCondition {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum SelectClause {
-    Column(ColumnRef),
-    Aggregate(AggregateFunction),
-    ComplexValue(ColumnRef, String, AquaLiteral),
+    Column(ColumnRef, Option<String>),  // Added Option<String> for alias
+    Aggregate(AggregateFunction, Option<String>),  // Added Option<String> for alias 
+    ComplexValue(ColumnRef, String, AquaLiteral, Option<String>),  // Added Option<String> for alias
 }
 
 #[derive(Debug, PartialEq, Clone)]

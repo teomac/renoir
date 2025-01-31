@@ -8,6 +8,7 @@ pub struct SqlAST {
 #[derive(Debug, PartialEq, Clone)]
 pub struct SelectClause {
     pub selection: SelectType,
+    pub alias: Option<String>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
