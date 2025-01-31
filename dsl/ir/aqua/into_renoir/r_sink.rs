@@ -25,8 +25,10 @@ pub fn process_select_clauses(
     query_object: &mut QueryObject,
 ) -> String {
     // If there's only one column and it's an asterisk, return the identity map
+
+    //TODO this needs to be fixed for output struct support
     if select_clauses.len() == 1 {
-        if let SelectClause::Column(col, alias) = &select_clauses[0] {
+        if let SelectClause::Column(col, _alias) = &select_clauses[0] {
             if col.column == "*" {
                 return ".map(|x| x)".to_string();
             }
@@ -234,7 +236,7 @@ fn create_map_string(query_object: &QueryObject) -> String {
         }
 
         let mut type_declarations2 = type_declarations.clone();
-        println!("AAAAAAA{:?}", type_declarations2);
+        //println!("AAAAAAA{:?}", type_declarations2);
 
         
         // index that increments in the same way as i. if we have an average, it increments by one more

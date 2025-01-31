@@ -6,7 +6,6 @@ pub struct QueryObject {
     pub has_join: bool, // true if the query has a join
     pub joined_tables: Vec<String>, // list of joined tables
     pub table_names_list: Vec<String>, // list of table names
-    pub field_lists: Vec<Vec<(String, String)>>, // list of field lists (eg. [("int1", "i64"), ("float1", "f64")]
     pub projections: Vec<(ColumnRef, String)>, // list of projections (column reference, operation)
 
     pub table_to_alias: IndexMap<String, String>,    // key: table name, value: alias
@@ -42,7 +41,6 @@ impl QueryObject {
             has_join: false,
             joined_tables: Vec::new(),
             table_names_list: Vec::new(),
-            field_lists: Vec::new(),
             projections: Vec::new(),
 
             table_to_alias: IndexMap::new(),
@@ -89,10 +87,6 @@ impl QueryObject {
 
     pub fn get_all_table_names(&self) -> Vec<String> {
         self.table_to_csv.keys().cloned().collect()
-    }
-
-    pub fn add_field_list(&mut self, field_list: Vec<(String, String)>) {
-        self.field_lists.push(field_list);
     }
 
     pub fn get_type(&self, column: &ColumnRef) -> String {
@@ -211,7 +205,7 @@ impl QueryObject {
             self.table_to_struct_name.insert(table.clone(), format!("StructVar{}", i));
         }
     
-        println!("table to struct name: {:?}", self.table_to_struct_name);
+        //println!("table to struct name: {:?}", self.table_to_struct_name);
 
         //populate the result column to input column mapping
         
@@ -281,8 +275,7 @@ impl QueryObject {
             }
         }
 
-        println!("result column to input: {:?}", self.result_column_to_input);
-
+        //println!("result column to input: {:?}", self.result_column_to_input);
 
         self
     }

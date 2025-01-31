@@ -27,8 +27,6 @@ pub fn parse_type_string(input: &str) -> Result<Vec<String>, ParseTypeError> {
         });
     }
 
-    let mut type_counters: HashMap<String, i32> = HashMap::new();
-
     // Split the string by commas and process each type
     let types: Result<Vec<String>, ParseTypeError> = input
         .split(',')
@@ -41,21 +39,17 @@ pub fn parse_type_string(input: &str) -> Result<Vec<String>, ParseTypeError> {
             }
 
             let base_type = match trimmed.to_lowercase().as_str() {
-                "int" | "integer" | "i64" | "i32" => "int",
-                "str" | "string" | "String" => "string",
-                "float" | "f64" | "f32" => "float",
+                "int" | "integer" | "i64" | "i32" => "i64",
+                "str" | "string" | "String" => "String",
+                "float" | "f64" | "f32" => "f64",
                 "bool" | "boolean" => "bool",
                 invalid_type => return Err(ParseTypeError {
                     message: format!("Invalid type: {}", invalid_type),
                 }),
             };
 
-            // Increment counter for this type
-            let counter = type_counters.entry(base_type.to_string()).or_insert(0);
-            *counter += 1;
-
             // Create the indexed type string
-            Ok(format!("{}{}", base_type, counter))
+            Ok(format!("{}", base_type))
         })
         .collect();
 
@@ -126,10 +120,10 @@ pub fn generate_field_list(fields: &Vec<String>) -> Vec<(String, String)> {
         let (base_type, number) = parse_field(field_desc);
         let field_name = format!("{}{}", base_type, number);
         let rust_type = match base_type {
-            "int" => "i64",
-            "float" => "f64",
-            "bool" => "bool",
-            "string" => "String",
+            "int" | "integer" | "i64" | "i32" => "i64",
+            "float" | "f64" | "f32" => "f64",
+            "bool" | "boolean" => "bool",
+            "str" | "string" | "String" => "String",
             _ => panic!("Unsupported type: {}", base_type),
         };
 

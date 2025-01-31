@@ -7,7 +7,12 @@ pub fn convert_column_ref(column_ref: &ColumnRef, query_object: &QueryObject) ->
 
     if !query_object.has_join {
         let table_name = table_names.first().unwrap();
-        let col = query_object.table_to_struct.get(table_name).unwrap().get(&column_ref.column).unwrap();
+        let col = if query_object.table_to_struct.get(table_name).unwrap().get(&column_ref.column).is_some() {
+            format!("{}", column_ref.column)
+        } else {
+            //throw error
+            panic!("Column {} does not exist in table {}", column_ref.column, table_name);
+        };
         format!("x.{}", col)
     } else {
         // take value from column_ref.table
@@ -22,7 +27,12 @@ pub fn convert_column_ref(column_ref: &ColumnRef, query_object: &QueryObject) ->
             table_name = query_object.table_to_alias.iter().find(|&x| x.1 == &val).unwrap().0.clone();
         }
 
-        let col = query_object.table_to_struct.get(&table_name).unwrap().get(&column_ref.column).unwrap();
+        let col = if query_object.table_to_struct.get(&table_name).unwrap().get(&column_ref.column).is_some() {
+            format!("{}", column_ref.column)
+        } else {
+            //throw error
+            panic!("Column {} does not exist in table {}", column_ref.column, table_name);
+        };
         let i = query_object.table_to_struct_name.get(&table_name).unwrap().chars().last().unwrap();
         if !query_object.has_join {
             return format!("x.{}.{}.unwrap()", i, col)

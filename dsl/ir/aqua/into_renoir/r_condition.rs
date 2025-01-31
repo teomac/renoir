@@ -85,7 +85,12 @@ fn process_condition(condition: &Condition, query_object: &QueryObject) -> Strin
     if !query_object.has_join {
         return format!(
             "x.{}{}.unwrap() {} {}",
-            query_object.table_to_struct.get(table_names.first().unwrap()).unwrap().get(&condition.variable.column).unwrap(),
+            if query_object.table_to_struct.get(table_names.first().unwrap()).unwrap().get(&condition.variable.column).is_some(){
+                &condition.variable.column
+            } else {
+                //throw error
+                "ERROR"
+            },
             if is_string { ".clone()" } else { "" },
             operator_str,
             value
@@ -96,7 +101,12 @@ fn process_condition(condition: &Condition, query_object: &QueryObject) -> Strin
         return format!(
             "x{}.{}{}.unwrap() {} {}",
             query_object.table_to_tuple_access.get(&table_name).unwrap(),
-            query_object.table_to_struct.get(&table_name).unwrap().get(&condition.variable.column).unwrap(),
+            if query_object.table_to_struct.get(&table_name).unwrap().get(&condition.variable.column).is_some() {
+                &condition.variable.column
+            } else {
+                //throw error
+                "ERROR"
+            },
             if is_string { ".clone()" } else { "" },
             operator_str,
             value

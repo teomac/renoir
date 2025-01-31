@@ -38,19 +38,21 @@ pub fn process_from_clause(from_clause: &FromClause, query_object: &mut QueryObj
                 .clone()
         };
 
-        let left_field = query_object
-            .get_struct_field(
-                &left_table_name, 
-                &left_col.column
-            )
-            .unwrap();
+        let left_field = if query_object.table_to_struct.get(&left_table_name).unwrap().get(&left_col.column).is_some() {
+            // If the column is in the struct, use it directly
+            left_col.column.clone()
+        } else {
+            // If the column is not in the struct, use the validated field
+            panic!("Column {} not found in struct for table {}", left_col.column, left_table_name);
+        };
         
-        let right_field = query_object
-            .get_struct_field(
-                &right_table_name, 
-                &right_col.column
-            )
-            .unwrap();
+        let right_field = if query_object.table_to_struct.get(&right_table_name).unwrap().get(&right_col.column).is_some() {
+            // If the column is in the struct, use it directly
+            right_col.column.clone()
+        } else {
+            // If the column is not in the struct, use the validated field
+            panic!("Column {} not found in struct for table {}", right_col.column, right_table_name);
+        };
 
         join_string.push_str(&format!(
             ".join(stream{}, |x| x{}.{}.clone(), |y| y.{}.clone()).drop_key()",

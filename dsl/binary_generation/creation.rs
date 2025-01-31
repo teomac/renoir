@@ -93,7 +93,7 @@ pub fn create_template(query_object: &QueryObject) -> String {
 
     // case 2: join inside the query
     else {
-        println!("{:?}", table_names);
+       // println!("{:?}", table_names);
         for (i, table_name) in table_names.iter().enumerate() {
             if i == 0 {
                 let stream = format!(
@@ -174,8 +174,9 @@ pub fn generate_struct_declarations(
             struct_def.push_str("#[derive(Clone, Debug, Serialize, Deserialize, PartialOrd, PartialEq, Default)]\n");
             struct_def.push_str(&format!("struct {} {{\n", struct_names[i]));
 
-            // Generate field definitions directly from field_lists
-            let fields_str: String = query_object.field_lists[i].iter()
+            // Generate field definitions directly from table to struct mapping
+
+            let fields_str: String = query_object.table_to_struct.get(_table_name).unwrap().iter()
                 .map(|(field_name, field_type)| {
                     format!("    {}: Option<{}>,\n", field_name, field_type)
                 })

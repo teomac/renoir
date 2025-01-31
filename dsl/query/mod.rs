@@ -66,28 +66,13 @@ pub fn query_csv(query_str: &String, output_path: &str, csv_path: &Vec<String>, 
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e)))
     .collect::<Result<Vec<_>, _>>()?;
 
-    let mut field_list: Vec<Vec<(String, String)>> = Vec::new();
-    for i in 0..user_types.len()
-    {
-        let var = generate_field_list(&user_types[i]);
-        field_list.push(var.clone());
-        query_object.add_field_list(var);
-    }
 
-    let csv_structs: Vec<String> = field_list
-        .iter()
-        .enumerate()
-        .map(|(index, types)| create_struct(&types, index.to_string()))
-        .collect();
-
-    println!("Parsed structs: {:?}", csv_structs);
-
-
-    // step 2.1: Get CSV columns and combine with user defined types
+    // step 2.1: Get CSV columns an combine with user defined types
     let columns: Vec<Vec<String>> = csv_path
     .iter()
     .map(|path| get_csv_columns(path))
     .collect();
+
 
     let hash_maps: Vec<IndexMap<String, String>> = columns
     .iter()
@@ -99,6 +84,8 @@ pub fn query_csv(query_str: &String, output_path: &str, csv_path: &Vec<String>, 
             .collect()
     })
     .collect();
+
+    println!("{:?}", hash_maps);
     
     // step 3: parse the query
     let aqua_query = sql_to_aqua(query_str);
