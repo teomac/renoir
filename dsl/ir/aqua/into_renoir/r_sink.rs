@@ -1,5 +1,5 @@
 use crate::dsl::ir::aqua::r_utils::convert_column_ref;
-use crate::dsl::ir::aqua::{AggregateType, AquaLiteral, QueryObject, SelectClause};
+use crate::dsl::ir::aqua::{AggregateType, AquaLiteral, ColumnRef, QueryObject, SelectClause};
 
 /// Processes a `SelectClause` and generates a corresponding string representation
 /// of the query operation.
@@ -26,15 +26,25 @@ pub fn process_select_clauses(
 ) -> String {
     // If there's only one column and it's an asterisk, return the identity map
 
-    //TODO this needs to be fixed for output struct support
+    //case of SELECT *
     if select_clauses.len() == 1 {
         if let SelectClause::Column(col, _alias) = &select_clauses[0] {
             if col.column == "*" {
-                return ".map(|x| x)".to_string();
+                let mut result = String::from(".map(|x| OutputStruct { ");
+
+                let fields: Vec<String> = query_object
+                    .result_column_to_input
+                    .iter()
+                    .map(|(field_name, _)| format!("{}: x.{}.clone()", field_name, field_name))
+                    .collect();
+
+                result.push_str(&fields.join(", "));
+                result.push_str(" })");
+
+                return result;
             }
         }
     }
-
     // Start building the map expression
     let _map_internals = String::new();
 
@@ -45,9 +55,14 @@ pub fn process_select_clauses(
                 query_object.insert_projection(&col_ref, "");
             }
             SelectClause::Aggregate(agg, _alias) => {
-                let data_type = query_object.get_type(&agg.column);
-                if data_type != "f64" && data_type != "i64" {
-                    panic!("Invalid type for aggregation");
+                if agg.column.column == "*" && agg.function != AggregateType::Count {
+                    panic!("The only aggregate function that can be applied to '*' is COUNT");
+                }
+                if agg.column.column != "*" {
+                    let data_type = query_object.get_type(&agg.column);
+                    if data_type != "f64" && data_type != "i64" {
+                        panic!("Invalid type for aggregation");
+                    }
                 }
 
                 match agg.function {
@@ -97,6 +112,41 @@ pub fn process_select_clauses(
     create_map_string(query_object)
 }
 
+fn build_output_struct_mapping(
+    query_object: &QueryObject,
+    values: Vec<String>,
+    is_aggregate: bool,
+) -> String {
+    let mut output = String::from("OutputStruct { ");
+
+    for (i, (col, _)) in query_object.result_column_to_input.iter().enumerate() {
+        if i > 0 {
+            output.push_str(", ");
+        }
+
+        // If has_join, append the table alias/name as suffix
+        let field_name = if query_object.has_join {
+            let (_, _, table_name) = &query_object.result_column_to_input[col];
+            let suffix = query_object
+                .get_alias(table_name)
+                .unwrap_or(table_name)
+                .to_string();
+            format!("{}_{}", col, suffix)
+        } else {
+            col.to_string()
+        };
+
+        if is_aggregate {
+            output.push_str(&format!("{}: Some({})", field_name, values[i]));
+        } else {
+            output.push_str(&format!("{}: {}", field_name, values[i]));
+        }
+    }
+
+    output.push_str(" }");
+    output
+}
+
 fn create_map_string(query_object: &QueryObject) -> String {
     // Check if we need to add a fold (if there are any aggregates)
     let has_aggregates = query_object
@@ -109,15 +159,15 @@ fn create_map_string(query_object: &QueryObject) -> String {
     if has_aggregates {
         let mut final_string = String::new();
 
+        // Add initial map operation
+        final_string.push_str(".map(|x| ");
+
         // Check if we have only one projection and it's an aggregate
         let is_single_aggregate = query_object.projections.len() == 1
             && matches!(
                 query_object.projections.iter().next().unwrap().1.as_str(),
                 "Max" | "Min" | "Avg" | "Sum" | "Count"
             );
-
-        // Add initial map operation
-        final_string.push_str(".map(|x| ");
 
         // Don't add parentheses for single aggregate
         if !is_single_aggregate {
@@ -129,8 +179,32 @@ fn create_map_string(query_object: &QueryObject) -> String {
                 final_string.push_str(", ");
             }
 
-            final_string.push_str(&convert_column_ref(col_ref, query_object));
-            final_string.push_str(".unwrap()");
+            if operation == "Count" && col_ref.column == "*" {
+                // For COUNT(*), use the first column from the table
+                let table_name = match &col_ref.table {
+                    Some(t) => t.clone(),
+                    None => query_object.get_all_table_names().first().unwrap().clone(),
+                };
+                let first_column = query_object
+                    .table_to_struct
+                    .get(&table_name)
+                    .unwrap()
+                    .keys()
+                    .next()
+                    .unwrap()
+                    .clone();
+
+                // Create a new ColumnRef with the first column
+                let first_col_ref = ColumnRef {
+                    table: col_ref.table.clone(),
+                    column: first_column,
+                };
+                final_string.push_str(&convert_column_ref(&first_col_ref, query_object));
+                final_string.push_str(".unwrap()");
+            } else {
+                final_string.push_str(&convert_column_ref(col_ref, query_object));
+                final_string.push_str(".unwrap()");
+            }
 
             if operation.as_str() == "Avg" {
                 has_avg = true;
@@ -165,7 +239,7 @@ fn create_map_string(query_object: &QueryObject) -> String {
             type_declarations[0].0.clone().to_string()
         } else {
             let mut temp = String::new();
-            let mut temp2:Vec<((String, String), usize)>= Vec::new();
+            let mut temp2: Vec<((String, String), usize)> = Vec::new();
             for i in 0..type_declarations.len() {
                 if type_declarations[i].1 == "Avg" {
                     temp2.push(((type_declarations[i].0.clone(), "Avg".to_string()), i));
@@ -204,10 +278,16 @@ fn create_map_string(query_object: &QueryObject) -> String {
             if i > 0 {
                 final_string.push_str(", ");
             }
-            if is_single_aggregate {
-                final_string.push_str("x");
-            } else {
-                final_string.push_str(&format!("x.{}", i));
+            //if we have a count(*), we need to initialize the accumulator with 1.0
+            if type_declarations[i].1 == "Count" {
+                final_string.push_str("1.0");
+            } 
+            else {
+                if is_single_aggregate {
+                    final_string.push_str("x");
+                } else {
+                    final_string.push_str(&format!("x.{}", i));
+                }
             }
         }
 
@@ -236,11 +316,9 @@ fn create_map_string(query_object: &QueryObject) -> String {
         }
 
         let mut type_declarations2 = type_declarations.clone();
-        //println!("AAAAAAA{:?}", type_declarations2);
 
-        
         // index that increments in the same way as i. if we have an average, it increments by one more
-        let mut k:usize = 0;
+        let mut k: usize = 0;
         // Process each projection
         for (i, (_, operation)) in query_object.projections.iter().enumerate() {
             if i > 0 {
@@ -287,86 +365,85 @@ fn create_map_string(query_object: &QueryObject) -> String {
             k += 1;
         }
 
-
-        //TODO Check if this works without resetting k to zero
-        //k = 0;
-
         if !is_single_aggregate {
             final_string.push(')');
         }
         final_string.push_str(");\n            }\n        }})");
 
-        if has_avg {
-            // Add another map to calculate averages
-            final_string.push_str(".map(|x| match x {");
-            final_string.push_str("\n        Some(");
 
-            // If we have only one average operation
-            if query_object.projections.len() == 1 && query_object.projections[0].1 == "Avg" {
+        //add final mapping to OutputStruct
+        final_string.push_str(".map(|x| match x {");
+        final_string.push_str("\n        Some(");
+
+        if query_object.projections.len() == 1 {
+            if has_avg {
                 final_string.push_str("(sum, count)");
-                final_string.push_str(") => Some(sum / count),");
+                let avg_value = "sum / count".to_string();
+                final_string.push_str(&format!(
+                    ") => Some({}),",
+                    build_output_struct_mapping(query_object, vec![avg_value], true)
+                ));
             } else {
-                // For multiple columns where some might be averages
-                final_string.push('(');
+                final_string.push_str("value");
+                final_string.push_str(&format!(
+                    ") => Some({}),",
+                    build_output_struct_mapping(query_object, vec!["value".to_string()], true)
+                ));
+            }
+        } else {
+            // Multiple projections case
+            let mut input_field_values = Vec::new();
+            let mut output_field_values = Vec::new();
+            let mut current_pos = 0;
+            let mut input_value;
+            let mut output_value;
 
-                let mut current_pos = 0;
-                for (i, (_, operation)) in query_object.projections.iter().enumerate() {
-                    if i > 0 {
-                        final_string.push_str(", ");
-                    }
+            for (_, operation) in query_object.projections.iter() {
+                if operation == "Avg" {
+                    input_value = format!("sum{} , count{}", current_pos, current_pos);
+                    output_value = format!("sum{} / count{}", current_pos, current_pos);
 
-                    if operation == "Avg" {
-                        final_string.push_str(&format!("sum{}, count{}", current_pos, current_pos));
-                        current_pos += 1;
-                    } else {
-                        final_string.push_str(&format!("val{}", current_pos));
-                        current_pos += 1;
-                    }
-                }
-
-                final_string.push_str(")");
-                final_string.push_str(") => Some((");
-
-                current_pos = 0;
-                for (i, (_, operation)) in query_object.projections.iter().enumerate() {
-                    if i > 0 {
-                        final_string.push_str(", ");
-                    }
-
-                    if operation == "Avg" {
-                        final_string
-                            .push_str(&format!("sum{} / count{}", current_pos, current_pos));
-                        current_pos += 1;
-                    } else {
-                        final_string.push_str(&format!("val{}", current_pos));
-                        current_pos += 1;
-                    }
-                }
-
-                final_string.push_str(")),");
+                    current_pos += 1;
+                } else {
+                    input_value = format!("val{}", current_pos);
+                    output_value = input_value.clone();
+                    current_pos += 1;
+                };
+                input_field_values.push(input_value);
+                output_field_values.push(output_value);
             }
 
-            final_string.push_str("\n        None => None,");
-            final_string.push_str("\n    })");
+            //this needs to be changed in case of AVG
+            final_string.push_str(&format!("({})", input_field_values.join(", ")));
+
+            //this is universal
+            final_string.push_str(&format!(
+                ") => Some({}),",
+                build_output_struct_mapping(query_object, output_field_values, true)
+            ));
         }
+
+        final_string.push_str("\n        None => None,");
+        final_string.push_str("\n    })");
 
         final_string
     } else {
-        let mut map_string = String::from(".map(|x| (");
+        // Simple mapping case without aggregation
+        let mut map_string = String::from(".map(|x| ");
 
-        for (i, (col_ref, operation)) in query_object.projections.iter().enumerate() {
-            if i > 0 {
-                map_string.push_str(", ");
-            }
-
-            map_string.push_str(&convert_column_ref(col_ref, query_object));
-
+        let mut values = Vec::new();
+        for (col_ref, operation) in &query_object.projections {
+            let mut value = convert_column_ref(col_ref, query_object).to_string();
+            
             if !operation.is_empty() {
-                map_string.push_str(operation);
-                map_string.push_str(".unwrap()");
+                value.push_str(operation);
+                value.push_str(".unwrap()");
             }
+            values.push(value);
         }
-        map_string.push_str("))");
+
+        map_string.push_str(&build_output_struct_mapping(query_object, values, false));
+        map_string.push_str(")");
 
         map_string
     }

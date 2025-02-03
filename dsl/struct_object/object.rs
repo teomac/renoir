@@ -10,7 +10,7 @@ pub struct QueryObject {
 
     pub table_to_alias: IndexMap<String, String>,    // key: table name, value: alias
     pub table_to_csv: IndexMap<String, String>,  // key: table name, value: csv file path
-    pub table_to_struct: IndexMap<String, IndexMap<String, String>>,  // key: table name, value: HashMap of column name and data type 
+    pub table_to_struct: IndexMap<String, IndexMap<String, String>>,  // key: table name, value: IndexMap of column name and data type 
     pub table_to_struct_name: IndexMap<String, String>,   // key: table name, value: struct name
     pub table_to_tuple_access: IndexMap<String, String>, // key: table name, value: tuple field access
 
@@ -104,7 +104,11 @@ impl QueryObject {
         }
 
         let field = &column.column;
-        let str = self.get_struct_field(&tab, field).unwrap().to_string();
+        let str = if self.get_struct_field(&tab, field).is_none() {
+            "f64".to_string()
+        } else {
+            self.get_struct_field(&tab, field).unwrap().to_string()
+        };
 
         str
 
@@ -204,7 +208,26 @@ impl QueryObject {
         for select_clause in &aqua_ast.select {
             match select_clause {
                 SelectClause::Column(col_ref, alias) => {
-                    let result_col = alias.clone().unwrap_or_else(|| col_ref.column.clone());
+                    if col_ref.column == "*" {
+                        if self.has_join {
+                            for table in &self.table_names_list {
+                                let struct_map = self.get_struct(table).unwrap().clone();
+                                for (field_name, field_type) in struct_map {
+                                    let result_col = format!("{}_{}", field_name, table);
+                                    self.result_column_to_input
+                                        .insert(result_col, (field_type, field_name, table.clone()));
+                                }
+                            }
+                        } else {
+                            let struct_map = self.get_struct(&self.table_names_list[0]).unwrap().clone();
+                            for (field_name, field_type) in struct_map {
+                                let result_col = field_name.clone();
+                                self.result_column_to_input
+                                    .insert(result_col, (field_type.clone(), field_name.clone(), self.table_names_list[0].clone()));
+                            }
+                        }
+                    } else {
+                        let result_col = alias.clone().unwrap_or_else(|| col_ref.column.clone());
                     let input_col = col_ref.column.clone();
                     let table = match &col_ref.table {
                         Some(t) => {
@@ -213,37 +236,68 @@ impl QueryObject {
                             } else {
                                 t.clone()
                             }
-                        },
+                        }
                         None => self.table_names_list[0].clone(),
                     };
                     let result_type = self.get_type(&col_ref);
-                    self.result_column_to_input.insert(result_col, (result_type, input_col, table));
-                },
+                    self.result_column_to_input
+                        .insert(result_col, (result_type, input_col, table));
+                    }
+                }
                 SelectClause::Aggregate(agg_func, alias) => {
-                    let col_ref = &agg_func.column;
-                    let result_col = alias.clone().unwrap_or_else(|| col_ref.column.clone());
-                    let input_col = col_ref.column.clone();
-                    let table = match &col_ref.table {
+
+                    let (result_col, input_col) = match (&agg_func.function, &agg_func.column.column) {
+                        (AggregateType::Count, s) if s == "*" => {
+                            // For COUNT(*), use the first column from the table's struct
+                            let table = match &agg_func.column.table {
+                                Some(t) => {
+                                    if let Some(actual_table) = self.get_table_from_alias(t) {
+                                        actual_table.clone()
+                                    } else {
+                                        t.clone()
+                                    }
+                                }
+                                None => self.table_names_list[0].clone(),
+                            };
+                            let first_col = self.get_struct(&table)
+                                .unwrap()
+                                .keys()
+                                .next()
+                                .unwrap()
+                                .clone();
+                            (alias.clone().unwrap_or_else(|| "count".to_string()), first_col)
+                        },
+                        // For COUNT(column), use the column name as the result column
+                        _ => (
+                            alias.clone().unwrap_or_else(|| agg_func.column.column.clone()),
+                            agg_func.column.column.clone()
+                        ),
+                    };
+                    
+                    // this is the case of MAX(), MIN(), SUM(), AVG()
+                    let table = match &agg_func.column.table {
                         Some(t) => {
                             if let Some(actual_table) = self.get_table_from_alias(t) {
                                 actual_table.clone()
                             } else {
                                 t.clone()
                             }
-                        },
+                        }
                         None => self.table_names_list[0].clone(),
                     };
-                    // For aggregates, we always use u64 for COUNT, use f64 for AVG and respect original type for others
+
+                    
+                    // For aggregates, we always use f64 for COUNT, use f64 for AVG and respect original type for others
                     let result_type = if matches!(agg_func.function, AggregateType::Count) {
-                        "u64".to_string()
+                        "f64".to_string()
                     } else if matches!(agg_func.function, AggregateType::Avg) {
                         "f64".to_string()
-                    }
-                    else {
-                        self.get_type(&col_ref)
+                    } else {
+                        self.get_type(&agg_func.column)
                     };
-                    self.result_column_to_input.insert(result_col, (result_type, input_col, table));
-                },
+                    self.result_column_to_input
+                        .insert(result_col, (result_type, input_col, table));
+                }
                 SelectClause::ComplexValue(col_ref, op, _, alias) => {
                     let result_col = alias.clone().unwrap_or_else(|| col_ref.column.clone());
                     let input_col = col_ref.column.clone();

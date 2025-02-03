@@ -5,6 +5,20 @@ use crate::dsl::ir::aqua::QueryObject;
 pub fn convert_column_ref(column_ref: &ColumnRef, query_object: &QueryObject) -> String {
     let table_names = query_object.get_all_table_names();
 
+    if column_ref.column == "*" {
+        if !query_object.has_join {
+            return "x".to_string();
+        } else {
+            let val = column_ref.table.clone().unwrap();
+            let table_name = if query_object.table_to_alias.contains_key(&val) {
+                val
+            } else {
+                query_object.table_to_alias.iter().find(|&x| x.1 == &val).unwrap().0.clone()
+            };
+            return format!("x{}", query_object.table_to_tuple_access.get(&table_name).unwrap());
+        }
+    }
+
     if !query_object.has_join {
         let table_name = table_names.first().unwrap();
         let col = if query_object.table_to_struct.get(table_name).unwrap().get(&column_ref.column).is_some() {

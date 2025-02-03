@@ -12,6 +12,13 @@ impl SelectParser {
         
         // First, handle the column_with_alias rule
         match pair.as_rule() {
+            Rule::asterisk => {
+                Ok(SelectType::Simple(ColumnRef {
+                    table: None,
+                    column: "*".to_string(),
+                }))
+            },
+            
             Rule::column_with_alias => {
                 // Get the inner column_item
                 let mut inner = pair.into_inner();

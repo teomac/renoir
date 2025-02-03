@@ -69,13 +69,48 @@ impl RustProject {
     }
 }
 
+fn generate_all_columns_output_struct(query_object: &QueryObject) -> String {
+    let mut result = String::new();
+
+    // If it's a simple query without join
+    if !query_object.has_join {
+        let table_name = query_object.table_names_list.first().unwrap();
+        if let Some(struct_map) = query_object.table_to_struct.get(table_name) {
+            for (field_name, field_type) in struct_map {
+                result.push_str(&format!("    {}: Option<{}>,\n", field_name, field_type));
+            }
+        }
+    } else {
+        // For queries with joins
+        for table_name in &query_object.table_names_list {
+            let suffix = query_object
+                .get_alias(table_name)
+                .unwrap_or(table_name)
+                .to_string();
+
+            if let Some(struct_map) = query_object.table_to_struct.get(table_name) {
+                for (field_name, field_type) in struct_map {
+                    let field_name_with_suffix = format!("{}_{}", field_name, suffix);
+                    result.push_str(&format!(
+                        "    {}: Option<{}>,\n",
+                        field_name_with_suffix, field_type
+                    ));
+                }
+            }
+        }
+    }
+
+    result
+}
+
+
 pub fn create_template(query_object: &QueryObject) -> String {
 
     let table_names = query_object.table_names_list.clone();
     let struct_names = query_object.table_to_struct_name.values().cloned().collect::<Vec<String>>();
 
 
-    //TODO: fix generate struct definitions
+    // Generate struct definitions for input and output tables
     let struct_definitions = generate_struct_declarations(&table_names, &struct_names, &query_object);
 
 
@@ -117,6 +152,8 @@ pub fn create_template(query_object: &QueryObject) -> String {
     let streams = stream_declarations.join("\n");
 
      // Generate output handling for all streams
+
+     //TODO change this to a write_csv function
      let mut output_handling = Vec::new();
          let output = format!(
              r#"if let Some(output0) = stream0.get() {{
@@ -191,18 +228,36 @@ pub fn generate_struct_declarations(
     
 
     //Part2: generate struct definitions for output tables
-    result.push_str("#[derive(Clone, Debug, Serialize, Deserialize, PartialOrd, PartialEq, Default)]\n");
+    result.push_str(
+        "#[derive(Clone, Debug, Serialize, Deserialize, PartialOrd, PartialEq, Default)]\n",
+    );
     result.push_str("struct OutputStruct {\n");
-    
-    // Add fields from result_column_to_input
-    for (result_col, (result_type, _, _)) in &query_object.result_column_to_input {
-        result.push_str(&format!("    {}: Option<{}>,\n", result_col, result_type));
+
+    // Check if we have SELECT *
+    let has_select_star = query_object.result_column_to_input.iter()
+    .any(|(col, (_, input_col, _))| col == "*" && input_col == "*");
+
+    // Add fields from result_column_to_input (if there is a join, add the suffix)
+    if has_select_star {
+        result.push_str(&generate_all_columns_output_struct(query_object));
+    } else {
+        // Add fields from result_column_to_input (if there is a join, add the suffix)
+        for (result_col, (result_type, _, table_name)) in &query_object.result_column_to_input {
+            let field_name = if query_object.has_join {
+                let suffix = query_object
+                    .get_alias(&table_name)
+                    .unwrap_or(&table_name)
+                    .to_string();
+                format!("{}_{}", result_col, suffix)
+            } else {
+                result_col.to_string()
+            };
+
+            result.push_str(&format!("    {}: Option<{}>,\n", field_name, result_type));
+        }
     }
-    
+
     result.push_str("}\n");
 
-
-
-    //return the result
     result
 }
