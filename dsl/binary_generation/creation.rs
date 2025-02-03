@@ -120,8 +120,8 @@ pub fn create_template(query_object: &QueryObject) -> String {
     if !query_object.has_join {
         let table_name = table_names.first().unwrap();
         let stream = format!(
-            r#"let stream0 = ctx.stream_csv::<{}>("{}"){}.collect_vec();"#,
-            query_object.get_struct_name(table_name).unwrap(), query_object.get_csv(table_name).unwrap(), query_object.renoir_string
+            r#"let stream0 = ctx.stream_csv::<{}>("{}"){}.write_csv(move |_| r"{}.csv".clone().into(), true);"#,
+            query_object.get_struct_name(table_name).unwrap(), query_object.get_csv(table_name).unwrap(), query_object.renoir_string, query_object.output_path
         );
         stream_declarations.push(stream);
     }
@@ -132,8 +132,8 @@ pub fn create_template(query_object: &QueryObject) -> String {
         for (i, table_name) in table_names.iter().enumerate() {
             if i == 0 {
                 let stream = format!(
-                    r#"let stream{} = ctx.stream_csv::<{}>("{}"){}.collect_vec();"#,
-                    i, query_object.get_struct_name(table_name).unwrap(), query_object.get_csv(table_name).unwrap(), query_object.renoir_string
+                    r#"let stream{} = ctx.stream_csv::<{}>("{}"){}.write_csv(move |_| r"{}.csv".clone().into(), true);"#,
+                    i, query_object.get_struct_name(table_name).unwrap(), query_object.get_csv(table_name).unwrap(), query_object.renoir_string, query_object.output_path
                 );
                 stream_declarations.push(stream);
             }
@@ -152,22 +152,6 @@ pub fn create_template(query_object: &QueryObject) -> String {
     let streams = stream_declarations.join("\n");
 
      // Generate output handling for all streams
-
-     //TODO change this to a write_csv function
-     let mut output_handling = Vec::new();
-         let output = format!(
-             r#"if let Some(output0) = stream0.get() {{
-                 println!("Stream output: {{:?}}", output0);
-                 fs::write(
-                     "output0.json",
-                     serde_json::to_string(&output0).unwrap()
-                 ).expect("Failed to write output0 to file");
-             }}"#,
-         );
-         output_handling.push(output);
-     
-     // Join all output handling with newlines
-     let outputs = output_handling.join("\n            ");
     
      // Create the main.rs content
      format!(
@@ -184,12 +168,9 @@ pub fn create_template(query_object: &QueryObject) -> String {
             {}
             
             ctx.execute_blocking();
-
-            {}
         }}"#,
         struct_definitions,
         streams,
-        outputs
     )
 
 }

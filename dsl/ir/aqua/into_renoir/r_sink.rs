@@ -60,7 +60,10 @@ pub fn process_select_clauses(
                 }
                 if agg.column.column != "*" {
                     let data_type = query_object.get_type(&agg.column);
-                    if data_type != "f64" && data_type != "i64" {
+                    if agg.function != AggregateType::Count
+                        && data_type != "f64"
+                        && data_type != "i64"
+                    {
                         panic!("Invalid type for aggregation");
                     }
                 }
@@ -160,7 +163,7 @@ fn create_map_string(query_object: &QueryObject) -> String {
         let mut final_string = String::new();
 
         // Add initial map operation
-        final_string.push_str(".map(|x| ");
+        final_string.push_str(".map(|x| (");
 
         // Check if we have only one projection and it's an aggregate
         let is_single_aggregate = query_object.projections.len() == 1
@@ -168,11 +171,6 @@ fn create_map_string(query_object: &QueryObject) -> String {
                 query_object.projections.iter().next().unwrap().1.as_str(),
                 "Max" | "Min" | "Avg" | "Sum" | "Count"
             );
-
-        // Don't add parentheses for single aggregate
-        if !is_single_aggregate {
-            final_string.push('(');
-        }
 
         for (i, (col_ref, operation)) in query_object.projections.iter().enumerate() {
             if i > 0 {
@@ -222,11 +220,7 @@ fn create_map_string(query_object: &QueryObject) -> String {
                 final_string.push_str(operation);
             }
         }
-
-        if !is_single_aggregate {
-            final_string.push(')');
-        }
-        final_string.push(')');
+        final_string.push_str("))");
 
         // Get tuple type for fold accumulator
         let mut type_declarations = query_object
@@ -235,27 +229,44 @@ fn create_map_string(query_object: &QueryObject) -> String {
             .map(|(col_ref, op)| (query_object.get_type(&col_ref), op.clone()))
             .collect::<Vec<(String, String)>>();
 
-        let type_str = if is_single_aggregate {
-            type_declarations[0].0.clone().to_string()
-        } else {
+        let type_str ={
             let mut temp = String::new();
             let mut temp2: Vec<((String, String), usize)> = Vec::new();
+        
+
+            // Add tuple type for fold accumulator
             for i in 0..type_declarations.len() {
+                // If we have an average, we need to add an extra field for the count
                 if type_declarations[i].1 == "Avg" {
                     temp2.push(((type_declarations[i].0.clone(), "Avg".to_string()), i));
                 }
+
+                //if it is the first element of the tuple
                 if i == 0 {
-                    temp.push_str(&format!("({} ", type_declarations[i].0));
-                    if type_declarations[i].1 == "Avg" {
-                        temp.push_str(&format!(",{} ", type_declarations[i].0));
+                    //case of count()
+                    if type_declarations[i].1 == "Count" {
+                        temp.push_str("(usize");
+                    } else {
+                        temp.push_str(&format!("({} ", type_declarations[i].0));
+                        if type_declarations[i].1 == "Avg" {
+                            temp.push_str(&format!(",{} ", type_declarations[i].0));
+                        }
                     }
-                } else {
-                    temp.push_str(&format!(",{} ", type_declarations[i].0));
-                    if type_declarations[i].1 == "Avg" {
+                }
+                //otherwise we push the comma before the type 
+                else {
+                    //case of count()
+                    if type_declarations[i].1 == "Count" {
+                        temp.push_str(", usize");
+                    } else {
                         temp.push_str(&format!(",{} ", type_declarations[i].0));
+                        if type_declarations[i].1 == "Avg" {
+                            temp.push_str(&format!(",{} ", type_declarations[i].0));
+                        }
                     }
                 }
             }
+
             temp.push(')');
             if !temp2.is_empty() {
                 for temp2 in temp2.iter() {
@@ -263,8 +274,9 @@ fn create_map_string(query_object: &QueryObject) -> String {
                 }
             }
             temp
+            
+            
         };
-
         // Add fold operation
         final_string.push_str(&format!(
             ".fold(None, |acc: &mut Option<{}>, x| {{ match acc {{",
@@ -274,16 +286,18 @@ fn create_map_string(query_object: &QueryObject) -> String {
         // Initialize with first values case
         final_string.push_str("\n            None => *acc = Some((");
 
+
+        let is_single_avg = is_single_aggregate && type_declarations.len() > 1;
+
         for i in 0..type_declarations.len() {
             if i > 0 {
                 final_string.push_str(", ");
             }
             //if we have a count(*), we need to initialize the accumulator with 1.0
             if type_declarations[i].1 == "Count" {
-                final_string.push_str("1.0");
-            } 
-            else {
-                if is_single_aggregate {
+                final_string.push_str("1");
+            } else {
+                if is_single_aggregate && !is_single_avg {
                     final_string.push_str("x");
                 } else {
                     final_string.push_str(&format!("x.{}", i));
@@ -295,7 +309,7 @@ fn create_map_string(query_object: &QueryObject) -> String {
 
         // Update values case
         final_string.push_str("\n            Some(");
-        if !is_single_aggregate {
+        if !is_single_aggregate || is_single_avg {
             final_string.push('(');
         }
         // Declare variables for accumulated values
@@ -307,11 +321,13 @@ fn create_map_string(query_object: &QueryObject) -> String {
             acc_vars.push(format!("acc{}", i));
             final_string.push_str(&format!("acc{}", i));
         }
-        if !is_single_aggregate {
+        if !is_single_aggregate || is_single_avg{
             final_string.push(')');
         }
         final_string.push_str(") => {\n                *acc = Some(");
-        if !is_single_aggregate {
+
+
+        if !is_single_aggregate || is_single_avg {
             final_string.push('(');
         }
 
@@ -325,7 +341,7 @@ fn create_map_string(query_object: &QueryObject) -> String {
                 final_string.push_str(", ");
             }
 
-            let x_value = if is_single_aggregate {
+            let x_value = if is_single_aggregate && type_declarations.len() == 1 {
                 "x"
             } else {
                 &format!("x.{}", k)
@@ -343,9 +359,9 @@ fn create_map_string(query_object: &QueryObject) -> String {
                 "Sum" => final_string.push_str(&format!("*acc{} + {}", k, x_value)),
                 "Count" => {
                     if final_string.contains("None =>") {
-                        final_string = final_string.replace(&format!("x.{}", k), "1.0");
+                        final_string = final_string.replace(&format!("x.{}", k), "1");
                     }
-                    final_string.push_str(&format!("*acc{} + 1.0", k));
+                    final_string.push_str(&format!("*acc{} + 1", k));
                 }
                 "Avg" => {
                     // first, we push the sum
@@ -365,11 +381,10 @@ fn create_map_string(query_object: &QueryObject) -> String {
             k += 1;
         }
 
-        if !is_single_aggregate {
+        if !is_single_aggregate || is_single_avg {
             final_string.push(')');
         }
         final_string.push_str(");\n            }\n        }})");
-
 
         //add final mapping to OutputStruct
         final_string.push_str(".map(|x| match x {");
@@ -434,7 +449,7 @@ fn create_map_string(query_object: &QueryObject) -> String {
         let mut values = Vec::new();
         for (col_ref, operation) in &query_object.projections {
             let mut value = convert_column_ref(col_ref, query_object).to_string();
-            
+
             if !operation.is_empty() {
                 value.push_str(operation);
                 value.push_str(".unwrap()");

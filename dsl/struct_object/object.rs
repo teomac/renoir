@@ -29,6 +29,8 @@ pub struct QueryObject {
 
     // Renoir final string
     pub renoir_string: String, 
+    //output path
+    pub output_path: String,
 }   
 
 // vehicle_count, (u64, *, table1)
@@ -50,7 +52,12 @@ impl QueryObject {
             table_to_tuple_access: IndexMap::new(),
             result_column_to_input: IndexMap::new(),
             renoir_string: String::new(),
+            output_path: String::new(),
         }
+    }
+
+    pub fn set_output_path(&mut self, output_path: &str) {
+        self.output_path = output_path.to_string();
     }
 
     pub fn get_alias(&self, table: &str) -> Option<&String> {
@@ -287,9 +294,9 @@ impl QueryObject {
                     };
 
                     
-                    // For aggregates, we always use f64 for COUNT, use f64 for AVG and respect original type for others
+                    // For aggregates, we always use usize for COUNT, use f64 for AVG and respect original type for others
                     let result_type = if matches!(agg_func.function, AggregateType::Count) {
-                        "f64".to_string()
+                        "usize".to_string()
                     } else if matches!(agg_func.function, AggregateType::Avg) {
                         "f64".to_string()
                     } else {

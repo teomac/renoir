@@ -56,6 +56,8 @@ pub fn query_csv(query_str: &String, output_path: &str, csv_path: &Vec<String>, 
 
     let mut query_object = QueryObject::new();
 
+    query_object.set_output_path(output_path);
+
     // step 1: if not existing, create a Rust project
     let rust_project = creation::RustProject::create_empty_project()?;
 

@@ -13,6 +13,32 @@ pub fn binary_execution(output_path: &str, rust_project: creation::RustProject) 
         fs::create_dir_all(parent)?;
     }
 
+    // Added: Format the code using cargo fmt
+    let fmt_status = Command::new("cargo")
+        .args(&["fmt"])
+        .current_dir(&rust_project.project_path)
+        .status()?;
+
+    if !fmt_status.success() {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            "Failed to format the code"
+        ));
+    }
+
+    // Added: Fix the code using cargo fix
+    let fix_status = Command::new("cargo")
+        .args(&["fix", "--bin", "query_binary", "--allow-dirty"])
+        .current_dir(&rust_project.project_path)
+        .status()?;
+
+    if !fix_status.success() {
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            "Failed to fix the code"
+        ));
+    }
+
     // Build the binary using cargo in debug mode
     let status = Command::new("cargo")
         .args(&["build"])
