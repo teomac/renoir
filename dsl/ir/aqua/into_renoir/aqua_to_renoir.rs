@@ -1,4 +1,6 @@
-use crate::dsl::{ir::aqua::{ast_parser::ast_structure::AquaAST, into_renoir::{r_condition::process_where_clause, r_source::*}, r_sink::process_select_clauses}, struct_object::object::QueryObject};
+use crate::dsl::{ir::aqua::{ast_parser::ast_structure::AquaAST, into_renoir::{r_condition::process_where_clause, r_source::*}, r_sink::process_select_clauses, ColumnRef}, struct_object::object::QueryObject};
+
+use super::r_utils::convert_column_ref;
 
 pub struct AquaToRenoir;
 
@@ -21,6 +23,21 @@ impl AquaToRenoir {
             ));
         }
 
+        if let Some(ref group_by) = ast.group_by {
+            final_string.push_str(&format!(
+                ".group_by(|x| ({}))",
+                process_group_by_keys(&group_by.columns, query_object)
+            ));
+
+            // Add HAVING clause if present
+            if let Some(ref having) = group_by.having {
+                final_string.push_str(&format!(
+                    ".filter(|x| {})",
+                    process_where_clause(&having, &query_object)
+                ));
+            }
+        }
+
         // Process all select clauses together
         final_string.push_str(&process_select_clauses(&ast.select, query_object));
         
@@ -32,3 +49,10 @@ impl AquaToRenoir {
 
     
 } 
+
+fn process_group_by_keys(columns: &Vec<ColumnRef>, query_object: &QueryObject) -> String {
+    columns.iter()
+        .map(|col| convert_column_ref(col, query_object))
+        .collect::<Vec<_>>()
+        .join(", ")
+}

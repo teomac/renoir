@@ -2,7 +2,8 @@
 pub struct SqlAST {
     pub select: Vec<SelectClause>,
     pub from: FromClause,
-    pub filter: Option<WhereClause>, // Made optional
+    pub filter: Option<WhereClause>,
+    pub group_by: Option<GroupByClause>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -67,6 +68,12 @@ pub struct  WhereClause {
     pub condition: Condition,
     pub binary_op: Option<BinaryOp>,
     pub next: Option<Box<WhereClause>>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct  GroupByClause {
+    pub columns: Vec<ColumnRef>,
+    pub having: Option<WhereClause>,
 }
 
 #[derive(Debug, PartialEq, Clone)]

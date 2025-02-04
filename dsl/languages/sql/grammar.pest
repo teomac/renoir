@@ -7,6 +7,8 @@ as_keyword = { "AS" }
 join = { "JOIN" }
 on = { "ON" }
 asterisk = { "*" }
+group_by_keyword = { "GROUP BY" }
+having_keyword = { "HAVING" }
 
 variable = @{ ('a'..'z' | "_") ~ ('a'..'z' | '0'..'9' | "_")* }
 number = @{ 
@@ -41,6 +43,11 @@ column_with_alias = { column_item ~ (as_keyword ~ variable)? }
 column_list = { column_with_alias ~ ("," ~ column_with_alias)* }
 select_expr = { ((table_column | variable ) ~ symbol ~ number) }
 
+having_clause = { where_conditions }
+
+group_by_list = { (table_column | variable) ~ ("," ~ (table_column | variable))* }
+group_by_expr = { group_by_keyword ~ group_by_list ~ ( having_keyword ~ having_clause )? }
+
 
 join_condition = { table_column ~ "=" ~ table_column }
 
@@ -59,5 +66,6 @@ query = {
     select ~ (asterisk| column_list) ~
     from_expr ~
     where_expr? ~
+    group_by_expr? ~
     EOI
 }

@@ -21,7 +21,7 @@ impl ConditionParser {
         Self::parse_conditions(conditions)
     }
 
-    fn parse_conditions(conditions_pair: Pair<Rule>) -> Result<WhereClause, AquaParseError> {
+    pub fn parse_conditions(conditions_pair: Pair<Rule>) -> Result<WhereClause, AquaParseError> {
         let mut pairs = conditions_pair.into_inner().peekable();
         
         let first_condition = pairs.next()

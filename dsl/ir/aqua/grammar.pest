@@ -16,11 +16,15 @@ in_keyword = { "in" }
 join = { "join" }
 on = { "on" }
 asterisk = { "*" }
+group_keyword = { "group" }
 
-// Main query structure - allow clauses in any order
+
 query = {
     SOI ~
-    (from_clause | select_clause | where_clause)+ ~ // TODO correct, it can accept two from clauses
+    from_clause  ~
+    where_clause?  ~
+    group_clause?  ~
+    select_clause  ~
     EOI
 }
 
@@ -87,3 +91,7 @@ where_conditions = { condition ~ (binary_op ~ condition)* }
 method_chain = { "." ~ (filter_op | agg_op) }
 filter_op = { "filter" ~ "(" ~ condition ~ ")" }
 agg_op = { ("max" | "min" | "avg") ~ "(" ~ identifier ~ ")" }
+
+having_clause = { "{"  ~ where_conditions ~ "}" }
+
+group_clause = { group_keyword  ~  (qualified_column | identifier)  ~ ("," ~ (qualified_column | identifier))*  ~ ( having_clause )? }

@@ -5,6 +5,7 @@ pub mod sink;
 pub mod source;
 pub mod literal;
 pub mod ast_structure;
+pub mod group;
 
 pub use ast_structure::{
     AquaAST, 
@@ -33,8 +34,11 @@ impl AquaParser {
     pub fn parse_query(input: &str) -> Result<AquaAST, AquaParseError> {
         let pairs = Self::parse(Rule::query, input)
             .map_err(|e| AquaParseError::PestError(e))?;
+
+        println!("paris: {:?}", pairs);
         
         let ast = AquaASTBuilder::build_ast_from_pairs(pairs)?;
+        println!("AAAAAAAAAAAAAAAAAAA");
         AquaASTBuilder::validate_ast(&ast)?;
         
         Ok(ast)

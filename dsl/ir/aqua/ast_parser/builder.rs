@@ -1,5 +1,6 @@
 use super::ast_structure::*;
 use super::error::AquaParseError;
+use super::group::GroupParser;
 use super::{condition::ConditionParser, sink::SinkParser, source::SourceParser};
 use crate::dsl::ir::aqua::ast_parser::Rule;
 use pest::iterators::Pairs;
@@ -11,6 +12,7 @@ impl AquaASTBuilder {
         let mut from = None;
         let mut select = Vec::new();
         let mut filter = None;
+        let mut group_by = None;
 
         // Process each clause in the query
         for pair in pairs {
@@ -26,6 +28,9 @@ impl AquaASTBuilder {
                             }
                             Rule::where_clause => {
                                 filter = Some(ConditionParser::parse(clause)?);
+                            }
+                            Rule::group_clause => {
+                                group_by = Some(GroupParser::parse(clause)?);
                             }
                             Rule::EOI => {}
                             _ => {
@@ -47,6 +52,7 @@ impl AquaASTBuilder {
                 .ok_or_else(|| AquaParseError::InvalidInput("Missing FROM clause".to_string()))?,
             select,
             filter,
+            group_by,
         };
 
         // Validate the AST
@@ -120,6 +126,11 @@ impl AquaASTBuilder {
         // Validate filter conditions if present
         if let Some(ref filter) = ast.filter {
             Self::validate_where_clause(filter, &ast.from)?;
+        }
+
+        // Validate GROUP BY clause if present
+        if let Some(ref group_by) = ast.group_by {
+            Self::validate_select_with_group_by(&ast.select, group_by)?;
         }
 
         Ok(())
@@ -211,6 +222,35 @@ impl AquaASTBuilder {
             Self::validate_where_clause(next, from_clause)?;
         }
 
+        Ok(())
+    }
+
+    fn validate_select_with_group_by(
+        select_clauses: &Vec<SelectClause>,
+        group_by: &GroupByClause
+    ) -> Result<(), AquaParseError> {
+        for clause in select_clauses {
+            match clause {
+                SelectClause::Column(col_ref, _) => {
+                    // Non-aggregated columns must appear in GROUP BY
+                    if !group_by.columns.iter().any(|gc| gc.column == col_ref.column && gc.table == col_ref.table) {
+                        return Err(AquaParseError::InvalidInput(
+                            format!("Column {} must appear in GROUP BY clause or be aggregated", col_ref.to_string())
+                        ));
+                    }
+                },
+                // Aggregates are always allowed
+                SelectClause::Aggregate(_, _) => {},
+                SelectClause::ComplexValue(col_ref, _, _, _) => {
+                    // Complex expressions need to reference only GROUP BY columns
+                    if !group_by.columns.iter().any(|gc| gc.column == col_ref.column && gc.table == col_ref.table) {
+                        return Err(AquaParseError::InvalidInput(
+                            format!("Complex expression column {} must appear in GROUP BY clause", col_ref.to_string())
+                        ));
+                    }
+                }
+            }
+        }
         Ok(())
     }
 }

@@ -38,6 +38,26 @@ impl SqlToAqua {
             parts.push(format!("where {}", Self::where_clause_to_string(where_clause)));
         }
 
+        // GROUP BY clause (if present)
+        if let Some(group_by) = &sql_ast.group_by {
+            let group_by_str = group_by.columns.iter()
+                .map(|col| col.to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            
+            // Format with having clause if present
+            let group_by_part = if let Some(having) = &group_by.having {
+                format!("group {} {{ {} }}", 
+                    group_by_str,
+                    Self::where_clause_to_string(having)
+                )
+            } else {
+                format!("group {}", group_by_str)
+            };
+            
+            parts.push(group_by_part);
+        }
+
         // SELECT clause - handle multiple columns
         let select_strs: Vec<String> = sql_ast.select.iter().map(|select_clause| {
             let selection_str = match &select_clause.selection {
@@ -105,7 +125,7 @@ impl SqlToAqua {
             ComparisonOp::LessThan => "<",
             ComparisonOp::GreaterOrEqualThan => ">=",
             ComparisonOp::LessOrEqualThan => "<=",
-            ComparisonOp::Equal => "==",
+            ComparisonOp::Equal => "=",  // Changed from "==" to "=" for the HAVING clause
             ComparisonOp::NotEqual => "!=",
         };
 

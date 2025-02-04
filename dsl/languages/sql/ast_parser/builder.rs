@@ -5,6 +5,7 @@ use super::{
     select::SelectParser,
     from::FromParser,
     condition::ConditionParser,
+    group::GroupByParser,
 };
 use crate::dsl::languages::sql::ast_parser::Rule;
 
@@ -12,6 +13,10 @@ pub struct SqlASTBuilder;
 
 impl SqlASTBuilder {
     pub fn build_ast_from_pairs(pairs: Pairs<Rule>) -> Result<SqlAST, SqlParseError> {
+        //print pairs to debug
+         for pair in pairs.clone() {
+             println!("{:?}", pair);
+        }
         for pair in pairs {
             match pair.as_rule() {
                 Rule::query => {
@@ -64,21 +69,35 @@ impl SqlASTBuilder {
                     let from_part = inner.next()
                         .ok_or_else(|| SqlParseError::InvalidInput("Missing FROM clause".to_string()))?;
                     
-                    let where_part = inner.next();
+                    let mut where_part = None;
+                    let mut group_by_part = None;
 
-                    return Ok(SqlAST {
+                    while let Some(next_part) = inner.next() {
+                        match next_part.as_rule() {
+                            Rule::where_expr => where_part = Some(next_part),
+                            Rule::group_by_expr => group_by_part = Some(next_part),
+                            _ => {}
+                        }
+                    }
+
+                    let ast = SqlAST {
                         select: select_clauses,
                         from: FromParser::parse(from_part)?,
                         filter: if let Some(where_expr) = where_part {
-                            if where_expr.as_rule() == Rule::where_expr {
-                                Some(ConditionParser::parse(where_expr)?)
-                            } else {
-                                None
-                            }
+                            Some(ConditionParser::parse(where_expr)?)
                         } else {
                             None
                         },
-                    });
+                        group_by: if let Some(group_expr) = group_by_part {
+                            Some(GroupByParser::parse(group_expr)?)
+                        } else {
+                            None
+                        },
+                    };
+
+                    println!("{:?}", ast);
+
+                    return Ok(ast);
                 }
                 _ => return Err(SqlParseError::InvalidInput("Expected query".to_string())),
             }
