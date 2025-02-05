@@ -4,6 +4,7 @@ pub mod condition;
 pub mod select;
 pub mod from;
 pub mod literal;
+pub mod group;
 pub mod ast_structure;
 pub use ast_structure::{
     SqlAST, 

@@ -2,7 +2,8 @@
 pub struct SqlAST {
     pub select: Vec<SelectClause>,
     pub from: FromClause,
-    pub filter: Option<WhereClause>, // Made optional
+    pub filter: Option<WhereClause>,
+    pub group_by: Option<GroupByClause>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -70,10 +71,30 @@ pub struct  WhereClause {
 }
 
 #[derive(Debug, PartialEq, Clone)]
+pub struct  GroupByClause {
+    pub columns: Vec<ColumnRef>,
+    pub having: Option<HavingClause>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct  HavingClause {
+    pub condition: HavingCondition,
+    pub binary_op: Option<BinaryOp>,
+    pub next: Option<Box<HavingClause>>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub struct Condition {
-    pub variable: ColumnRef,
+    pub left_field: WhereField,
     pub operator: ComparisonOp,
-    pub value: SqlLiteral,
+    pub right_field: WhereField,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct HavingCondition {
+    pub left_field: HavingField,
+    pub operator: ComparisonOp,
+    pub right_field: HavingField,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -98,7 +119,19 @@ pub enum SqlLiteral {
     Float(f64),
     String(String),
     Boolean(bool),
-    //ColumnRef(ColumnRef), TODO
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct WhereField {
+    pub column: Option<ColumnRef>,
+    pub value: Option<SqlLiteral>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct HavingField {
+    pub column: Option<ColumnRef>,
+    pub value: Option<SqlLiteral>,
+    pub aggregate: Option<(AggregateFunction, ColumnRef)>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
