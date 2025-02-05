@@ -8,7 +8,7 @@ pub fn sql_to_aqua(query_str: &str) -> String {
     //println!("SQL AST: {:?}", sql_ast);
     
     let aqua_string = SqlToAqua::convert(&sql_ast);
-    //println!("Generated Aqua string:\n{}", aqua_string);
+    println!("Generated Aqua string:\n{}", aqua_string);
 
     aqua_string
 }

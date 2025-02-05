@@ -16,7 +16,7 @@ impl ConditionParser {
         Self::parse_conditions(conditions)
     }
 
-    fn parse_conditions(conditions_pair: Pair<Rule>) -> Result<WhereClause, SqlParseError> {
+    pub fn parse_conditions(conditions_pair: Pair<Rule>) -> Result<WhereClause, SqlParseError> {
         let mut pairs = conditions_pair.into_inner().peekable();
         
         let first_condition = pairs.next()

@@ -6,6 +6,7 @@ pub mod from;
 pub mod literal;
 pub mod group;
 pub mod ast_structure;
+pub mod group;
 pub use ast_structure::{
     SqlAST, 
     Condition, 
@@ -22,6 +23,7 @@ use pest_derive::Parser;
 use crate::dsl::languages::sql::ast_parser::error::SqlParseError;
 use crate::dsl::languages::sql::ast_parser::builder::SqlASTBuilder;
 
+//test
 #[derive(Parser)]
 #[grammar = "dsl/languages/sql/grammar.pest"]
 pub struct SqlParser;

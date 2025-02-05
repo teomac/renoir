@@ -127,7 +127,7 @@ impl SqlToAqua {
             ComparisonOp::LessThan => "<",
             ComparisonOp::GreaterOrEqualThan => ">=",
             ComparisonOp::LessOrEqualThan => "<=",
-            ComparisonOp::Equal => "==",
+            ComparisonOp::Equal => "=",  // Changed from "==" to "=" for the HAVING clause
             ComparisonOp::NotEqual => "!=",
         };
 
