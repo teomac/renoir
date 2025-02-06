@@ -27,6 +27,26 @@ impl LiteralParser {
         }
     }
 
+    pub fn parse_aqua_literal(lit: &AquaLiteral) -> String {
+        match lit {
+            AquaLiteral::Integer(i) => i.to_string(),
+            AquaLiteral::Float(f) => format!("{:.2}", f),
+            AquaLiteral::String(s) => s.to_string(),
+            AquaLiteral::Boolean(b) => b.to_string(),
+            AquaLiteral::ColumnRef(cr) => cr.to_string(),
+        }
+    }
+
+    pub fn get_literal_type(lit: &AquaLiteral) -> String {
+        match lit {
+            AquaLiteral::Integer(_) => "i64".to_string(),
+            AquaLiteral::Float(_) => "f64".to_string(),
+            AquaLiteral::String(_) => "String".to_string(),
+            AquaLiteral::Boolean(_) => "bool".to_string(),
+            AquaLiteral::ColumnRef(_) => "ColumnRef".to_string(),
+        }
+    }
+
     pub fn parse_column_ref(column_ref: &str) -> Result<AquaLiteral, AquaParseError> {
         let parts: Vec<&str> = column_ref.split('.').collect();
         match parts.len() {

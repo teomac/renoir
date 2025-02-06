@@ -57,8 +57,8 @@ impl SinkParser {
                                 Ok(SelectClause::Aggregate(agg_func, alias))
                             },
                             Rule::complex_op => {
-                                let (col_ref, op, lit) = Self::parse_complex_expression(expr)?;
-                                Ok(SelectClause::ComplexValue(col_ref, op, lit, alias))
+                                let (left_field, op, right_field) = Self::parse_complex_expression(expr)?;
+                                Ok(SelectClause::ComplexValue(left_field, op, right_field, alias))
                             },
                             _ => Err(AquaParseError::InvalidInput(
                                 format!("Invalid column expression: {:?}", expr.as_rule())
@@ -133,23 +133,62 @@ impl SinkParser {
 
 
      // Modified to return tuple of components instead of SelectClause
-    fn parse_complex_expression(pair: Pair<Rule>) -> Result<(ColumnRef, String, AquaLiteral), AquaParseError> {
+    fn parse_complex_expression(pair: Pair<Rule>) -> Result<(ComplexField, String, ComplexField), AquaParseError> {
         let mut complex = pair.into_inner();
         
         let var_pair = complex.next()
             .ok_or_else(|| AquaParseError::InvalidInput("Missing first operand".to_string()))?;
-        let col_ref = Self::parse_column_ref(var_pair)?;
+        
+        //parse left field
+        let left = match var_pair.as_rule() {
+            Rule::identifier | Rule::qualified_column => ComplexField{
+                column: Some(Self::parse_column_ref(var_pair)?),
+                aggregate: None,
+                literal: None,
+                },
+            Rule::number => ComplexField{
+                column: None,
+                aggregate: None,
+                literal: Some(LiteralParser::parse(var_pair.as_str())?),
+                },
+            Rule::aggregate_expr => ComplexField{
+                column: None,
+                aggregate: Some(Self::parse_aggregate_function(var_pair)?),
+                literal: None,
+                },
+            _ => return Err(AquaParseError::InvalidInput(
+                format!("Expected field reference, got {:?}", var_pair.as_rule())
+            )),
+        };
             
         let op = complex.next()
             .ok_or_else(|| AquaParseError::InvalidInput("Missing operator".to_string()))?
             .as_str()
             .to_string();
             
-        let val_str = complex.next()
-            .ok_or_else(|| AquaParseError::InvalidInput("Missing second operand".to_string()))?
-            .as_str();
-            
-        let literal = LiteralParser::parse(val_str)?;
-        Ok((col_ref, op, literal))
+        //parse right field
+        let var_pair2 = complex.next()
+            .ok_or_else(|| AquaParseError::InvalidInput("Missing second operand".to_string()))?;
+        let right = match var_pair2.as_rule() {
+            Rule::identifier | Rule::qualified_column => ComplexField{
+                column: Some(Self::parse_column_ref(var_pair2)?),
+                aggregate: None,
+                literal: None,
+                },
+            Rule::number => ComplexField{
+                column: None,
+                aggregate: None,
+                literal: Some(LiteralParser::parse(var_pair2.as_str())?),
+                },
+            Rule::aggregate_expr => ComplexField{
+                column: None,
+                aggregate: Some(Self::parse_aggregate_function(var_pair2)?),
+                literal: None,
+                },
+            _ => return Err(AquaParseError::InvalidInput(
+                format!("Expected field reference, got {:?}", var_pair2.as_rule())
+            )),
+        };
+        Ok((left, op, right))
     }
 }

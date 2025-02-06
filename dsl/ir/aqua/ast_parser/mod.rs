@@ -26,6 +26,7 @@ use pest_derive::Parser;
 use crate::dsl::ir::aqua::ast_parser::error::AquaParseError;
 use crate::dsl::ir::aqua::ast_parser::builder::AquaASTBuilder;
 
+
 #[derive(Parser)]
 #[grammar = "dsl/ir/aqua/grammar.pest"] 
 pub struct AquaParser;
@@ -34,12 +35,9 @@ impl AquaParser {
     pub fn parse_query(input: &str) -> Result<AquaAST, AquaParseError> {
         let pairs = Self::parse(Rule::query, input)
             .map_err(|e| AquaParseError::PestError(e))?;
-
-        println!("paris: {:?}", pairs);
         
         let ast = AquaASTBuilder::build_ast_from_pairs(pairs)?;
-        println!("AAAAAAAAAAAAAAAAAAA");
-        AquaASTBuilder::validate_ast(&ast)?;
+        //AquaASTBuilder::validate_ast(&ast)?;
         
         Ok(ast)
     }

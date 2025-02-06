@@ -124,18 +124,61 @@ impl SelectParser {
         let mut complex = pair.into_inner();
         let var_pair = complex.next()
             .ok_or_else(|| SqlParseError::InvalidInput("Missing first operand".to_string()))?;
-        let col_ref = Self::parse_column_ref(var_pair)?;
+
+        //parse left side of the expression
+        let left = match var_pair.as_rule() {
+            Rule::number => ComplexField {
+                column_ref: None,
+                literal: Some(LiteralParser::parse(var_pair.as_str())?),
+            },
+            Rule::variable => ComplexField {
+                column_ref: Some(ColumnRef {
+                    table: None,
+                    column: var_pair.as_str().to_string(),
+                }),
+                literal: None,
+            },
+            Rule::table_column => ComplexField {
+                column_ref: Some(Self::parse_column_ref(var_pair)?),
+                literal: None,
+            },
+            _ => ComplexField {
+                column_ref: None,
+                literal: None,
+            },
+        };
             
         let op = complex.next()
             .ok_or_else(|| SqlParseError::InvalidInput("Missing operator".to_string()))?
             .as_str()
             .to_string();
-            
-        let val_str = complex.next()
-            .ok_or_else(|| SqlParseError::InvalidInput("Missing second operand".to_string()))?
-            .as_str();
-            
-        let literal = LiteralParser::parse(val_str)?;
-        Ok(SelectType::ComplexValue(col_ref, op, literal))
+
+
+        //parse right side of the expression
+        let var_pair2 = complex.next()
+            .ok_or_else(|| SqlParseError::InvalidInput("Missing second operand".to_string()))?;
+        let right = match var_pair2.as_rule() {
+            Rule::number => ComplexField {
+                column_ref: None,
+                literal: Some(LiteralParser::parse(var_pair2.as_str())?),
+            },
+            Rule::variable => ComplexField {
+                column_ref: Some(ColumnRef {
+                    table: None,
+                    column: var_pair2.as_str().to_string(),
+                }),
+                literal: None,
+            },
+            Rule::table_column => ComplexField {
+                column_ref: Some(Self::parse_column_ref(var_pair2)?),
+                literal: None,
+            },
+            _ => ComplexField {
+                column_ref: None,
+                literal: None,
+            },
+        };
+
+        Ok(SelectType::ComplexValue(left, op, right))
     }
 }

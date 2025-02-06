@@ -61,14 +61,32 @@ impl SqlToAqua {
                     };
                     format!("{}({})", agg, col_ref.to_string())
                 },
-                SelectType::ComplexValue(col_ref, op, val) => {
-                    let value = match val {
-                        SqlLiteral::Float(val) => format!("{:.2}", val),
-                        SqlLiteral::Integer(val) => val.to_string(),
-                        SqlLiteral::String(val) => val.clone(),
-                        SqlLiteral::Boolean(val) => val.to_string(),
+                SelectType::ComplexValue(left, op, right) => {
+                    //convert left field
+                    let left_field = match &left.column_ref {
+                        Some(col_ref) => col_ref.to_string(),
+                        None => match &left.literal {
+                            Some(SqlLiteral::Float(val)) => format!("{:.2}", val),
+                            Some(SqlLiteral::Integer(val)) => val.to_string(),
+                            Some(SqlLiteral::String(val)) => val.clone(),
+                            Some(SqlLiteral::Boolean(val)) => val.to_string(),
+                            None => String::new(),
+                        }
                     };
-                    format!("{} {} {}", col_ref.to_string(), op, value)
+
+                    //convert right field
+                    let right_field = match &right.column_ref {
+                        Some(col_ref) => col_ref.to_string(),
+                        None => match &right.literal {
+                            Some(SqlLiteral::Float(val)) => format!("{:.2}", val),
+                            Some(SqlLiteral::Integer(val)) => val.to_string(),
+                            Some(SqlLiteral::String(val)) => val.clone(),
+                            Some(SqlLiteral::Boolean(val)) => val.to_string(),
+                            None => String::new(),
+                        }
+                    };
+                   
+                    format!("{} {} {}", left_field, op, right_field)
                 }
             };
 

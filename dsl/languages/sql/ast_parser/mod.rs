@@ -1,10 +1,10 @@
 pub mod builder;
 pub mod error;
-pub mod condition;
+pub mod where_clause;
 pub mod select;
 pub mod from;
 pub mod literal;
-pub mod group;
+pub mod group_by;
 pub mod ast_structure;
 pub use ast_structure::{
     SqlAST, 

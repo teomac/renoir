@@ -56,12 +56,12 @@ impl AquaASTBuilder {
         };
 
         // Validate the AST
-        Self::validate_ast(&ast)?;
+        //Self::validate_ast(&ast)?;
 
         Ok(ast)
     }
 
-    pub fn validate_ast(ast: &AquaAST) -> Result<(), AquaParseError> {
+    /*pub fn validate_ast(ast: &AquaAST) -> Result<(), AquaParseError> {
         // Add validation to ensure there's at least one SELECT clause
         if ast.select.is_empty() {
             return Err(AquaParseError::InvalidInput(
@@ -153,9 +153,12 @@ impl AquaASTBuilder {
     
 
     fn validate_field_reference(
-        col_ref: &ColumnRef,
+        where_condition: &Condition,
         from_clause: &FromClause,
     ) -> Result<(), AquaParseError> {
+        let left = where_condition.left_field;
+        let right = where_condition.right_field;
+
         if let Some(ref stream) = col_ref.table {
             // Check against main table name and alias
             let scan_valid = stream == &from_clause.scan.stream_name
@@ -207,7 +210,7 @@ impl AquaASTBuilder {
         from_clause: &FromClause,
     ) -> Result<(), AquaParseError> {
         // Validate the current condition
-        Self::validate_field_reference(&clause.condition.variable, from_clause)?;
+        Self::validate_field_reference(&clause.condition, from_clause)?;
 
         match &clause.condition.value {
             AquaLiteral::ColumnRef(ref col_ref) => {
@@ -252,5 +255,5 @@ impl AquaASTBuilder {
             }
         }
         Ok(())
-    }
+    }*/
 }

@@ -16,9 +16,15 @@ pub struct SelectClause {
 pub enum SelectType {
     Simple(ColumnRef),
     Aggregate(AggregateFunction, ColumnRef),
-    ComplexValue(ColumnRef, String, SqlLiteral),
+    ComplexValue(ComplexField, String, ComplexField),
 }
 
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct ComplexField {
+    pub column_ref: Option<ColumnRef>,
+    pub literal: Option<SqlLiteral>,
+}
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum AggregateFunction {

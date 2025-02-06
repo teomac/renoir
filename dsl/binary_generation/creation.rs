@@ -116,7 +116,7 @@ pub fn create_template(query_object: &QueryObject) -> String {
     if !query_object.has_join {
         let table_name = table_names.first().unwrap();
         let stream = format!(
-            r#"let stream0 = ctx.stream_csv::<{}>("{}"){}.write_csv(move |_| r"{}.csv".clone().into(), true);"#,
+            r#"let stream0 = ctx.stream_csv::<{}>("{}"){}.write_csv(move |_| r"{}.csv".into(), true);"#,
             query_object.get_struct_name(table_name).unwrap(),
             query_object.get_csv(table_name).unwrap(),
             query_object.renoir_string,
@@ -130,7 +130,7 @@ pub fn create_template(query_object: &QueryObject) -> String {
         for (i, table_name) in table_names.iter().enumerate() {
             if i == 0 {
                 let stream = format!(
-                    r#"let stream{} = ctx.stream_csv::<{}>("{}"){}.write_csv(move |_| r"{}.csv".clone().into(), true);"#,
+                    r#"let stream{} = ctx.stream_csv::<{}>("{}"){}.write_csv(move |_| r"{}.csv".into(), true);"#,
                     i,
                     query_object.get_struct_name(table_name).unwrap(),
                     query_object.get_csv(table_name).unwrap(),
@@ -232,7 +232,7 @@ pub fn generate_struct_declarations(
     } else {
         // Add fields from result_column_to_input (if there is a join, add the suffix)
         for (result_col, (result_type, _, table_name)) in &query_object.result_column_to_input {
-            let field_name = if query_object.has_join {
+            /*let field_name = if query_object.has_join {
                 let suffix = query_object
                     .get_alias(&table_name)
                     .unwrap_or(&table_name)
@@ -240,8 +240,9 @@ pub fn generate_struct_declarations(
                 format!("{}_{}", result_col, suffix)
             } else {
                 result_col.to_string()
-            };
+            };*/
 
+            let field_name = result_col.to_string();
             result.push_str(&format!("    {}: Option<{}>,\n", field_name, result_type));
         }
     }

@@ -30,12 +30,11 @@ impl AquaToRenoir {
             ));
 
             // Add HAVING clause if present
-            if let Some(ref having) = group_by.having {
-                final_string.push_str(&format!(
-                    ".filter(|x| {})",
-                    process_where_clause(&having, &query_object)
-                ));
-            }
+            //if let Some(ref having) = group_by.group_condition {
+                //TODO: Implement HAVING clause
+            //}
+
+            final_string.push_str(".drop_key()");
         }
 
         // Process all select clauses together

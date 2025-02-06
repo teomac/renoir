@@ -1,12 +1,12 @@
 use indexmap::IndexMap;
-use crate::dsl::ir::aqua::{ast_structure::{JoinClause, SelectClause, AggregateType}, AquaAST, ColumnRef};
+use crate::dsl::ir::aqua::{ast_structure::{AggregateType, ComplexField, JoinClause, SelectClause}, literal::LiteralParser, AquaAST, ColumnRef};
 
 #[derive(Clone)]
 pub struct QueryObject {
     pub has_join: bool, // true if the query has a join
     pub joined_tables: Vec<String>, // list of joined tables
     pub table_names_list: Vec<String>, // list of table names
-    pub projections: Vec<(ColumnRef, String)>, // list of projections (column reference, operation)
+    pub projections: Vec<(ComplexField, String)>, // list of projections (column reference, operation)
 
     pub table_to_alias: IndexMap<String, String>,    // key: table name, value: alias
     pub table_to_csv: IndexMap<String, String>,  // key: table name, value: csv file path
@@ -17,6 +17,10 @@ pub struct QueryObject {
     //IndexMap to store the result column name and its corresponding type, input column and table name
     pub result_column_to_input: IndexMap<String, (String, String, String)>, 
     // key: result column name, value: tuple (result type, input column, table name)
+
+    //ex. SELECT power * total_km AS product FROM table1
+    //this indexMap will be filled with:
+    //"product" -> ("f64", "power, "table1")
 
     //ex. SELECT SUM(total_km) AS total_distance FROM table1
     //this indexMap will be filled with:
@@ -129,8 +133,8 @@ impl QueryObject {
         self.result_column_to_input.insert(result_col.to_string(), (result_type.to_string(), input_col.to_string(), table.to_string()));
     }
 
-    pub fn insert_projection(&mut self, column_ref: &ColumnRef, agg_type: &str) {
-        self.projections.push((column_ref.clone(), agg_type.to_string()));
+    pub fn insert_projection(&mut self, field: &ComplexField, agg_type: &str) {
+        self.projections.push((field.clone(), agg_type.to_string()));
     }
 
     pub fn populate(mut self, aqua_ast: &AquaAST, csv_paths: &Vec<String>, hash_maps: &Vec<IndexMap<String, String>>) -> Self {
@@ -305,24 +309,103 @@ impl QueryObject {
                     self.result_column_to_input
                         .insert(result_col, (result_type, input_col, table));
                 }
-                SelectClause::ComplexValue(col_ref, op, _, alias) => {
-                    let result_col = alias.clone().unwrap_or_else(|| col_ref.column.clone());
-                    let input_col = col_ref.column.clone();
-                    let table = match &col_ref.table {
-                        Some(t) => {
-                            if let Some(actual_table) = self.get_table_from_alias(t) {
+                SelectClause::ComplexValue(left_field, _op, right_field, alias) => {
+                    //parse left field to check if it is a ColumnRef or a Literal or an aggregate expr
+                    let mut left_is_literal = false;
+                    let mut right_is_literal = false;
+                
+                    let mut left_col = String::new();
+                    let mut left_table = String::new();
+                    let mut right_col = String::new();
+                    let mut right_table = String::new();
+
+                    let mut left_type = String::new();
+                    let mut right_type = String::new();
+                    let result_type;
+
+                    //check left field type
+                    if left_field.column.is_some() {
+                       left_col = left_field.column.clone().unwrap().column;
+                       if  left_field.column.clone().unwrap().table.is_some() {
+                           left_table = left_field.column.clone().unwrap().table.clone().unwrap();
+                       }
+                       left_type = self.get_type(&left_field.column.clone().unwrap());
+                    }
+                    else if left_field.literal.is_some() {
+                       left_is_literal = true;
+                       left_type = LiteralParser::get_literal_type(&left_field.literal.clone().unwrap());
+                    }
+                    else if left_field.aggregate.is_some() {
+                        left_col = left_field.aggregate.clone().unwrap().column.column;
+                        if left_field.aggregate.clone().unwrap().column.table.is_some() {
+                            left_table = left_field.aggregate.clone().unwrap().column.table.clone().unwrap();
+                        }
+                        left_type = self.get_type(&left_field.aggregate.clone().unwrap().column);
+                    }
+
+                    //check right field type
+                    if right_field.column.is_some() {
+                        right_col = right_field.column.clone().unwrap().column;
+                        if right_field.column.clone().unwrap().table.is_some() {
+                            right_table = right_field.column.clone().unwrap().table.clone().unwrap();
+                        }
+                        right_type = self.get_type(&right_field.column.clone().unwrap());
+                    }
+                    else if right_field.literal.is_some() {
+                        right_is_literal = true;
+                        right_type = LiteralParser::get_literal_type(&right_field.literal.clone().unwrap());
+                    }
+                    else if right_field.aggregate.is_some() {
+                        right_col = right_field.aggregate.clone().unwrap().column.column;
+                        if right_field.aggregate.clone().unwrap().column.table.is_some() {
+                            right_table = right_field.aggregate.clone().unwrap().column.table.clone().unwrap();
+                        }
+                        right_type = self.get_type(&right_field.aggregate.clone().unwrap().column);
+                    }
+
+                    //safety check
+                    if left_is_literal && right_is_literal {
+                        panic!("Literal functions as both field of the expression are not supported");
+                    }
+
+                    //safety check on types
+                    if left_type != right_type {
+                        panic!("Type mismatch in expression");
+                    }
+
+                    //set result type
+                    result_type = left_type.clone();
+
+                    //set result column
+                    let result_col = alias.clone().unwrap_or_else(|| if !left_is_literal { left_col.clone() } else { right_col.clone() });
+                    let input_col = if !left_is_literal { left_col.clone() } else { right_col.clone() };
+                    let table;
+                    if !left_is_literal{
+                    table = if !left_table.is_empty() {
+                        
+                            if let Some(actual_table) = self.get_table_from_alias(&left_table) {
                                 actual_table.clone()
                             } else {
-                                t.clone()
+                                left_table.clone()
                             }
-                        },
-                        None => self.table_names_list[0].clone(),
+                    } else{
+                        self.table_names_list[0].clone()
                     };
-                    let result_type = if op == "^" {
-                        "f64".to_string()
-                    } else {
-                        self.get_type(&col_ref)
+                        
+                    }
+                    else{
+                        table = if !right_table.is_empty() {
+                        
+                            if let Some(actual_table) = self.get_table_from_alias(&right_table) {
+                                actual_table.clone()
+                            } else {
+                                right_table.clone()
+                            }
+                    } else{
+                        self.table_names_list[0].clone()
                     };
+                    }
+
                     self.result_column_to_input.insert(result_col, (result_type, input_col, table));
                 }
             }

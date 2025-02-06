@@ -1,7 +1,7 @@
 use super::ast_structure::*;
 use super::error::SqlParseError;
 use super::{
-    condition::ConditionParser, from::FromParser, group::GroupByParser, select::SelectParser,
+    where_clause::ConditionParser, from::FromParser, group_by::GroupByParser, select::SelectParser,
 };
 use crate::dsl::languages::sql::ast_parser::Rule;
 use pest::iterators::Pairs;
@@ -10,10 +10,6 @@ pub struct SqlASTBuilder;
 
 impl SqlASTBuilder {
     pub fn build_ast_from_pairs(pairs: Pairs<Rule>) -> Result<SqlAST, SqlParseError> {
-        //print pairs to debug
-         for pair in pairs.clone() {
-             println!("{:?}", pair);
-        }
         for pair in pairs {
             match pair.as_rule() {
                 Rule::query => {
@@ -99,8 +95,6 @@ impl SqlASTBuilder {
                             None
                         },
                     };
-
-                    println!("{:?}", ast);
 
                     return Ok(ast);
                 }

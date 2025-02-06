@@ -1,7 +1,6 @@
 use pest::iterators::Pair;
 use super::ast_structure::*;
 use super::error::AquaParseError;
-use super::literal::LiteralParser;
 use crate::dsl::ir::aqua::ast_parser::Rule;
 
 pub struct ConditionParser;
@@ -63,13 +62,12 @@ impl ConditionParser {
     fn parse_single_condition(condition_pair: Pair<Rule>) -> Result<Condition, AquaParseError> {
         let mut inner = condition_pair.into_inner();
         
-        // Parse left side (always a column reference in a condition)
-        let col_ref_pair = inner.next()
-            .ok_or_else(|| AquaParseError::InvalidInput("Missing field reference in condition".to_string()))?;
-        
-        // Parse the column reference
-        let variable = Self::parse_column_ref(col_ref_pair)?;
-            
+        //parse left field
+        let left_field_pair = inner.next()
+            .ok_or_else(|| AquaParseError::InvalidInput("Missing variable in condition".to_string()))?;
+
+        let left_field = Self::parse_condition_field(left_field_pair)?;
+
         // Parse the operator
         let operator = match inner.next()
             .ok_or_else(|| AquaParseError::InvalidInput("Missing operator in condition".to_string()))?
@@ -85,27 +83,50 @@ impl ConditionParser {
             op => return Err(AquaParseError::InvalidInput(format!("Invalid operator: {}", op))),
         };
 
-        // Parse the value (right side)
-        let value_pair = inner.next()
+        //parse the right field
+
+        let right_field_pair = inner.next()
             .ok_or_else(|| AquaParseError::InvalidInput("Missing value in condition".to_string()))?;
-        
-            let value = match value_pair.as_rule() {
-                Rule::boolean_keyword => AquaLiteral::Boolean(value_pair.as_str().to_lowercase() == "true" || value_pair.as_str().to_lowercase() =="false"),
-                Rule::qualified_column => AquaLiteral::ColumnRef(Self::parse_column_ref(value_pair)?),
-                Rule::identifier => AquaLiteral::String(value_pair.as_str().to_string()),
-                Rule::number => LiteralParser::parse(value_pair.as_str())?,
-                _ => LiteralParser::parse(value_pair.as_str())?
-            };
+
+        let right_field = Self::parse_condition_field(right_field_pair)?;
 
         Ok(Condition {
-            variable,
+            left_field,
             operator,
-            value,
+            right_field,
         })
+        
     }
 
-    fn parse_column_ref(pair: Pair<Rule>) -> Result<ColumnRef, AquaParseError> {
+    fn parse_condition_field(pair: Pair<Rule>) -> Result<ComplexField, AquaParseError> {
         match pair.as_rule() {
+            Rule::value => {
+                //we try to parse it as a number
+                let value = pair.as_str().parse::<i64>()
+                    .map(AquaLiteral::Integer)
+                    .unwrap_or_else(|_| {
+                        //if it fails, we try to parse as float
+                        pair.as_str().parse::<f64>()
+                            .map(AquaLiteral::Float)
+                            .unwrap_or_else(|_| {
+                                //parse as boolean
+                                match pair.as_str() {
+                                    "true" => AquaLiteral::Boolean(true),
+                                    "false" => AquaLiteral::Boolean(false),
+                                    _ => {
+                                        //if it fails, we return as string
+                                        AquaLiteral::String(pair.as_str().to_string())
+                                    }
+                                }
+                            })
+                    });
+                Ok(ComplexField{
+                    column: None,
+                    literal: Some(value),
+                    aggregate: None,
+                })
+
+            }
             Rule::qualified_column => {
                 let mut inner = pair.into_inner();
                 let stream = inner.next()
@@ -116,15 +137,23 @@ impl ConditionParser {
                     .ok_or_else(|| AquaParseError::InvalidInput("Missing field name".to_string()))?
                     .as_str()
                     .to_string();
-                Ok(ColumnRef {
-                    table: Some(stream),
-                    column: field,
+                Ok(ComplexField {
+                    column: Some(ColumnRef {
+                        table: Some(stream),
+                        column: field,
+                    }),
+                    literal: None,
+                    aggregate: None,
                 })
             }
             Rule::identifier => {
-                Ok(ColumnRef {
-                    table: None,
-                    column: pair.as_str().to_string(),
+                Ok(ComplexField {
+                    column: Some(ColumnRef {
+                        table: None,
+                        column: pair.as_str().to_string(),
+                    }),
+                    literal: None,
+                    aggregate: None,
                 })
             }
             _ => Err(AquaParseError::InvalidInput(

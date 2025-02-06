@@ -1,3 +1,4 @@
+use crate::dsl::ir::aqua::{AggregateFunction, AggregateType, AquaLiteral};
 use crate::dsl::ir::aqua::ColumnRef;
 use crate::dsl::ir::aqua::QueryObject;
 
@@ -49,13 +50,41 @@ pub fn convert_column_ref(column_ref: &ColumnRef, query_object: &QueryObject) ->
         };
         let i = query_object.table_to_struct_name.get(&table_name).unwrap().chars().last().unwrap();
         if !query_object.has_join {
-            return format!("x.{}.{}.unwrap()", i, col)
+            return format!("x.{}.{}", i, col)
         } else {
-            return format!("x{}.{}.unwrap()", query_object.table_to_tuple_access.get(&table_name).unwrap(), col)
+            return format!("x{}.{}", query_object.table_to_tuple_access.get(&table_name).unwrap(), col)
         }
         
     }
     
+}
+
+// helper function to convert literal to string
+pub fn convert_literal(literal: &AquaLiteral) -> String {
+    match literal {
+        AquaLiteral::Integer(val) => format!("{}", val),
+        AquaLiteral::Float(val) => format!("{:.2}", val),
+        AquaLiteral::String(val) => format!("{}", val),
+        AquaLiteral::Boolean(val) => format!("{}", val),
+        AquaLiteral::ColumnRef(_val) => "".to_string(),
+        
+    }
+}
+
+pub fn convert_aggregate(aggregate: &AggregateFunction, query_object: &QueryObject) -> String {
+    let func = match aggregate.function
+        {
+            AggregateType::Max => "max",
+            AggregateType::Min=>"min"  ,
+              AggregateType::Avg=>"avg",
+            AggregateType::Sum=> "sum" ,
+             AggregateType::Count=>"count" ,
+        };
+
+
+    let col = convert_column_ref(&aggregate.column, query_object);
+
+    format!("{}.{}", func, col)
 }
 
 // method to check if a table is an alias and return the table name

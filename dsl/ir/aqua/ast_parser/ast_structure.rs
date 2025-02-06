@@ -35,7 +35,7 @@ pub struct JoinCondition {
 pub enum SelectClause {
     Column(ColumnRef, Option<String>),  // Added Option<String> for alias
     Aggregate(AggregateFunction, Option<String>),  // Added Option<String> for alias 
-    ComplexValue(ColumnRef, String, AquaLiteral, Option<String>),  // Added Option<String> for alias
+    ComplexValue(ComplexField, String, ComplexField, Option<String>),  // Added Option<String> for alias
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -69,14 +69,30 @@ pub struct WhereClause {
 #[derive(Debug, PartialEq, Clone)]
 pub struct GroupByClause {
     pub columns: Vec<ColumnRef>,
-    pub having: Option<WhereClause>,
+    pub group_condition: Option<GroupCondition>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
+pub struct GroupCondition {
+    pub condition: Condition,
+    pub binary_op: Option<BinaryOp>,
+    pub next: Option<Box<GroupCondition>>,
+}
+
+
+#[derive(Debug, PartialEq, Clone)]
 pub struct Condition {
-    pub variable: ColumnRef,
+    pub left_field: ComplexField,
     pub operator: ComparisonOp,
-    pub value: AquaLiteral,
+    pub right_field: ComplexField,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct ComplexField {
+    pub column: Option<ColumnRef>,
+    pub literal: Option<AquaLiteral>,
+    pub aggregate: Option<AggregateFunction>,
+    
 }
 
 #[derive(Debug, PartialEq, Clone)]

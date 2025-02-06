@@ -9,7 +9,7 @@ number = @{
 }
 boolean_keyword = @{ ^"true" | ^"false" }
 symbol = @{ ("^"| "+" | "-" | "*" | "/")}
-value = { boolean_keyword | qualified_column | number | identifier }
+value = { boolean_keyword | number }
 
 as_keyword = { "as" }
 in_keyword = { "in" }
@@ -52,7 +52,7 @@ qualified_column = {
     identifier ~ "." ~ identifier
 }
 
-complex_op = {(qualified_column | identifier) ~ symbol ~ (identifier | number) }
+complex_op = {(qualified_column | identifier | number) ~ symbol ~ (qualified_column | identifier | number) }
 
 // Aggregate expressions
 aggregate_expr = { aggregate_func ~ "(" ~ (asterisk |qualified_column | identifier) ~ ")" }
@@ -83,7 +83,7 @@ binary_op = {
 }
 
 // Conditions for WHERE clause
-condition = { (qualified_column | identifier) ~ comparison_op ~ value }
+condition = { (qualified_column | identifier | value) ~ comparison_op ~ (qualified_column | identifier | value) }
 comparison_op = @{ ">=" | "<=" | "!=" | ">" | "<" | "==" | "="}
 where_conditions = { condition ~ (binary_op ~ condition)* }
 
@@ -92,6 +92,9 @@ method_chain = { "." ~ (filter_op | agg_op) }
 filter_op = { "filter" ~ "(" ~ condition ~ ")" }
 agg_op = { ("max" | "min" | "avg") ~ "(" ~ identifier ~ ")" }
 
-having_clause = { "{"  ~ where_conditions ~ "}" }
+having_condition = { (aggregate_expr | qualified_column | identifier | value) ~ comparison_op ~ (aggregate_expr | qualified_column | identifier | value) }
+having_clause = {"{"  ~ having_condition ~ (binary_op ~ having_condition)* ~ "}"}
 
-group_clause = { group_keyword  ~  (qualified_column | identifier)  ~ ("," ~ (qualified_column | identifier))*  ~ ( having_clause )? }
+
+group_columns = { (qualified_column | identifier)  ~ ("," ~ (qualified_column | identifier))* }
+group_clause = { group_keyword  ~  group_columns ~ ( having_clause )? }
