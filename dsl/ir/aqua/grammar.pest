@@ -92,7 +92,7 @@ method_chain = { "." ~ (filter_op | agg_op) }
 filter_op = { "filter" ~ "(" ~ condition ~ ")" }
 agg_op = { ("max" | "min" | "avg") ~ "(" ~ identifier ~ ")" }
 
-having_condition = { (aggregate_expr | qualified_column | identifier | value) ~ comparison_op ~ (aggregate_expr | qualified_column | identifier | value) }
+having_condition = { (aggregate_expr | value | qualified_column | identifier) ~ comparison_op ~ (aggregate_expr | value | qualified_column | identifier ) }
 having_clause = {"{"  ~ having_condition ~ (binary_op ~ having_condition)* ~ "}"}
 
 

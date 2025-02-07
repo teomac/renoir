@@ -14,7 +14,7 @@ pub fn convert_column_ref(column_ref: &ColumnRef, query_object: &QueryObject) ->
             let table_name = if query_object.table_to_alias.contains_key(&val) {
                 val
             } else {
-                query_object.table_to_alias.iter().find(|&x| x.1 == &val).unwrap().0.clone()
+                query_object.table_names_list.iter().find(|&x| x == &val).unwrap().clone()
             };
             return format!("x{}", query_object.table_to_tuple_access.get(&table_name).unwrap());
         }
@@ -39,7 +39,7 @@ pub fn convert_column_ref(column_ref: &ColumnRef, query_object: &QueryObject) ->
         }
         // else it's a table name
         else {
-            table_name = query_object.table_to_alias.iter().find(|&x| x.1 == &val).unwrap().0.clone();
+            table_name = query_object.table_names_list.iter().find(|&x| x == &val).unwrap().clone();
         }
 
         let col = if query_object.table_to_struct.get(&table_name).unwrap().get(&column_ref.column).is_some() {
@@ -92,6 +92,6 @@ pub fn check_alias(table: &str, query_object: &QueryObject) -> String {
     if query_object.table_to_alias.contains_key(table) {
         table.to_string()
     } else {
-        query_object.table_to_alias.iter().find(|&x| x.1 == table).unwrap().0.clone()
+        query_object.table_names_list.iter().find(|&x| x == table).unwrap().clone()
     }
 }

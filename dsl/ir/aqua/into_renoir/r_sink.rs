@@ -40,8 +40,11 @@ pub fn process_select_clauses(
                     let fields: Vec<String> = query_object
                     .result_column_to_input
                     .iter()
-                    .map(|(field_name, r)| format!("{}: x.{}.{}.clone()", field_name, query_object.table_to_alias.get_index_of(&r.2).map_or_else(|| "".to_string(), |index| index.to_string()), r.1))
-                    .collect();
+                    .map(|(field_name, r)| {
+                        let tuple_access = query_object.table_to_tuple_access.get(&r.2)
+                            .expect("Table not found in tuple access map");
+                        format!("{}: x{}.{}.clone()", field_name, tuple_access, r.1)
+                    })                    .collect();
 
                 result.push_str(&fields.join(", "));
                 result.push_str(" })");
@@ -324,7 +327,7 @@ fn build_output_struct_mapping(
         }
 
         // If has_join, append the table alias/name as suffix
-        let field_name = if query_object.has_join {
+        /*let field_name = if query_object.has_join {
             let (_, _, table_name) = &query_object.result_column_to_input[col];
             let suffix = query_object
                 .get_alias(table_name)
@@ -333,12 +336,12 @@ fn build_output_struct_mapping(
             format!("{}_{}", col, suffix)
         } else {
             col.to_string()
-        };
+        };*/
 
         if is_aggregate {
-            output.push_str(&format!("{}: Some({})", field_name, values[i]));
+            output.push_str(&format!("{}: Some({})", col, values[i]));
         } else {
-            output.push_str(&format!("{}: {}", field_name, values[i]));
+            output.push_str(&format!("{}: {}", col, values[i]));
         }
     }
 

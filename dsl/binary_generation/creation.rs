@@ -230,18 +230,7 @@ pub fn generate_struct_declarations(
     if has_select_star {
         result.push_str(&generate_all_columns_output_struct(query_object));
     } else {
-        // Add fields from result_column_to_input (if there is a join, add the suffix)
         for (result_col, (result_type, _, table_name)) in &query_object.result_column_to_input {
-            /*let field_name = if query_object.has_join {
-                let suffix = query_object
-                    .get_alias(&table_name)
-                    .unwrap_or(&table_name)
-                    .to_string();
-                format!("{}_{}", result_col, suffix)
-            } else {
-                result_col.to_string()
-            };*/
-
             let field_name = result_col.to_string();
             result.push_str(&format!("    {}: Option<{}>,\n", field_name, result_type));
         }

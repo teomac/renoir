@@ -1,7 +1,7 @@
-use indexmap::IndexMap;
+use crate::dsl::ir::aqua::r_utils::check_alias;
 use crate::dsl::ir::aqua::FromClause;
 use crate::dsl::ir::aqua::QueryObject;
-use crate::dsl::ir::aqua::r_utils::check_alias;
+use indexmap::IndexMap;
 
 pub fn process_from_clause(from_clause: &FromClause, query_object: &mut QueryObject) -> String {
     if !query_object.has_join {
@@ -9,10 +9,10 @@ pub fn process_from_clause(from_clause: &FromClause, query_object: &mut QueryObj
     }
 
     let mut join_string = String::new();
-    
+
     // Single IndexMap to track tuple access paths
     let mut struct_positions: IndexMap<String, String> = IndexMap::new();
-    
+
     // Process each join in order
     for (i, join) in from_clause.joins.clone().unwrap().iter().enumerate() {
         let joined_table = &join.scan.stream_name;
@@ -33,40 +33,59 @@ pub fn process_from_clause(from_clause: &FromClause, query_object: &mut QueryObj
             String::new()
         } else {
             // Get access from our tracking structure
-            struct_positions.get(&left_table_name)
-                .expect(&format!("Could not find tuple position for table {}", left_table_name))
+            struct_positions
+                .get(&left_table_name)
+                .expect(&format!(
+                    "Could not find tuple position for table {}",
+                    left_table_name
+                ))
                 .clone()
         };
 
-        let left_field = if query_object.table_to_struct.get(&left_table_name).unwrap().get(&left_col.column).is_some() {
+        let left_field = if query_object
+            .table_to_struct
+            .get(&left_table_name)
+            .unwrap()
+            .get(&left_col.column)
+            .is_some()
+        {
             // If the column is in the struct, use it directly
             left_col.column.clone()
         } else {
             // If the column is not in the struct, use the validated field
-            panic!("Column {} not found in struct for table {}", left_col.column, left_table_name);
+            panic!(
+                "Column {} not found in struct for table {}",
+                left_col.column, left_table_name
+            );
         };
-        
-        let right_field = if query_object.table_to_struct.get(&right_table_name).unwrap().get(&right_col.column).is_some() {
+
+        let right_field = if query_object
+            .table_to_struct
+            .get(&right_table_name)
+            .unwrap()
+            .get(&right_col.column)
+            .is_some()
+        {
             // If the column is in the struct, use it directly
             right_col.column.clone()
         } else {
             // If the column is not in the struct, use the validated field
-            panic!("Column {} not found in struct for table {}", right_col.column, right_table_name);
+            panic!(
+                "Column {} not found in struct for table {}",
+                right_col.column, right_table_name
+            );
         };
 
         join_string.push_str(&format!(
             ".join(stream{}, |x| x{}.{}.clone(), |y| y.{}.clone()).drop_key()",
-            struct_index,
-            left_access,
-            left_field,
-            right_field
+            struct_index, left_access, left_field, right_field
         ));
 
         // Update IndexMap after this join
         if i == 0 {
             // After first join: (t1, t2)
-            struct_positions.insert(left_table_name, ".0".to_string());
-            struct_positions.insert(right_table_name, ".1".to_string());
+            struct_positions.insert(from_clause.scan.stream_name.clone(), ".0".to_string());
+            struct_positions.insert(joined_table.clone(), ".1".to_string());
         } else {
             // Create temporary map to store new positions
             let mut new_positions = IndexMap::new();
@@ -82,6 +101,6 @@ pub fn process_from_clause(from_clause: &FromClause, query_object: &mut QueryObj
     }
 
     query_object.update_tuple_access(&struct_positions);
-    
+
     join_string
 }

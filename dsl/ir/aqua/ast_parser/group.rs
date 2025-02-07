@@ -130,7 +130,7 @@ impl GroupParser {
             "<" => ComparisonOp::LessThan,
             ">=" => ComparisonOp::GreaterThanEquals,
             "<=" => ComparisonOp::LessThanEquals,
-            "=" => ComparisonOp::Equal,
+            "=" | "==" => ComparisonOp::Equal,
             "!=" | "<>" => ComparisonOp::NotEqual,
             op => return Err(AquaParseError::InvalidInput(format!("Invalid operator: {}", op))),
         };
