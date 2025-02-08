@@ -49,7 +49,8 @@ impl SelectParser {
                 Self::parse_column_ref(item).map(SelectType::Simple)
             },
             Rule::aggregate_expr => {
-                Self::parse_aggregate(item)
+                let agg = Self::parse_aggregate(item)?;
+                Ok(SelectType::Aggregate(agg.0, agg.1))
             },
             Rule::select_expr => {
                 Self::parse_complex_expression(item)
@@ -92,7 +93,7 @@ impl SelectParser {
         }
     }
 
-    fn parse_aggregate(pair: Pair<Rule>) -> Result<SelectType, SqlParseError> {
+    fn parse_aggregate(pair: Pair<Rule>) -> Result<(AggregateFunction, ColumnRef), SqlParseError> {
         let mut agg = pair.into_inner();
         let func = match agg.next()
             .ok_or_else(|| SqlParseError::InvalidInput("Missing aggregate function".to_string()))?
@@ -117,7 +118,7 @@ impl SelectParser {
             return Err(SqlParseError::InvalidInput("Invalid aggregation".to_string()));
         }
             
-        Ok(SelectType::Aggregate(func, col_ref))
+        Ok((func, col_ref))
     }
 
     fn parse_complex_expression(pair: Pair<Rule>) -> Result<SelectType, SqlParseError> {
@@ -130,6 +131,7 @@ impl SelectParser {
             Rule::number => ComplexField {
                 column_ref: None,
                 literal: Some(LiteralParser::parse(var_pair.as_str())?),
+                aggregate: None,
             },
             Rule::variable => ComplexField {
                 column_ref: Some(ColumnRef {
@@ -137,14 +139,23 @@ impl SelectParser {
                     column: var_pair.as_str().to_string(),
                 }),
                 literal: None,
+                aggregate: None,
             },
             Rule::table_column => ComplexField {
                 column_ref: Some(Self::parse_column_ref(var_pair)?),
                 literal: None,
+                aggregate: None,
+            },
+            Rule::aggregate_expr => 
+            ComplexField {
+                column_ref: None,
+                literal: None,
+                aggregate: Some(Self::parse_aggregate(var_pair)?),
             },
             _ => ComplexField {
                 column_ref: None,
                 literal: None,
+                aggregate: None,
             },
         };
             
@@ -161,6 +172,7 @@ impl SelectParser {
             Rule::number => ComplexField {
                 column_ref: None,
                 literal: Some(LiteralParser::parse(var_pair2.as_str())?),
+                aggregate: None,
             },
             Rule::variable => ComplexField {
                 column_ref: Some(ColumnRef {
@@ -168,14 +180,23 @@ impl SelectParser {
                     column: var_pair2.as_str().to_string(),
                 }),
                 literal: None,
+                aggregate: None,
             },
             Rule::table_column => ComplexField {
                 column_ref: Some(Self::parse_column_ref(var_pair2)?),
                 literal: None,
+                aggregate: None,
             },
+            Rule::aggregate_expr =>
+                ComplexField {
+                    column_ref: None,
+                    literal: None,
+                    aggregate: Some(Self::parse_aggregate(var_pair2)?),
+                },
             _ => ComplexField {
                 column_ref: None,
                 literal: None,
+                aggregate: None,
             },
         };
 

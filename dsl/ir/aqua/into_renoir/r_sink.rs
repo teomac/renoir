@@ -38,27 +38,29 @@ pub fn process_select_clauses(
 
                 if query_object.has_join {
                     let fields: Vec<String> = query_object
-                    .result_column_to_input
-                    .iter()
-                    .map(|(field_name, r)| {
-                        let tuple_access = query_object.table_to_tuple_access.get(&r.2)
-                            .expect("Table not found in tuple access map");
-                        format!("{}: x{}.{}.clone()", field_name, tuple_access, r.1)
-                    })                    .collect();
+                        .result_column_to_input
+                        .iter()
+                        .map(|(field_name, r)| {
+                            let tuple_access = query_object
+                                .table_to_tuple_access
+                                .get(&r.2)
+                                .expect("Table not found in tuple access map");
+                            format!("{}: x{}.{}.clone()", field_name, tuple_access, r.1)
+                        })
+                        .collect();
 
-                result.push_str(&fields.join(", "));
-                result.push_str(" })");
+                    result.push_str(&fields.join(", "));
+                    result.push_str(" })");
+                } else {
+                    let fields: Vec<String> = query_object
+                        .result_column_to_input
+                        .iter()
+                        .map(|(field_name, _)| format!("{}: x.{}.clone()", field_name, field_name))
+                        .collect();
+
+                    result.push_str(&fields.join(", "));
+                    result.push_str(" })");
                 }
-                else{
-
-                let fields: Vec<String> = query_object
-                    .result_column_to_input
-                    .iter()
-                    .map(|(field_name, _)| format!("{}: x.{}.clone()", field_name, field_name))
-                    .collect();
-
-                result.push_str(&fields.join(", "));
-                result.push_str(" })");}
 
                 return result;
             }
@@ -180,10 +182,14 @@ pub fn process_select_clauses(
                     }
                 }
             }
-            SelectClause::ComplexValue(left_field, op, right_field, _alias) => {
+            SelectClause::ComplexValue(left_field, op, right_field, alias) => {
                 //parse left field to check if it is a ColumnRef or a Literal or an aggregate expr
-                let mut left_is_literal = false;
-                let mut right_is_literal = false;
+                let left_is_literal = left_field.literal.is_some();
+                let right_is_literal = right_field.literal.is_some();
+                let left_is_aggregate = left_field.aggregate.is_some();
+                let right_is_aggregate = right_field.aggregate.is_some();
+                let left_is_column = left_field.column.is_some();
+                let right_is_column = right_field.column.is_some();
                 let left_data_type;
                 let right_data_type;
 
@@ -197,116 +203,115 @@ pub fn process_select_clauses(
                 };
 
                 //check left field type
-                if left_field.column.is_some() {
+                if left_is_column {
                     left_col_ref = left_field.column.clone().unwrap();
-                } else if left_field.literal.is_some() {
-                    left_is_literal = true;
-                } else if left_field.aggregate.is_some() {
-                    left_col_ref = left_field.aggregate.clone().unwrap().column;
                 }
 
                 //check right field type
-                if right_field.column.is_some() {
+                if right_is_column {
                     right_col_ref = right_field.column.clone().unwrap();
-                } else if right_field.literal.is_some() {
-                    right_is_literal = true;
-                } else if right_field.aggregate.is_some() {
-                    right_col_ref = right_field.aggregate.clone().unwrap().column;
                 }
 
-                //process left field
-                let _left;
-                if left_is_literal {
-                    match &left_field.literal {
-                        Some(AquaLiteral::Float(val)) => {
-                            _left = format!("{:.2}", val);
-                            left_data_type = "f64".to_string();
+                    //process left field
+                    let _left;
+                    if left_is_literal {
+                        match &left_field.literal {
+                            Some(AquaLiteral::Float(val)) => {
+                                _left = format!("{:.2}", val);
+                                left_data_type = "f64".to_string();
+                            }
+                            Some(AquaLiteral::Integer(val)) => {
+                                _left = val.to_string();
+                                left_data_type = "i64".to_string();
+                            }
+                            Some(AquaLiteral::Boolean(val)) => {
+                                _left = val.to_string();
+                                left_data_type = "bool".to_string();
+                            }
+                            Some(AquaLiteral::String(val)) => {
+                                _left = val.clone();
+                                left_data_type = "String".to_string();
+                            }
+                            Some(AquaLiteral::ColumnRef(column_ref)) => {
+                                _left = convert_column_ref(&column_ref, query_object);
+                                left_data_type = query_object.get_type(&column_ref);
+                            }
+                            None => panic!("Invalid left field"),
                         }
-                        Some(AquaLiteral::Integer(val)) => {
-                            _left = val.to_string();
-                            left_data_type = "i64".to_string();
-                        }
-                        Some(AquaLiteral::Boolean(val)) => {
-                            _left = val.to_string();
-                            left_data_type = "bool".to_string();
-                        }
-                        Some(AquaLiteral::String(val)) => {
-                            _left = val.clone();
-                            left_data_type = "String".to_string();
-                        }
-                        Some(AquaLiteral::ColumnRef(column_ref)) => {
-                            _left = convert_column_ref(&column_ref, query_object);
-                            left_data_type = query_object.get_type(&column_ref);
-                        }
-                        None => panic!("Invalid left field"),
+                    } else {
+                        _left = convert_column_ref(&left_col_ref, query_object);
+                        left_data_type = query_object.get_type(&left_col_ref);
                     }
-                } else {
-                    _left = convert_column_ref(&left_col_ref, query_object);
-                    left_data_type = query_object.get_type(&left_col_ref);
-                }
 
-                //process right field
-                let right;
-                if right_is_literal {
-                    match &right_field.literal {
-                        Some(AquaLiteral::Float(val)) => {
-                            right = format!("{:.2}", val);
-                            right_data_type = "f64".to_string();
+                    //process right field
+                    let right;
+                    if right_is_literal {
+                        match &right_field.literal {
+                            Some(AquaLiteral::Float(val)) => {
+                                right = format!("{:.2}", val);
+                                right_data_type = "f64".to_string();
+                            }
+                            Some(AquaLiteral::Integer(val)) => {
+                                right = val.to_string();
+                                right_data_type = "i64".to_string();
+                            }
+                            Some(AquaLiteral::Boolean(val)) => {
+                                right = val.to_string();
+                                right_data_type = "bool".to_string();
+                            }
+                            Some(AquaLiteral::String(val)) => {
+                                right = val.clone();
+                                right_data_type = "String".to_string();
+                            }
+                            Some(AquaLiteral::ColumnRef(column_ref)) => {
+                                right = convert_column_ref(&column_ref, query_object);
+                                right_data_type = query_object.get_type(&column_ref);
+                            }
+                            None => panic!("Invalid right field"),
                         }
-                        Some(AquaLiteral::Integer(val)) => {
-                            right = val.to_string();
-                            right_data_type = "i64".to_string();
-                        }
-                        Some(AquaLiteral::Boolean(val)) => {
-                            right = val.to_string();
-                            right_data_type = "bool".to_string();
-                        }
-                        Some(AquaLiteral::String(val)) => {
-                            right = val.clone();
-                            right_data_type = "String".to_string();
-                        }
-                        Some(AquaLiteral::ColumnRef(column_ref)) => {
-                            right = convert_column_ref(&column_ref, query_object);
-                            right_data_type = query_object.get_type(&column_ref);
-                        }
-                        None => panic!("Invalid right field"),
+                    } else {
+                        right = convert_column_ref(&right_col_ref, query_object);
+                        right_data_type = query_object.get_type(&right_col_ref);
                     }
-                } else {
-                    right = convert_column_ref(&right_col_ref, query_object);
-                    right_data_type = query_object.get_type(&right_col_ref);
-                }
 
-                if op == "^" {
-                    if left_data_type != "f64"
-                        && left_data_type != "i64"
-                        && right_data_type != "f64"
-                        && right_data_type != "i64"
-                    {
-                        panic!("Invalid type for power operation");
-                    }
-                    if left_data_type != right_data_type {
-                        panic!("Data types for power operation must be the same");
-                    }
-                    let projection_string;
-                    if left_data_type == "i64" {
-                        if left_is_literal {
-                            projection_string = "_i64.pow(".to_string() + &right + ".unwrap())";
+                    if op == "^" {
+                        if left_data_type != "f64"
+                            && left_data_type != "i64"
+                            && right_data_type != "f64"
+                            && right_data_type != "i64"
+                        {
+                            panic!("Invalid type for power operation");
+                        }
+                        if left_data_type != right_data_type {
+                            panic!("Data types for power operation must be the same");
+                        }
+                        let projection_string;
+                        if left_data_type == "i64" {
+                            if left_is_literal {
+                                projection_string = "_i64.pow(".to_string() + &right + ".unwrap())";
+                            } else {
+                                projection_string = ".pow(".to_string() + &right + ")";
+                            }
+                            query_object.insert_projection(&left_field, &projection_string);
                         } else {
-                            projection_string = ".pow(".to_string() + &right + ")";
+                            if left_is_literal {
+                                projection_string =
+                                    "_f64.powf(".to_string() + &right + ".unwrap())";
+                            } else {
+                                projection_string = ".powf(".to_string() + &right + ")";
+                            }
+                            query_object.insert_projection(&left_field, &projection_string);
                         }
-                        query_object.insert_projection(&left_field, &projection_string);
                     } else {
                         if left_is_literal {
-                            projection_string = "_f64.powf(".to_string() + &right + ".unwrap())";
+                            let projection_string = format!("{} {}.unwrap()", op, right);
+                            query_object.insert_projection(&left_field, &projection_string);
                         } else {
-                            projection_string = ".powf(".to_string() + &right + ")";
+                            let projection_string = format!("{} {}", op, right);
+                            query_object.insert_projection(&left_field, &projection_string);
                         }
-                        query_object.insert_projection(&left_field, &projection_string);
                     }
-                } else {
-                    let projection_string = format!("{} {}", op, right);
-                    query_object.insert_projection(&left_field, &projection_string);
-                }
+                
             }
         }
     }
@@ -321,23 +326,13 @@ fn build_output_struct_mapping(
 ) -> String {
     let mut output = String::from("OutputStruct { ");
 
+    println!("values: {:?}", values);
+    println!("query_object: {:?}", query_object.projections);
+
     for (i, (col, _)) in query_object.result_column_to_input.iter().enumerate() {
         if i > 0 {
             output.push_str(", ");
         }
-
-        // If has_join, append the table alias/name as suffix
-        /*let field_name = if query_object.has_join {
-            let (_, _, table_name) = &query_object.result_column_to_input[col];
-            let suffix = query_object
-                .get_alias(table_name)
-                .unwrap_or(table_name)
-                .to_string();
-            format!("{}_{}", col, suffix)
-        } else {
-            col.to_string()
-        };*/
-
         if is_aggregate {
             output.push_str(&format!("{}: Some({})", col, values[i]));
         } else {
@@ -376,7 +371,7 @@ fn create_map_string(query_object: &QueryObject) -> String {
                 final_string.push_str(", ");
             }
 
-            if operation == "Count" && col_ref.column.as_ref().unwrap().column == "*" {
+            if operation == "Count" && col_ref.aggregate.as_ref().unwrap().column.column == "*" {
                 //col_ref is a ColumnRef for sure now. Parse it as ColumnRef object
                 let new_col_ref = col_ref.column.clone().unwrap();
 
@@ -607,7 +602,15 @@ fn create_map_string(query_object: &QueryObject) -> String {
 
                     k += 1;
                 }
-                _ => final_string.push_str(&format!("*acc{}", k)), // Non-aggregated columns keep original value
+                _ =>{// Non-aggregated columns keep original value
+
+                    //if the column is a string, we need to dereference it, clone and convert it to a string
+                    if type_declarations2[i].0 == "String" {
+                        final_string.push_str(&format!("acc{}.clone().to_string()", k));
+                    } else {
+                    final_string.push_str(&format!("*acc{}", k))}
+
+                } 
             }
             k += 1;
         }
@@ -716,5 +719,38 @@ fn create_map_string(query_object: &QueryObject) -> String {
         map_string.push_str(")");
 
         map_string
+    }
+}
+
+use crate::dsl::ir::aqua::r_utils::check_alias;
+// helper function to process aggregation
+fn process_aggregation(agg_func: &AggregateFunction, query_object: &QueryObject) -> String {
+    let col_ref = &agg_func.column;
+    let table_access = if !query_object.has_join {
+        format!("x.{}.unwrap()", col_ref.column)
+    } else {
+        let table = col_ref.table.as_ref().unwrap();
+        let table_name = check_alias(table, query_object);
+        format!(
+            "x{}.{}.unwrap()",
+            query_object.table_to_tuple_access.get(&table_name).unwrap(),
+            col_ref.column
+        )
+    };
+
+    match agg_func.function {
+        AggregateType::Max => format!(
+            "{}::max(*acc, {})",
+            query_object.get_type(col_ref),
+            table_access
+        ),
+        AggregateType::Min => format!(
+            "{}::min(*acc, {})",
+            query_object.get_type(col_ref),
+            table_access
+        ),
+        AggregateType::Sum => format!("*acc + {}", table_access),
+        AggregateType::Count => "*acc + 1".to_string(),
+        AggregateType::Avg => format!("*acc + {}", table_access),
     }
 }

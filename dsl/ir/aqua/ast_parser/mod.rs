@@ -28,7 +28,7 @@ use crate::dsl::ir::aqua::ast_parser::builder::AquaASTBuilder;
 
 
 #[derive(Parser)]
-#[grammar = "dsl/ir/aqua/grammar.pest"] 
+#[grammar = "dsl/ir/aqua/ir_grammar.pest"] 
 pub struct AquaParser;
 
 impl AquaParser {

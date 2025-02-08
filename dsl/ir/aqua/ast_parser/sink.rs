@@ -75,6 +75,7 @@ impl SinkParser {
 
     fn parse_column_ref(pair: Pair<Rule>) -> Result<ColumnRef, AquaParseError> {
         match pair.as_rule() {
+            
             Rule::qualified_column => {
                 let mut inner = pair.into_inner();
                 let table = inner.next()
@@ -85,12 +86,14 @@ impl SinkParser {
                     .ok_or_else(|| AquaParseError::InvalidInput("Missing field name".to_string()))?
                     .as_str()
                     .to_string();
+                println!("table: {}, column: {}", table, column);
                 Ok(ColumnRef {
                     table: Some(table),
                     column,
                 })
             }
             Rule::identifier | Rule::asterisk => {
+                println!("identifier column: {}", pair.as_str());
                 Ok(ColumnRef {
                     table: None,
                     column: pair.as_str().to_string(),
@@ -105,6 +108,7 @@ impl SinkParser {
     // Modified to return AggregateFunction directly instead of SelectClause
     fn parse_aggregate_function(pair: Pair<Rule>) -> Result<AggregateFunction, AquaParseError> {
         let mut agg = pair.into_inner();
+
         let func = match agg.next()
             .ok_or_else(|| AquaParseError::InvalidInput("Missing aggregate function".to_string()))?
             .as_str()
@@ -124,6 +128,8 @@ impl SinkParser {
         let var_pair = agg.next()
             .ok_or_else(|| AquaParseError::InvalidInput("Missing aggregate field".to_string()))?;
         let col_ref = Self::parse_column_ref(var_pair)?;
+
+
             
         Ok(AggregateFunction {
             function: func,

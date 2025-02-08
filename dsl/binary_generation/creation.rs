@@ -230,7 +230,7 @@ pub fn generate_struct_declarations(
     if has_select_star {
         result.push_str(&generate_all_columns_output_struct(query_object));
     } else {
-        for (result_col, (result_type, _, table_name)) in &query_object.result_column_to_input {
+        for (result_col, (result_type, _, _)) in &query_object.result_column_to_input {
             let field_name = result_col.to_string();
             result.push_str(&format!("    {}: Option<{}>,\n", field_name, result_type));
         }

@@ -7,10 +7,16 @@ use indexmap::IndexMap;
 
 #[derive(Clone)]
 pub struct QueryObject {
-    pub has_join: bool,                           // true if the query has a join
+    pub has_join: bool, // true if the query has a join
+
+    pub renoir_string: String, //Renoir final string
+
+    pub output_path: String, //output path
+
+    pub ir_ast: Option<AquaAST>,                  //ir ast
     pub joined_tables: Vec<String>,               // list of joined tables
     pub table_names_list: Vec<String>,            // list of table names
-    pub projections: Vec<(ComplexField, String)>, // list of projections (column reference, operation)
+    pub projections: Vec<(ComplexField, String)>, // list of projections (complex field, operation)
 
     pub table_to_alias: IndexMap<String, String>, // key: table name, value: alias
     pub table_to_csv: IndexMap<String, String>,   // key: table name, value: csv file path
@@ -22,7 +28,7 @@ pub struct QueryObject {
     pub result_column_to_input: IndexMap<String, (String, String, String)>,
     // key: result column name, value: tuple (result type, input column, table name)
 
-    //ex. SELECT power * total_km AS product FROM table1
+    //ex. SELECT (power * total_km) + (power * total_km) AS product FROM table1
     //this indexMap will be filled with:
     //"product" -> ("f64", "power, "table1")
 
@@ -33,11 +39,6 @@ pub struct QueryObject {
     //ex. SELECT SUM(total_km) FROM table1
     //this indexMap will be filled with:
     //"total_km" -> ("f64", "total_km", "table1")
-
-    // Renoir final string
-    pub renoir_string: String,
-    //output path
-    pub output_path: String,
 }
 
 // vehicle_count, (u64, *, table1)
@@ -59,6 +60,7 @@ impl QueryObject {
             result_column_to_input: IndexMap::new(),
             renoir_string: String::new(),
             output_path: String::new(),
+            ir_ast: None,
         }
     }
 
@@ -160,6 +162,8 @@ impl QueryObject {
         csv_paths: &Vec<String>,
         hash_maps: &Vec<IndexMap<String, String>>,
     ) -> Self {
+        //insert the ir ast
+        self.ir_ast = Some(aqua_ast.clone());
         let mut joins_vec: Vec<JoinClause> = Vec::new();
 
         // Check if query has join
@@ -245,7 +249,7 @@ impl QueryObject {
 
         for select_clause in &aqua_ast.select {
             match select_clause {
-                SelectClause::Column(col_ref, alias) => {
+                SelectClause::Column(col_ref, _alias) => {
                     if col_ref.column == "*" {
                         if self.has_join {
                             for table in &self.table_names_list {
@@ -254,8 +258,10 @@ impl QueryObject {
                                 let suffix = self.get_alias(table).unwrap_or(table).clone();
                                 for (field_name, field_type) in struct_map {
                                     let result_col = format!("{}_{}", field_name, suffix);
-                                    self.result_column_to_input
-                                        .insert(result_col, (field_type, field_name, table.clone()));
+                                    self.result_column_to_input.insert(
+                                        result_col,
+                                        (field_type, field_name, table.clone()),
+                                    );
                                 }
                             }
                         } else {

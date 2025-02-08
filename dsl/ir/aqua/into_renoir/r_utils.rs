@@ -22,6 +22,7 @@ pub fn convert_column_ref(column_ref: &ColumnRef, query_object: &QueryObject) ->
 
     if !query_object.has_join {
         let table_name = table_names.first().unwrap();
+        println!("table to struct : {:?}", query_object.table_to_struct);
         let col = if query_object.table_to_struct.get(table_name).unwrap().get(&column_ref.column).is_some() {
             format!("{}", column_ref.column)
         } else {

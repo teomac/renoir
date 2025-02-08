@@ -3,7 +3,6 @@ use crate::dsl::ir::aqua::{ColumnRef, QueryObject};
 use crate::dsl::ir::aqua::r_utils::{convert_column_ref, check_alias};
 use crate::dsl::ir::aqua::ast_structure::{GroupCondition, ComplexField};
 use crate::dsl::ir::aqua::{AquaLiteral, AggregateType, ComparisonOp, BinaryOp};
-use crate::dsl::languages::sql::ast_parser::group_by;
 
 /// Process the GroupByClause from Aqua AST and generate the corresponding Renoir operator string.
 /// 

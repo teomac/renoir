@@ -24,7 +24,7 @@ use crate::dsl::languages::sql::ast_parser::builder::SqlASTBuilder;
 
 //test
 #[derive(Parser)]
-#[grammar = "dsl/languages/sql/grammar.pest"]
+#[grammar = "dsl/languages/sql/sql_grammar.pest"]
 
 
 pub struct SqlParser;

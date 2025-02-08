@@ -24,6 +24,7 @@ pub enum SelectType {
 pub struct ComplexField {
     pub column_ref: Option<ColumnRef>,
     pub literal: Option<SqlLiteral>,
+    pub aggregate: Option<(AggregateFunction, ColumnRef)>,
 }
 
 #[derive(Debug, PartialEq, Clone)]

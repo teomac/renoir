@@ -52,10 +52,10 @@ qualified_column = {
     identifier ~ "." ~ identifier
 }
 
-complex_op = {(qualified_column | identifier | number) ~ symbol ~ (qualified_column | identifier | number) }
+complex_op = {(aggregate_expr | qualified_column | identifier | number) ~ symbol ~ (aggregate_expr | qualified_column | identifier | number) }
 
 // Aggregate expressions
-aggregate_expr = { aggregate_func ~ "(" ~ (asterisk |qualified_column | identifier) ~ ")" }
+aggregate_expr = { aggregate_func ~ "(" ~ (asterisk | qualified_column | identifier) ~ ")" }
 aggregate_func = { "max" | "min" | "avg" | "count" | "sum" }
 
 column_list = {
@@ -63,7 +63,7 @@ column_list = {
 }
 
 column_item = {
-    (aggregate_expr | complex_op | qualified_column | identifier) ~
+    (complex_op | aggregate_expr | qualified_column | identifier) ~
     (as_keyword ~ identifier)?
 }
 
@@ -83,7 +83,7 @@ binary_op = {
 }
 
 // Conditions for WHERE clause
-condition = { (qualified_column | identifier | value) ~ comparison_op ~ (qualified_column | identifier | value) }
+condition = { (value | qualified_column | identifier ) ~ comparison_op ~ (value | qualified_column | identifier ) }
 comparison_op = @{ ">=" | "<=" | "!=" | ">" | "<" | "==" | "="}
 where_conditions = { condition ~ (binary_op ~ condition)* }
 

@@ -70,7 +70,20 @@ impl SqlToAqua {
                             Some(SqlLiteral::Integer(val)) => val.to_string(),
                             Some(SqlLiteral::String(val)) => val.clone(),
                             Some(SqlLiteral::Boolean(val)) => val.to_string(),
-                            None => String::new(),
+                            None => match &left.aggregate {
+                                Some((agg_func, col_ref)) => {
+                                    let agg = match agg_func {
+                                        AggregateFunction::Max => "max",
+                                        AggregateFunction::Min => "min",
+                                        AggregateFunction::Sum => "sum",
+                                        AggregateFunction::Avg => "avg",
+                                        AggregateFunction::Count => "count",
+                                    };
+                                    format!("{}({})", agg, col_ref.to_string())
+                                },
+                                None => String::new(),
+                                
+                            }
                         }
                     };
 
@@ -82,7 +95,20 @@ impl SqlToAqua {
                             Some(SqlLiteral::Integer(val)) => val.to_string(),
                             Some(SqlLiteral::String(val)) => val.clone(),
                             Some(SqlLiteral::Boolean(val)) => val.to_string(),
-                            None => String::new(),
+                            None => match &right.aggregate {
+                                Some((agg_func, col_ref)) => {
+                                    let agg = match agg_func {
+                                        AggregateFunction::Max => "max",
+                                        AggregateFunction::Min => "min",
+                                        AggregateFunction::Sum => "sum",
+                                        AggregateFunction::Avg => "avg",
+                                        AggregateFunction::Count => "count",
+                                    };
+                                    format!("{}({})", agg, col_ref.to_string())
+                                },
+                                None => String::new(),
+                                
+                            }
                         }
                     };
                    
