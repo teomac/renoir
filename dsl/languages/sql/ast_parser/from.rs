@@ -1,4 +1,4 @@
-use super::ast_structure::*;
+use super::sql_ast_structure::*;
 use super::error::SqlParseError;
 use crate::dsl::languages::sql::ast_parser::Rule;
 use pest::iterators::Pair;

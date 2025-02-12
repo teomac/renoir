@@ -1,16 +1,19 @@
-use crate::dsl::ir::aqua::ast_structure::ComplexField;
+use std::io::empty;
+
+use crate::dsl::ir::aqua::ir_ast_structure::ComplexField;
 use crate::dsl::ir::aqua::literal::LiteralParser;
 use crate::dsl::ir::aqua::r_utils::convert_column_ref;
 use crate::dsl::ir::aqua::{
-    AggregateFunction, AggregateType, AquaLiteral, ColumnRef, QueryObject, SelectClause,
+    AggregateFunction, AggregateType, AquaLiteral, ColumnRef, SelectClause,
 };
+use crate::dsl::struct_object::object::{QueryObject, Operation};
+
 
 /// Processes a `SelectClause` and generates a corresponding string representation
 /// of the query operation.
 ///
 /// # Arguments
 ///
-/// * 'select_clauses` - A reference to the Vec<SelectClause> which represents all selections in the query.
 /// * `query_object` - A reference to the `QueryObject` which contains metadata and type information for the query.
 ///
 /// # Returns
@@ -25,50 +28,42 @@ use crate::dsl::ir::aqua::{
 ///
 
 pub fn process_select_clauses(
-    select_clauses: &Vec<SelectClause>,
     query_object: &mut QueryObject,
 ) -> String {
-    // If there's only one column and it's an asterisk, return the identity map
 
-    //case of SELECT *
-    if select_clauses.len() == 1 {
-        if let SelectClause::Column(col, _alias) = &select_clauses[0] {
-            if col.column == "*" {
-                let mut result = String::from(".map(|x| OutputStruct { ");
+    //create an empty operation
+    let empty_op = Operation {
+        current_op: "".to_string(),
+        next_op: "".to_string(),
+        table: "".to_string(),
+        input_column: "".to_string(),
+    };
 
-                if query_object.has_join {
-                    let fields: Vec<String> = query_object
-                        .result_column_to_input
-                        .iter()
-                        .map(|(field_name, r)| {
-                            let tuple_access = query_object
-                                .table_to_tuple_access
-                                .get(&r.2)
-                                .expect("Table not found in tuple access map");
-                            format!("{}: x{}.{}.clone()", field_name, tuple_access, r.1)
-                        })
-                        .collect();
-
-                    result.push_str(&fields.join(", "));
-                    result.push_str(" })");
-                } else {
-                    let fields: Vec<String> = query_object
-                        .result_column_to_input
-                        .iter()
-                        .map(|(field_name, _)| format!("{}: x.{}.clone()", field_name, field_name))
-                        .collect();
-
-                    result.push_str(&fields.join(", "));
-                    result.push_str(" })");
-                }
-
-                return result;
-            }
+    // Check if we have a single column and it's an asterisk
+    if query_object.result_column_to_input.len() == 1 {
+        if let Some((col, res)) = query_object.result_column_to_input.iter().next() {
+            if col == "*" || res.operations.first().unwrap_or_else(|| &empty_op).current_op.contains("*") {
+                return create_select_star_map(query_object);
         }
-    }
+    }}
     // Start building the map expression
     let _map_internals = String::new();
 
+    // Check if any aggregations are present
+    let has_aggregates = query_object.result_column_to_input.iter()
+        .any(|(_, result_col)| {
+            result_col.operations.iter().any(|op| 
+                matches!(op.current_op.as_str(), "sum" | "count" | "avg" | "min" | "max")
+            )
+        });
+
+    if has_aggregates {
+        create_aggregate_map(query_object)
+    } else {
+        create_simple_map(query_object)
+    }
+
+    /*
     // Process each select clause
     for (_i, clause) in select_clauses.iter().enumerate() {
         match clause {
@@ -316,7 +311,7 @@ pub fn process_select_clauses(
         }
     }
     // call function
-    create_map_string(query_object)
+    create_map_string(query_object)*/
 }
 
 fn build_output_struct_mapping(
@@ -344,42 +339,43 @@ fn build_output_struct_mapping(
     output
 }
 
-fn create_map_string(query_object: &QueryObject) -> String {
-    // Check if we need to add a fold (if there are any aggregates)
-    let has_aggregates = query_object
-        .projections
-        .iter()
-        .any(|(_, op)| matches!(op.as_str(), "Max" | "Min" | "Avg" | "Sum" | "Count"));
+fn create_aggregate_string(query_object: &QueryObject) -> String {
 
     let mut has_avg = false;
 
-    if has_aggregates {
         let mut final_string = String::new();
+        let empty_operation = Operation {
+            current_op: "".to_string(),
+            table: "".to_string(),
+            input_column: "".to_string(),
+            next_op: "".to_string(),
+        };
 
         // Add initial map operation
         final_string.push_str(".map(|x| (");
 
         // Check if we have only one projection and it's an aggregate
-        let is_single_aggregate = query_object.projections.len() == 1
+        let is_single_aggregate = query_object.result_column_to_input.len() == 1
             && matches!(
-                query_object.projections.iter().next().unwrap().1.as_str(),
+                query_object.result_column_to_input.first().unwrap().1.operations.first().unwrap_or_else(|| &empty_operation).current_op.as_str(),
                 "Max" | "Min" | "Avg" | "Sum" | "Count"
             );
 
-        for (i, (col_ref, operation)) in query_object.projections.iter().enumerate() {
+        for (i, (column, operation)) in query_object.result_column_to_input.iter().enumerate() {
             if i > 0 {
                 final_string.push_str(", ");
             }
 
-            if operation == "Count" && col_ref.aggregate.as_ref().unwrap().column.column == "*" {
-                //col_ref is a ColumnRef for sure now. Parse it as ColumnRef object
-                let new_col_ref = col_ref.column.clone().unwrap();
+            if operation.operations.first().unwrap_or_else(|| &empty_operation).current_op == "count" && (column == "count(*)" || operation.operations.first().unwrap_or_else(|| &empty_operation).input_column.contains("*")) {
+                
+                //we know that is a count(*), so column is count(*) or the alias
+                // operation.first().unwrap().input_column is * for sure
 
                 // For COUNT(*), use the first column from the table
-                let table_name = match &new_col_ref.table {
-                    Some(t) => t.clone(),
-                    None => query_object.get_all_table_names().first().unwrap().clone(),
-                };
+                let mut table_name = operation.operations.first().unwrap_or_else(|| &empty_operation).table;
+                if table_name.is_empty() {
+                   table_name = query_object.get_all_table_names().first().unwrap().clone();
+                }
                 let first_column = query_object
                     .table_to_struct
                     .get(&table_name)
@@ -391,13 +387,22 @@ fn create_map_string(query_object: &QueryObject) -> String {
 
                 // Create a new ColumnRef with the first column
                 let first_col_ref = ColumnRef {
-                    table: new_col_ref.table.clone(),
+                    table: Some(table_name),
                     column: first_column,
                 };
+
                 final_string.push_str(&convert_column_ref(&first_col_ref, query_object));
                 final_string.push_str(".unwrap()");
-            } else {
+            }
+            //case of other aggregates (no count(*))
+             else {
                 let new_col_ref;
+
+
+
+
+
+
                 if col_ref.column.is_some() {
                     new_col_ref =
                         convert_column_ref(&col_ref.column.as_ref().unwrap(), query_object);
@@ -676,50 +681,6 @@ fn create_map_string(query_object: &QueryObject) -> String {
         final_string.push_str("\n    })");
 
         final_string
-    } else {
-        // Simple mapping case without aggregation
-        let mut map_string = String::from(".map(|x| ");
-
-        let mut values = Vec::new();
-        for (col_ref, operation) in &query_object.projections {
-            let mut value = if col_ref.column.is_some() {
-                convert_column_ref(&col_ref.column.clone().unwrap(), query_object)
-            } else if col_ref.aggregate.is_some() {
-                convert_column_ref(&col_ref.aggregate.clone().unwrap().column, query_object)
-            } else {
-                LiteralParser::parse_aqua_literal(&col_ref.literal.clone().unwrap())
-            };
-            if !operation.is_empty() {
-                if operation.contains("*")
-                    || operation.contains("+")
-                    || operation.contains("-")
-                    || operation.contains("/")
-                    || operation.contains(".pow")
-                    || operation.contains(".powf")
-                {
-                    if col_ref.column.is_some() || col_ref.aggregate.is_some() {
-                        value = value.replace(
-                            &value,
-                            format!("Some({}.unwrap(){})", value, operation).as_str(),
-                        );
-                    } else {
-                        value =
-                            value.replace(&value, format!("Some({}{})", value, operation).as_str());
-                    }
-                } else {
-                    value = value.replace(&value, format!("Some({})", value).as_str());
-                }
-            }
-            values.push(value);
-        }
-
-        println!("values: {:?}", values);
-
-        map_string.push_str(&build_output_struct_mapping(query_object, values, false));
-        map_string.push_str(")");
-
-        map_string
-    }
 }
 
 use crate::dsl::ir::aqua::r_utils::check_alias;
@@ -753,4 +714,105 @@ fn process_aggregation(agg_func: &AggregateFunction, query_object: &QueryObject)
         AggregateType::Count => "*acc + 1".to_string(),
         AggregateType::Avg => format!("*acc + {}", table_access),
     }
+}
+
+fn create_select_star_map(query_object: &QueryObject) -> String {
+    let mut result = String::from(".map(|x| OutputStruct { ");
+
+    if query_object.has_join {
+        // Handle joined case - need to use tuple access
+        let fields: Vec<String> = query_object.result_column_to_input.iter()
+            .map(|(field_name, result_col)| {
+                let op = &result_col.operations[0];
+                let tuple_access = query_object.table_to_tuple_access
+                    .get(&op.table)
+                    .expect("Table not found in tuple access map");
+                format!("{}: x{}.{}.unwrap()", field_name, tuple_access, op.input_column)
+            })
+            .collect();
+
+        result.push_str(&fields.join(", "));
+    } else {
+        // Simple case - direct access
+        let fields: Vec<String> = query_object.result_column_to_input.iter()
+            .map(|(field_name, _)| format!("{}: x.{}.unwrap()", field_name, field_name))
+            .collect();
+
+        result.push_str(&fields.join(", "));
+    }
+
+    result.push_str(" })");
+    result
+}
+
+fn create_simple_map(query_object: &QueryObject) -> String {
+    let mut map_string = String::from(".map(|x| OutputStruct { ");
+    let empty_op = Operation {
+        current_op: "".to_string(),
+        table: "".to_string(),
+        input_column: "".to_string(),
+        next_op: "".to_string(),
+    };
+
+    let fields: Vec<String> = query_object.result_column_to_input.iter()
+        .map(|(field_name, result_col)| {
+            //iterate now on the operations
+            let op = &result_col.operations;
+            
+            let value = if query_object.has_join {
+                let tuple_access = query_object.table_to_tuple_access
+                    .get(&op.first().unwrap_or_else(|| &empty_op).table)
+                    .expect("Table not found in tuple access map");
+                format!("x{}.{}", tuple_access, op.first().unwrap_or_else(|| &empty_op).input_column)
+            } else {
+                format!("x.{}", op.first().unwrap_or_else(|| &empty_op).input_column)
+            };
+
+            let mut final_value = String::new();
+            //iterate with an index from zero to the length of the operations
+            for mut i in 0..op.len() {
+                // Handle operations if present
+                if !op[i].next_op.is_empty() {
+                    match op[i].next_op.as_str() {
+                        "+" | "-" | "*" | "/" => final_value.push_str(format!("{}.unwrap() {}", value, op[i].next_op,
+                        ).as_str()),
+                        "^" => {
+                            if result_col.r_type == "i64" || result_col.r_type == "f64" {
+                                final_value.push_str(format!("{}.unwrap().{}({}.unwrap())", value,
+                                    if result_col.r_type == "i64" { format!("pow") }
+                                    else { format!("powf") },
+                                    if i + 1 < op.len() {
+                                        let second_op = &op[i + 1];
+                                        if query_object.has_join {
+                                            let empty_string = "".to_string();
+                                            format!("x{}.{}", 
+                                                query_object.table_to_tuple_access.get(&second_op.table).unwrap_or_else(|| &empty_string),
+                                                second_op.input_column)
+                                        } else {
+                                            format!("x.{}", second_op.input_column)
+                                        }
+                                    } else {
+                                        panic!("Missing second operand for power operation");
+                                    }
+                                    
+                                ).as_str());
+                            }
+                            else{
+                                panic!("Invalid type for power operation");
+                            }
+                            i += 1;
+                        },
+                        _ => final_value.push_str(format!("{}.unwrap()", value).as_str()),
+                    }
+                } else {
+                    final_value.push_str(format!("{}.unwrap()", value).as_str());
+                };
+            }
+            format!("{}: {}", field_name, final_value)
+        })
+        .collect();
+
+    map_string.push_str(&fields.join(", "));
+    map_string.push_str(" })");
+    map_string
 }

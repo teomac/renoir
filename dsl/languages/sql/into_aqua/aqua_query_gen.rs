@@ -1,9 +1,10 @@
-use crate::dsl::languages::sql::ast_parser::ast_structure::GroupByClause;
+use crate::dsl::languages::sql::ast_parser::sql_ast_structure::GroupByClause;
 use crate::dsl::languages::sql::ast_parser::*;
-use crate::dsl::languages::sql::ast_parser::ast_structure::SqlLiteral;
-use crate::dsl::languages::sql::ast_parser::ast_structure::BinaryOp;
-use crate::dsl::languages::sql::ast_parser::ast_structure::ComparisonOp;
-use crate::dsl::languages::sql::ast_parser::ast_structure::HavingCondition;
+use crate::dsl::languages::sql::ast_parser::sql_ast_structure::SqlLiteral;
+use crate::dsl::languages::sql::ast_parser::sql_ast_structure::BinaryOp;
+use crate::dsl::languages::sql::ast_parser::sql_ast_structure::ComparisonOp;
+use crate::dsl::languages::sql::ast_parser::sql_ast_structure::HavingCondition;
+use crate::dsl::languages::sql::ast_parser::sql_ast_structure::ComplexField;
 
 pub struct SqlToAqua;
 
@@ -62,57 +63,11 @@ impl SqlToAqua {
                     format!("{}({})", agg, col_ref.to_string())
                 },
                 SelectType::ComplexValue(left, op, right) => {
-                    //convert left field
-                    let left_field = match &left.column_ref {
-                        Some(col_ref) => col_ref.to_string(),
-                        None => match &left.literal {
-                            Some(SqlLiteral::Float(val)) => format!("{:.2}", val),
-                            Some(SqlLiteral::Integer(val)) => val.to_string(),
-                            Some(SqlLiteral::String(val)) => val.clone(),
-                            Some(SqlLiteral::Boolean(val)) => val.to_string(),
-                            None => match &left.aggregate {
-                                Some((agg_func, col_ref)) => {
-                                    let agg = match agg_func {
-                                        AggregateFunction::Max => "max",
-                                        AggregateFunction::Min => "min",
-                                        AggregateFunction::Sum => "sum",
-                                        AggregateFunction::Avg => "avg",
-                                        AggregateFunction::Count => "count",
-                                    };
-                                    format!("{}({})", agg, col_ref.to_string())
-                                },
-                                None => String::new(),
-                                
-                            }
-                        }
-                    };
-
-                    //convert right field
-                    let right_field = match &right.column_ref {
-                        Some(col_ref) => col_ref.to_string(),
-                        None => match &right.literal {
-                            Some(SqlLiteral::Float(val)) => format!("{:.2}", val),
-                            Some(SqlLiteral::Integer(val)) => val.to_string(),
-                            Some(SqlLiteral::String(val)) => val.clone(),
-                            Some(SqlLiteral::Boolean(val)) => val.to_string(),
-                            None => match &right.aggregate {
-                                Some((agg_func, col_ref)) => {
-                                    let agg = match agg_func {
-                                        AggregateFunction::Max => "max",
-                                        AggregateFunction::Min => "min",
-                                        AggregateFunction::Sum => "sum",
-                                        AggregateFunction::Avg => "avg",
-                                        AggregateFunction::Count => "count",
-                                    };
-                                    format!("{}({})", agg, col_ref.to_string())
-                                },
-                                None => String::new(),
-                                
-                            }
-                        }
-                    };
-                   
-                    format!("{} {} {}", left_field, op, right_field)
+                    format!("{} {} {}", 
+                    Self::convert_complex_field(left),
+                    op,
+                    Self::convert_complex_field(right)
+                ).trim().to_string()
                 }
             };
 
@@ -314,5 +269,40 @@ impl SqlToAqua {
             operator_str,
             right
         )
+    }
+
+    //function used to convert complex field to string
+    fn convert_complex_field(field: &ComplexField) -> String {
+        if let Some(ref nested) = field.nested_expr {
+            // Handle nested expression
+            let (left_field, op, right_field) = &**nested;
+            return format!("({} {} {})", 
+                Self::convert_complex_field(left_field),
+                op,
+                Self::convert_complex_field(right_field)
+            );
+        }
+
+        if let Some(ref col_ref) = field.column_ref {
+            col_ref.to_string()
+        } else if let Some(ref lit) = field.literal {
+            match lit {
+                SqlLiteral::Float(val) => format!("{:.2}", val),
+                SqlLiteral::Integer(val) => val.to_string(),
+                SqlLiteral::String(val) => val.clone(),
+                SqlLiteral::Boolean(val) => val.to_string(),
+            }
+        } else if let Some((agg_func, col_ref)) = &field.aggregate {
+            let agg = match agg_func {
+                AggregateFunction::Max => "max",
+                AggregateFunction::Min => "min",
+                AggregateFunction::Sum => "sum",
+                AggregateFunction::Avg => "avg",
+                AggregateFunction::Count => "count",
+            };
+            format!("{}({})", agg, col_ref.to_string())
+        } else {
+            String::new()
+        }
     }
 }

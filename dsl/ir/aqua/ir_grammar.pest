@@ -18,6 +18,9 @@ on = { "on" }
 asterisk = { "*" }
 group_keyword = { "group" }
 
+left_parenthesis = { "(" }
+right_parenthesis = { ")" }
+
 
 query = {
     SOI ~
@@ -52,7 +55,15 @@ qualified_column = {
     identifier ~ "." ~ identifier
 }
 
-complex_op = {(aggregate_expr | qualified_column | identifier | number) ~ symbol ~ (aggregate_expr | qualified_column | identifier | number) }
+select_expr = { complex_op | aggregate_expr | qualified_column | identifier }
+column_operand = { aggregate_expr | qualified_column | identifier | number }
+parenthesized_expr = { left_parenthesis ~ select_expr ~ right_parenthesis }
+
+
+complex_op = { 
+    (parenthesized_expr | column_operand) ~ 
+    (symbol ~ (parenthesized_expr | column_operand))*
+}
 
 // Aggregate expressions
 aggregate_expr = { aggregate_func ~ "(" ~ (asterisk | qualified_column | identifier) ~ ")" }

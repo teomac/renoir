@@ -1,11 +1,25 @@
 use crate::dsl::ir::aqua::{
-    ast_structure::{AggregateType, ComplexField, JoinClause, SelectClause},
+    ir_ast_structure::{AggregateType, JoinClause, SelectClause},
     literal::LiteralParser,
     AquaAST, ColumnRef,
 };
 use indexmap::IndexMap;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
+pub struct Operation {
+    pub input_column: String,
+    pub table: String,
+    pub current_op: String, 
+    pub next_op: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct ResultColumn {
+    pub name: String,
+    pub r_type: String,
+    pub operations: Vec<Operation>,
+}
+#[derive(Clone, Debug)]
 pub struct QueryObject {
     pub has_join: bool, // true if the query has a join
 
@@ -16,7 +30,6 @@ pub struct QueryObject {
     pub ir_ast: Option<AquaAST>,                  //ir ast
     pub joined_tables: Vec<String>,               // list of joined tables
     pub table_names_list: Vec<String>,            // list of table names
-    pub projections: Vec<(ComplexField, String)>, // list of projections (complex field, operation)
 
     pub table_to_alias: IndexMap<String, String>, // key: table name, value: alias
     pub table_to_csv: IndexMap<String, String>,   // key: table name, value: csv file path
@@ -24,25 +37,22 @@ pub struct QueryObject {
     pub table_to_struct_name: IndexMap<String, String>, // key: table name, value: struct name
     pub table_to_tuple_access: IndexMap<String, String>, // key: table name, value: tuple field access
 
-    //IndexMap to store the result column name and its corresponding type, input column and table name
-    pub result_column_to_input: IndexMap<String, (String, String, String)>,
-    // key: result column name, value: tuple (result type, input column, table name)
+    //IndexMap to store the result column name and its corresponding ResultColumn struct
+    pub result_column_to_input: IndexMap<String, ResultColumn>,
+    // key: result column name, value: ResultColumn
 
-    //ex. SELECT (power * total_km) + (power * total_km) AS product FROM table1
+    //ex. SELECT power * total_km AS product FROM table1
     //this indexMap will be filled with:
-    //"product" -> ("f64", "power, "table1")
+    //"product" -> ResultColumn { name: "product", r_type: "f64", operations: [Operation { input_column: "power", table: "table1", operation: "*" }, Operation { input_column: "total_km", table: "table1", operation: "" }] }
 
     //ex. SELECT SUM(total_km) AS total_distance FROM table1
     //this indexMap will be filled with:
-    //"total_distance" -> ("f64", "total_km", "table1")
+    //"total_distance" -> ResultColumn { name: "total_distance", r_type: "f64", operations: [Operation { input_column: "total_km", table: "table1", operation: "SUM" }] }
 
     //ex. SELECT SUM(total_km) FROM table1
     //this indexMap will be filled with:
-    //"total_km" -> ("f64", "total_km", "table1")
+    //"total_km" -> ResultColumn { name: "total_km", r_type: "f64", operations: [Operation { input_column: "total_km", table: "table1", operation: "SUM" }] }
 }
-
-// vehicle_count, (u64, *, table1)
-// total_distance, (f64, total_km, table1)
 
 impl QueryObject {
     pub fn new() -> Self {
@@ -50,8 +60,6 @@ impl QueryObject {
             has_join: false,
             joined_tables: Vec::new(),
             table_names_list: Vec::new(),
-            projections: Vec::new(),
-
             table_to_alias: IndexMap::new(),
             table_to_csv: IndexMap::new(),
             table_to_struct: IndexMap::new(),
@@ -139,21 +147,16 @@ impl QueryObject {
         &mut self,
         result_col: &str,
         result_type: &str,
-        input_col: &str,
-        table: &str,
+        input: Vec<Operation>,
     ) {
         self.result_column_to_input.insert(
             result_col.to_string(),
-            (
-                result_type.to_string(),
-                input_col.to_string(),
-                table.to_string(),
-            ),
-        );
-    }
-
-    pub fn insert_projection(&mut self, field: &ComplexField, agg_type: &str) {
-        self.projections.push((field.clone(), agg_type.to_string()));
+            ResultColumn {
+                name: result_col.to_string(),
+                r_type: result_type.to_string(),
+                operations: input,
+            },
+            );
     }
 
     pub fn populate(
@@ -246,40 +249,58 @@ impl QueryObject {
         //println!("table to struct name: {:?}", self.table_to_struct_name);
 
         //populate the result column to input column mapping
+        //currently WIP
 
+        /*
         for select_clause in &aqua_ast.select {
             match select_clause {
                 SelectClause::Column(col_ref, _alias) => {
+                    //case SELECT *
                     if col_ref.column == "*" {
                         if self.has_join {
+                            let mut operations = Vec::new();
                             for table in &self.table_names_list {
                                 let struct_map = self.get_struct(table).unwrap().clone();
                                 // Use the alias if it exists, otherwise use the table name
                                 let suffix = self.get_alias(table).unwrap_or(table).clone();
                                 for (field_name, field_type) in struct_map {
                                     let result_col = format!("{}_{}", field_name, suffix);
-                                    self.result_column_to_input.insert(
+
+                                    //insert the result column to input column mapping
+                                    operations.push((
                                         result_col,
-                                        (field_type, field_name, table.clone()),
-                                    );
+                                        field_type,
+                                        vec![Operation {
+                                            input_column: field_name.clone(),
+                                            table: table.clone(),
+                                            current_op: "".to_string(),
+                                            next_op: "".to_string(),
+                                        }]
+                                    ));
                                 }
+                            }
+                            // Insert all the columns from all tables
+                            for (result_col, result_type, operation_chain) in operations {
+                                self.insert_result_col(&result_col, &result_type, operation_chain);
                             }
                         } else {
                             let struct_map =
                                 self.get_struct(&self.table_names_list[0]).unwrap().clone();
                             for (field_name, field_type) in struct_map {
                                 let result_col = field_name.clone();
-                                self.result_column_to_input.insert(
-                                    result_col,
-                                    (
-                                        field_type.clone(),
-                                        field_name.clone(),
-                                        self.table_names_list[0].clone(),
-                                    ),
-                                );
+
+                                //insert the result column to input column mapping
+                                self.insert_result_col(&result_col, &field_type, vec![Operation {
+                                    input_column: field_name.clone(),
+                                    table: self.table_names_list[0].clone(),
+                                    current_op: "".to_string(),
+                                    next_op: "".to_string(),
+                                }],);
                             }
                         }
-                    } else {
+                    } 
+                    // other
+                    else {
                         let result_col = if self.has_join {
                             let table = match &col_ref.table {
                                 Some(t) => {
@@ -287,7 +308,7 @@ impl QueryObject {
                                     if let Some(_) = self.get_table_from_alias(t) {
                                         t.clone()
                                     } else {
-                                        // If it's a table name, get its alias if it exists, otherwise use table name
+                                         // If it's a table name, get its alias if it exists, otherwise use table name
                                         self.get_alias(t).unwrap_or(t).clone()
                                     }
                                 }
@@ -312,8 +333,14 @@ impl QueryObject {
                             None => self.table_names_list[0].clone(),
                         };
                         let result_type = self.get_type(&col_ref);
-                        self.result_column_to_input
-                            .insert(result_col, (result_type, input_col, table));
+
+                        //insert the result column to input column mapping
+                        self.insert_result_col(&result_col, &result_type, vec![Operation {
+                            input_column: input_col,
+                            table: table,
+                            current_op: "".to_string(),
+                            next_op: "".to_string(),
+                        }]);
                     }
                 }
                 SelectClause::Aggregate(agg_func, alias) => {
@@ -339,8 +366,8 @@ impl QueryObject {
                                     .unwrap()
                                     .clone();
                                 (
-                                    alias.clone().unwrap_or_else(|| "count".to_string()),
-                                    first_col,
+                                    alias.clone().unwrap_or_else(|| "count(*)".to_string()),
+                                    "*".to_string(),
                                 )
                             }
                             // For COUNT(column), use the column name as the result column
@@ -372,10 +399,25 @@ impl QueryObject {
                     } else {
                         self.get_type(&agg_func.column)
                     };
-                    self.result_column_to_input
-                        .insert(result_col, (result_type, input_col, table));
+
+                    let operation_chain = vec![Operation {
+                        input_column: input_col.clone(),
+                        table: table.clone(),
+                        current_op: match agg_func.function {
+                            AggregateType::Count => "count".to_string(),
+                            AggregateType::Sum => "sum".to_string(),
+                            AggregateType::Avg => "avg".to_string(),
+                            AggregateType::Max => "max".to_string(),
+                            AggregateType::Min => "min".to_string(),
+                        },
+                        next_op: "".to_string(),
+                    }];
+
+                    //insert the result column to input column mapping
+                    self.insert_result_col(&result_col, &result_type, 
+                        operation_chain);
                 }
-                SelectClause::ComplexValue(left_field, _op, right_field, alias) => {
+                SelectClause::ComplexValue(left_field, op, right_field, alias) => {
                     //parse left field to check if it is a ColumnRef or a Literal or an aggregate expr
                     let mut left_is_literal = false;
                     let mut right_is_literal = false;
@@ -472,41 +514,54 @@ impl QueryObject {
                             right_col.clone()
                         }
                     });
-                    let input_col = if !left_is_literal {
-                        left_col.clone()
-                    } else {
-                        right_col.clone()
-                    };
-                    let table;
-                    if !left_is_literal {
-                        table = if !left_table.is_empty() {
-                            if let Some(actual_table) = self.get_table_from_alias(&left_table) {
-                                actual_table.clone()
-                            } else {
-                                left_table.clone()
-                            }
-                        } else {
-                            self.table_names_list[0].clone()
-                        };
-                    } else {
-                        table = if !right_table.is_empty() {
-                            if let Some(actual_table) = self.get_table_from_alias(&right_table) {
-                                actual_table.clone()
-                            } else {
-                                right_table.clone()
-                            }
-                        } else {
-                            self.table_names_list[0].clone()
-                        };
-                    }
 
-                    self.result_column_to_input
-                        .insert(result_col, (result_type, input_col, table));
+                    let operation_chain = vec![
+                        Operation {
+                            input_column: left_col,
+                            table: left_table,
+                            current_op: 
+                            if left_field.aggregate.is_some() {
+                                let fun = match left_field.aggregate.clone().unwrap().function{
+                                    AggregateType::Count => "count",
+                                    AggregateType::Sum => "sum",
+                                    AggregateType::Avg => "avg",
+                                    AggregateType::Max => "max",
+                                    AggregateType::Min => "min",
+                                };
+                                format!("{}", fun )
+                                } 
+                                 else {
+                                "".to_string()
+                            },
+                            next_op: op.to_string(), 
+                        
+                        },
+                        Operation {
+                            input_column: right_col,
+                            table: right_table,
+                            current_op: 
+                            if right_field.aggregate.is_some() {
+                                let fun = match right_field.aggregate.clone().unwrap().function{
+                                    AggregateType::Count => "count",
+                                    AggregateType::Sum => "sum",
+                                    AggregateType::Avg => "avg",
+                                    AggregateType::Max => "max",
+                                    AggregateType::Min => "min",
+                                };
+                                format!("{}", fun )
+                                } 
+                                 else {
+                                "".to_string()
+                            },
+                            next_op: "".to_string(),
+                        },
+                    ];
+
+                    //insert the result column to input column mapping
+                    self.insert_result_col(&result_col, &result_type, operation_chain);
                 }
             }
-        }
-
-        println!("result column to input: {:?}", self.result_column_to_input);
+        }*/
 
         self
     }

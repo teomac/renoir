@@ -1,4 +1,4 @@
-use super::ast_structure::*;
+use super::sql_ast_structure::*;
 use super::error::SqlParseError;
 use super::{
     where_clause::ConditionParser, from::FromParser, group_by::GroupByParser, select::SelectParser,

@@ -25,6 +25,7 @@ pub struct ComplexField {
     pub column_ref: Option<ColumnRef>,
     pub literal: Option<SqlLiteral>,
     pub aggregate: Option<(AggregateFunction, ColumnRef)>,
+    pub nested_expr: Option<Box<(ComplexField, String, ComplexField)>>,
 }
 
 #[derive(Debug, PartialEq, Clone)]

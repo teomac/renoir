@@ -2,7 +2,7 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 
-use crate::dsl::struct_object::object::QueryObject;
+use crate::dsl::struct_object::object::{QueryObject, Operation};
 
 pub struct RustProject {
     pub project_path: PathBuf,
@@ -220,19 +220,25 @@ pub fn generate_struct_declarations(
     );
     result.push_str("struct OutputStruct {\n");
 
+    let empty_operation = Operation {
+        current_op: "".to_string(),
+        table: "".to_string(),
+        input_column: "".to_string(),
+        next_op: "".to_string(),
+    };
+
     // Check if we have SELECT *
     let has_select_star = query_object
         .result_column_to_input
         .iter()
-        .any(|(col, (_, input_col, _))| col == "*" && input_col == "*");
+        .any(|(col, res)| col == "*" && res.operations.first().unwrap_or_else(|| &empty_operation).current_op.contains("*"));
 
     // Add fields from result_column_to_input (if there is a join, add the suffix)
     if has_select_star {
         result.push_str(&generate_all_columns_output_struct(query_object));
     } else {
-        for (result_col, (result_type, _, _)) in &query_object.result_column_to_input {
-            let field_name = result_col.to_string();
-            result.push_str(&format!("    {}: Option<{}>,\n", field_name, result_type));
+        for (result_col, res) in &query_object.result_column_to_input {
+            result.push_str(&format!("    {}: Option<{}>,\n", result_col, res.r_type));
         }
     }
 

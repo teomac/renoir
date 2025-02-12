@@ -1,5 +1,5 @@
 use pest::iterators::Pair;
-use super::ast_structure::*;
+use super::ir_ast_structure::*;
 use super::error::AquaParseError;
 use crate::dsl::ir::aqua::ast_parser::Rule;
 
@@ -121,9 +121,10 @@ impl ConditionParser {
                             })
                     });
                 Ok(ComplexField{
-                    column: None,
+                    column_ref: None,
                     literal: Some(value),
                     aggregate: None,
+                    nested_expr: None,
                 })
 
             }
@@ -138,22 +139,24 @@ impl ConditionParser {
                     .as_str()
                     .to_string();
                 Ok(ComplexField {
-                    column: Some(ColumnRef {
+                    column_ref: Some(ColumnRef {
                         table: Some(stream),
                         column: field,
                     }),
                     literal: None,
                     aggregate: None,
+                    nested_expr: None,
                 })
             }
             Rule::identifier => {
                 Ok(ComplexField {
-                    column: Some(ColumnRef {
+                    column_ref: Some(ColumnRef {
                         table: None,
                         column: pair.as_str().to_string(),
                     }),
                     literal: None,
                     aggregate: None,
+                    nested_expr: None,
                 })
             }
             _ => Err(AquaParseError::InvalidInput(

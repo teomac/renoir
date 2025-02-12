@@ -1,4 +1,4 @@
-use super::ast_structure::SqlLiteral;
+use super::sql_ast_structure::SqlLiteral;
 use super::error::SqlParseError;
 
 pub struct LiteralParser;

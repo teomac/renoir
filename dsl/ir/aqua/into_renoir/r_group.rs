@@ -1,7 +1,7 @@
-use crate::dsl::ir::aqua::ast_structure::GroupByClause;
+use crate::dsl::ir::aqua::ir_ast_structure::GroupByClause;
 use crate::dsl::ir::aqua::{ColumnRef, QueryObject};
 use crate::dsl::ir::aqua::r_utils::{convert_column_ref, check_alias};
-use crate::dsl::ir::aqua::ast_structure::{GroupCondition, ComplexField};
+use crate::dsl::ir::aqua::ir_ast_structure::{GroupCondition, ComplexField};
 use crate::dsl::ir::aqua::{AquaLiteral, AggregateType, ComparisonOp, BinaryOp};
 
 /// Process the GroupByClause from Aqua AST and generate the corresponding Renoir operator string.
@@ -148,7 +148,7 @@ fn process_having_condition(condition: &GroupCondition, query_object: &QueryObje
 /// 
 /// A String containing the Renoir representation of the field
 fn convert_complex_field(field: &ComplexField, query_object: &QueryObject, group_by: &GroupByClause) -> String {
-    if let Some(col) = &field.column {
+    if let Some(col) = &field.column_ref {
         // Check if this column is part of the GROUP BY key
         if let Some(key_position) = group_by.columns.iter().position(|gc| gc.column == col.column && gc.table == col.table) {
             // If it's a key column, access it via x.0.{position}

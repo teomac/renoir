@@ -70,8 +70,8 @@ fn process_condition(condition: &Condition, query_object: &QueryObject) -> Strin
 
     let table_names = query_object.get_all_table_names();
 
-    let is_left_column = condition.left_field.column.is_some();
-    let is_right_column = condition.right_field.column.is_some();
+    let is_left_column = condition.left_field.column_ref.is_some();
+    let is_right_column = condition.right_field.column_ref.is_some();
 
     let mut result_string = String::new();
 
@@ -82,8 +82,8 @@ fn process_condition(condition: &Condition, query_object: &QueryObject) -> Strin
         if is_left_column {
             result_string.push_str(format!(
                 "x.{}.unwrap()",
-                if query_object.table_to_struct.get(table_names.first().unwrap()).unwrap().get(&condition.left_field.column.clone().unwrap().to_string()).is_some(){
-                    condition.left_field.column.clone().unwrap().to_string()
+                if query_object.table_to_struct.get(table_names.first().unwrap()).unwrap().get(&condition.left_field.column_ref.clone().unwrap().to_string()).is_some(){
+                    condition.left_field.column_ref.clone().unwrap().to_string()
                 } else {
                     //throw error
                     "ERROR".to_string()
@@ -106,8 +106,8 @@ fn process_condition(condition: &Condition, query_object: &QueryObject) -> Strin
         if is_right_column {
             result_string.push_str(format!(
                 "x.{}.unwrap()",
-                if query_object.table_to_struct.get(table_names.first().unwrap()).unwrap().get(&condition.right_field.column.clone().unwrap().to_string()).is_some(){
-                    condition.right_field.column.clone().unwrap().to_string()
+                if query_object.table_to_struct.get(table_names.first().unwrap()).unwrap().get(&condition.right_field.column_ref.clone().unwrap().to_string()).is_some(){
+                    condition.right_field.column_ref.clone().unwrap().to_string()
                 } else {
                     //throw error
                     "ERROR".to_string()
@@ -127,17 +127,17 @@ fn process_condition(condition: &Condition, query_object: &QueryObject) -> Strin
     else {
         //push left column
         if is_left_column{
-            let table_name = check_alias(&condition.left_field.column.clone().unwrap().table.clone().unwrap(), query_object);
+            let table_name = check_alias(&condition.left_field.column_ref.clone().unwrap().table.clone().unwrap(), query_object);
             result_string.push_str(format!(
                 "x{}.{}{}.unwrap()",
                 query_object.table_to_tuple_access.get(&table_name).unwrap(),
-                if query_object.table_to_struct.get(&table_name).unwrap().get(&condition.left_field.column.clone().unwrap().column).is_some(){
-                    condition.left_field.column.clone().unwrap().column.to_string()
+                if query_object.table_to_struct.get(&table_name).unwrap().get(&condition.left_field.column_ref.clone().unwrap().column).is_some(){
+                    condition.left_field.column_ref.clone().unwrap().column.to_string()
                 } else {
                     //throw error
                     "ERROR".to_string()
                 },
-                if query_object.get_type(&condition.left_field.column.clone().unwrap()).contains("String") { ".clone()" } else { "" },
+                if query_object.get_type(&condition.left_field.column_ref.clone().unwrap()).contains("String") { ".clone()" } else { "" },
             ).as_str());
         } else{
             result_string.push_str(format!(
@@ -154,17 +154,17 @@ fn process_condition(condition: &Condition, query_object: &QueryObject) -> Strin
 
         //push right column
         if is_right_column{
-            let table_name = check_alias(&condition.right_field.column.clone().unwrap().table.clone().unwrap(), query_object);
+            let table_name = check_alias(&condition.right_field.column_ref.clone().unwrap().table.clone().unwrap(), query_object);
             result_string.push_str(format!(
                 "x{}.{}{}.unwrap()",
                 query_object.table_to_tuple_access.get(&table_name).unwrap(),
-                if query_object.table_to_struct.get(&table_name).unwrap().get(&condition.right_field.column.clone().unwrap().column).is_some(){
-                    condition.right_field.column.clone().unwrap().column
+                if query_object.table_to_struct.get(&table_name).unwrap().get(&condition.right_field.column_ref.clone().unwrap().column).is_some(){
+                    condition.right_field.column_ref.clone().unwrap().column
                 } else {
                     //throw error
                     "ERROR".to_string()
                 },
-                if query_object.get_type(&condition.right_field.column.clone().unwrap()).contains("String") { ".clone()" } else { "" },
+                if query_object.get_type(&condition.right_field.column_ref.clone().unwrap()).contains("String") { ".clone()" } else { "" },
             ).as_str());
         } else{
             result_string.push_str(format!(

@@ -4,10 +4,10 @@ pub mod condition;
 pub mod sink;
 pub mod source;
 pub mod literal;
-pub mod ast_structure;
+pub mod ir_ast_structure;
 pub mod group;
 
-pub use ast_structure::{
+pub use ir_ast_structure::{
     AquaAST, 
     Condition, 
     FromClause, 

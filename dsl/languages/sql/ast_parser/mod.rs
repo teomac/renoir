@@ -5,8 +5,8 @@ pub mod select;
 pub mod from;
 pub mod literal;
 pub mod group_by;
-pub mod ast_structure;
-pub use ast_structure::{
+pub mod sql_ast_structure;
+pub use sql_ast_structure::{
     SqlAST, 
     Condition, 
     FromClause, 
@@ -33,6 +33,8 @@ impl SqlParser {
     pub fn parse_query(input: &str) -> Result<SqlAST, SqlParseError> {
         let pairs = Self::parse(Rule::query, input)
             .map_err(|e| SqlParseError::PestError(e))?;
+
+        //println!("Pairs: {:?}", pairs);
         
         SqlASTBuilder::build_ast_from_pairs(pairs)
     }

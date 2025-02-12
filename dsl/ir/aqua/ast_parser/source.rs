@@ -1,4 +1,4 @@
-use super::ast_structure::*;
+use super::ir_ast_structure::*;
 use super::error::AquaParseError;
 use crate::dsl::ir::aqua::ast_parser::Rule;
 use pest::iterators::Pair;

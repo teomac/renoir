@@ -35,7 +35,15 @@ pub struct JoinCondition {
 pub enum SelectClause {
     Column(ColumnRef, Option<String>),  // Added Option<String> for alias
     Aggregate(AggregateFunction, Option<String>),  // Added Option<String> for alias 
-    ComplexValue(ComplexField, String, ComplexField, Option<String>),  // Added Option<String> for alias
+    ComplexValue(ComplexField, Option<String>),  // Added Option<String> for alias
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct ComplexField {
+    pub column_ref: Option<ColumnRef>,
+    pub literal: Option<AquaLiteral>,
+    pub aggregate: Option<AggregateFunction>,
+    pub nested_expr: Option<Box<(ComplexField, String, ComplexField)>>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -87,13 +95,7 @@ pub struct Condition {
     pub right_field: ComplexField,
 }
 
-#[derive(Debug, PartialEq, Clone)]
-pub struct ComplexField {
-    pub column: Option<ColumnRef>,
-    pub literal: Option<AquaLiteral>,
-    pub aggregate: Option<AggregateFunction>,
-    
-}
+
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum ComparisonOp {
@@ -128,3 +130,34 @@ impl ColumnRef {
         }
     }
 }
+
+impl ComplexField {
+    pub fn to_string(&self) -> String {
+        if let Some(ref nested) = self.nested_expr {
+            let (left, op, right) = &**nested;
+            format!("({} {} {})", left.to_string(), op, right.to_string())
+        } else if let Some(ref col) = self.column_ref {
+            col.to_string()
+        } else if let Some(ref lit) = self.literal {
+            match lit {
+                AquaLiteral::Integer(i) => i.to_string(),
+                AquaLiteral::Float(f) => format!("{:.2}", f),
+                AquaLiteral::String(s) => s.clone(),
+                AquaLiteral::Boolean(b) => b.to_string(),
+                AquaLiteral::ColumnRef(cr) => cr.to_string(),
+            }
+        } else if let Some(ref agg) = self.aggregate {
+            format!("{}({})", 
+                match agg.function {
+                    AggregateType::Max => "max",
+                    AggregateType::Min => "min",
+                    AggregateType::Avg => "avg",
+                    AggregateType::Sum => "sum",
+                    AggregateType::Count => "count",
+                },
+                agg.column.to_string()
+            )
+        } else {
+            String::new()
+        }
+    }}
