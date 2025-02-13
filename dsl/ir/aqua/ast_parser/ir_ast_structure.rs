@@ -69,9 +69,15 @@ pub enum AggregateType {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct WhereClause {
-    pub condition: Condition,
+    pub condition: WhereConditionType,
     pub binary_op: Option<BinaryOp>,
     pub next: Option<Box<WhereClause>>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum WhereConditionType {
+    Comparison(Condition),
+    NullCheck(NullCondition)
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -82,11 +88,16 @@ pub struct GroupByClause {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct GroupCondition {
-    pub condition: Condition,
+    pub condition: GroupConditionType,
     pub binary_op: Option<BinaryOp>,
     pub next: Option<Box<GroupCondition>>,
 }
 
+#[derive(Debug, PartialEq, Clone)]
+pub enum GroupConditionType {
+    Comparison(Condition),
+    NullCheck(NullCondition)
+}
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Condition {
@@ -95,7 +106,11 @@ pub struct Condition {
     pub right_field: ComplexField,
 }
 
-
+#[derive(Debug, PartialEq, Clone)]
+pub struct NullCondition {
+    pub field: ComplexField,
+    pub operator: NullOp,
+}
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum ComparisonOp {
@@ -111,6 +126,12 @@ pub enum ComparisonOp {
 pub enum BinaryOp {
     And,
     Or,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum NullOp {
+    IsNull,
+    IsNotNull,
 }
 
 #[derive(Debug, PartialEq, Clone)]

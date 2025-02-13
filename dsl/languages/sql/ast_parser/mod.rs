@@ -8,7 +8,7 @@ pub mod group_by;
 pub mod sql_ast_structure;
 pub use sql_ast_structure::{
     SqlAST, 
-    Condition, 
+    WhereCondition, 
     FromClause, 
     SelectClause, 
     WhereClause, 

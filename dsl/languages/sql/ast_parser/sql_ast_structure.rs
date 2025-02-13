@@ -73,9 +73,15 @@ pub struct JoinExpr {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct  WhereClause {
-    pub condition: Condition,
+    pub condition: WhereConditionType,
     pub binary_op: Option<BinaryOp>,
     pub next: Option<Box<WhereClause>>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum WhereConditionType {
+    Comparison(WhereCondition),
+    NullCheck(WhereNullCondition)
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -86,16 +92,22 @@ pub struct  GroupByClause {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct  HavingClause {
-    pub condition: HavingCondition,
+    pub condition: HavingConditionType,
     pub binary_op: Option<BinaryOp>,
     pub next: Option<Box<HavingClause>>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct Condition {
+pub struct WhereCondition {
     pub left_field: WhereField,
     pub operator: ComparisonOp,
     pub right_field: WhereField,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum HavingConditionType {
+    Comparison(HavingCondition),
+    NullCheck(HavingNullCondition)
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -103,6 +115,18 @@ pub struct HavingCondition {
     pub left_field: HavingField,
     pub operator: ComparisonOp,
     pub right_field: HavingField,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct WhereNullCondition {
+    pub field: WhereField,
+    pub operator: NullOp,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct HavingNullCondition {
+    pub field: HavingField,
+    pub operator: NullOp,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -119,6 +143,12 @@ pub enum ComparisonOp {
     LessOrEqualThan,
     Equal,
     NotEqual,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum NullOp {
+    IsNull,
+    IsNotNull,
 }
 
 #[derive(Debug, PartialEq, Clone)]

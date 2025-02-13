@@ -88,7 +88,7 @@ impl GroupByParser {
         let first_condition = pairs.next()
             .ok_or_else(|| SqlParseError::InvalidInput("Missing condition".to_string()))?;
         let mut current = HavingClause {
-            condition: Self::parse_single_condition(first_condition)?,
+            condition: Self::parse_single_having_condition(first_condition)?,
             binary_op: None,
             next: None
         };
@@ -105,7 +105,7 @@ impl GroupByParser {
                 
                 last.binary_op = Some(op);
                 last.next = Some(Box::new(HavingClause {
-                    condition: Self::parse_single_condition(condition_pair)?,
+                    condition: Self::parse_single_having_condition(condition_pair)?,
                     binary_op: None,
                     next: None,
                 }));
@@ -117,6 +117,57 @@ impl GroupByParser {
         }
         
         Ok(current)
+    }
+
+    fn parse_single_having_condition(condition_pair: Pair<Rule>) -> Result<HavingConditionType, SqlParseError> {
+        let mut inner = condition_pair.into_inner();
+    
+        let left_field_pair = inner.next()
+            .ok_or_else(|| SqlParseError::InvalidInput("Missing variable in condition".to_string()))?;
+    
+        let left_field = Self::parse_having_field(left_field_pair)?;
+            
+        let next_token = inner.next()
+            .ok_or_else(|| SqlParseError::InvalidInput("Missing operator".to_string()))?;
+    
+        match next_token.as_rule() {
+            Rule::null_operator => {
+                // Handle IS NULL / IS NOT NULL
+                let operator = match next_token.as_str().to_uppercase().as_str() {
+                    "IS NULL" => NullOp::IsNull,
+                    "IS NOT NULL" => NullOp::IsNotNull,
+                    _ => return Err(SqlParseError::InvalidInput(format!("Invalid null operator: {}", next_token.as_str()))),
+                };
+    
+                Ok(HavingConditionType::NullCheck(HavingNullCondition {
+                    field: left_field,
+                    operator,
+                }))
+            },
+            Rule::operator => {
+                let operator = match next_token.as_str() {
+                    ">" => ComparisonOp::GreaterThan,
+                    "<" => ComparisonOp::LessThan,
+                    ">=" => ComparisonOp::GreaterOrEqualThan,
+                    "<=" => ComparisonOp::LessOrEqualThan,
+                    "=" => ComparisonOp::Equal,
+                    "!=" | "<>" => ComparisonOp::NotEqual,
+                    op => return Err(SqlParseError::InvalidInput(format!("Invalid operator: {}", op))),
+                };
+    
+                let right_field_pair = inner.next()
+                    .ok_or_else(|| SqlParseError::InvalidInput("Missing value or variable in right field".to_string()))?;
+    
+                let right_field = Self::parse_having_field(right_field_pair)?;
+    
+                Ok(HavingConditionType::Comparison(HavingCondition {
+                    left_field,
+                    operator,
+                    right_field,
+                }))
+            },
+            _ => Err(SqlParseError::InvalidInput("Expected operator".to_string())),
+        }
     }
 
     fn parse_single_condition(condition_pair: Pair<Rule>) -> Result<HavingCondition, SqlParseError> {

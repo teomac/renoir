@@ -113,40 +113,60 @@ impl GroupParser {
         Ok(current)
     }
 
-    fn parse_single_condition(condition_pair: Pair<Rule>) -> Result<Condition, AquaParseError> {
+    fn parse_single_condition(condition_pair: Pair<Rule>) -> Result<GroupConditionType, AquaParseError> {
         let mut inner = condition_pair.into_inner();
-
-        //parse left field
+    
+        // Get the first field
         let left_field_pair = inner.next()
             .ok_or_else(|| AquaParseError::InvalidInput("Missing variable in condition".to_string()))?;
-
+    
         let left_field = Self::parse_field(left_field_pair)?;
-            
-        let operator = match inner.next()
-            .ok_or_else(|| AquaParseError::InvalidInput("Missing operator in left field".to_string()))?
-            .as_str() 
-        {
-            ">" => ComparisonOp::GreaterThan,
-            "<" => ComparisonOp::LessThan,
-            ">=" => ComparisonOp::GreaterThanEquals,
-            "<=" => ComparisonOp::LessThanEquals,
-            "=" | "==" => ComparisonOp::Equal,
-            "!=" | "<>" => ComparisonOp::NotEqual,
-            op => return Err(AquaParseError::InvalidInput(format!("Invalid operator: {}", op))),
-        };
-
-        //parse right condition
-
-        let right_field_pair = inner.next()
-            .ok_or_else(|| AquaParseError   ::InvalidInput("Missing value or variable in right field".to_string()))?;
-
-        let right_field = Self::parse_field(right_field_pair)?;
-
-        Ok(Condition {
-            left_field,
-            operator,
-            right_field,
-        })
+        
+        // Get the operator - could be comparison or null
+        let operator_pair = inner.next()
+            .ok_or_else(|| AquaParseError::InvalidInput("Missing operator".to_string()))?;
+    
+        match operator_pair.as_rule() {
+            Rule::null_op => {
+                // Handle IS NULL / IS NOT NULL
+                let operator = match operator_pair.as_str().to_uppercase().as_str() {
+                    "IS NULL" => NullOp::IsNull,
+                    "IS NOT NULL" => NullOp::IsNotNull,
+                    _ => return Err(AquaParseError::InvalidInput(
+                        format!("Invalid null operator: {}", operator_pair.as_str())
+                    )),
+                };
+    
+                Ok(GroupConditionType::NullCheck(NullCondition {
+                    field: left_field,
+                    operator,
+                }))
+            },
+            Rule::comparison_op => {
+                // Handle regular comparison operators
+                let operator = match operator_pair.as_str() {
+                    ">" => ComparisonOp::GreaterThan,
+                    "<" => ComparisonOp::LessThan,
+                    ">=" => ComparisonOp::GreaterThanEquals,
+                    "<=" => ComparisonOp::LessThanEquals,
+                    "==" | "=" => ComparisonOp::Equal,
+                    "!=" | "<>" => ComparisonOp::NotEqual,
+                    op => return Err(AquaParseError::InvalidInput(format!("Invalid operator: {}", op))),
+                };
+    
+                let right_field_pair = inner.next()
+                    .ok_or_else(|| AquaParseError::InvalidInput("Missing value in condition".to_string()))?;
+    
+                let right_field = Self::parse_field(right_field_pair)?;
+    
+                Ok(GroupConditionType::Comparison(Condition {
+                    left_field,
+                    operator,
+                    right_field,
+                }))
+            },
+            _ => Err(AquaParseError::InvalidInput("Expected operator".to_string())),
+        }
     }
 
      // New helper function to parse column references
@@ -237,5 +257,27 @@ impl GroupParser {
             }
             _ => Err(AquaParseError::InvalidInput(format!("Expected column reference, got {:?}", pair.as_rule()))),
         }
+    }
+
+    fn parse_null_condition(pair: Pair<Rule>) -> Result<NullCondition, AquaParseError> {
+        let mut inner = pair.into_inner();
+        
+        let field_pair = inner.next()
+            .ok_or_else(|| AquaParseError::InvalidInput("Missing field in null condition".to_string()))?;
+        
+        let field = Self::parse_field(field_pair)?;
+        
+        let operator = match inner.next()
+            .ok_or_else(|| AquaParseError::InvalidInput("Missing null operator".to_string()))?
+            .as_str()
+            .to_lowercase()
+            .as_str()
+        {
+            "is null" => NullOp::IsNull,
+            "is not null" => NullOp::IsNotNull,
+            op => return Err(AquaParseError::InvalidInput(format!("Invalid null operator: {}", op))),
+        };
+    
+        Ok(NullCondition { field, operator })
     }
 }
