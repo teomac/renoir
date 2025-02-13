@@ -1,8 +1,8 @@
-use crate::dsl::ir::aqua::ir_ast_structure::GroupByClause;
+use crate::dsl::ir::aqua::ir_ast_structure::{GroupByClause, GroupCondition, ComplexField};
 use crate::dsl::ir::aqua::{ColumnRef, QueryObject};
 use crate::dsl::ir::aqua::r_utils::{convert_column_ref, check_alias};
-use crate::dsl::ir::aqua::ir_ast_structure::{GroupCondition, ComplexField};
 use crate::dsl::ir::aqua::{AquaLiteral, AggregateType, ComparisonOp, BinaryOp};
+use crate::dsl::ir::aqua::ir_ast_structure::{GroupConditionType, NullOp};
 
 /// Process the GroupByClause from Aqua AST and generate the corresponding Renoir operator string.
 /// 
@@ -89,6 +89,7 @@ fn process_having_clause(having: &GroupCondition, query_object: &QueryObject, gr
     // Process the conditions recursively
     having_string.push_str(&process_having_condition(having, query_object, group_by));
 
+
     // Close the filter
     having_string.push_str(")");
 
@@ -108,21 +109,35 @@ fn process_having_clause(having: &GroupCondition, query_object: &QueryObject, gr
 fn process_having_condition(condition: &GroupCondition, query_object: &QueryObject, group_by: &GroupByClause) -> String {
     let mut condition_string = String::new();
 
-    // Process left side
-    condition_string.push_str(&convert_complex_field(&condition.condition.left_field, query_object, group_by));
+    match &condition.condition {
+        GroupConditionType::Comparison(comp) => {
+            // Process left side
+            condition_string.push_str(&convert_complex_field(&comp.left_field, query_object, group_by));
 
-    // Add operator
-    condition_string.push_str(&format!(" {} ", match condition.condition.operator {
-        ComparisonOp::GreaterThan => ">",
-        ComparisonOp::LessThan => "<",
-        ComparisonOp::Equal => "==",
-        ComparisonOp::NotEqual => "!=",
-        ComparisonOp::GreaterThanEquals => ">=",
-        ComparisonOp::LessThanEquals => "<=",
-    }));
+            // TODO, is it correct to add unwrap here?
+            condition_string.push_str(&format!(" .unwrap(){} ", match comp.operator {
+                ComparisonOp::GreaterThan => ">",
+                ComparisonOp::LessThan => "<",
+                ComparisonOp::Equal => "==",
+                ComparisonOp::NotEqual => "!=",
+                ComparisonOp::GreaterThanEquals => ">=",
+                ComparisonOp::LessThanEquals => "<=",
+            }));
 
-    // Process right side
-    condition_string.push_str(&convert_complex_field(&condition.condition.right_field, query_object, group_by));
+            // Process right side
+            condition_string.push_str(&convert_complex_field(&comp.right_field, query_object, group_by));
+        },
+        GroupConditionType::NullCheck(null_check) => {
+            // Convert the field to its Renoir representation
+            let field_str = convert_complex_field(&null_check.field, query_object, group_by);
+            
+            // Add the appropriate null check
+            match null_check.operator {
+                NullOp::IsNull => condition_string.push_str(&format!("{}.is_none()", field_str)),
+                NullOp::IsNotNull => condition_string.push_str(&format!("{}.is_some()", field_str)),
+            }
+        }
+    }
 
     // Process binary operator and next condition if present
     if let (Some(op), Some(next)) = (&condition.binary_op, &condition.next) {
@@ -152,23 +167,25 @@ fn convert_complex_field(field: &ComplexField, query_object: &QueryObject, group
         // Check if this column is part of the GROUP BY key
         if let Some(key_position) = group_by.columns.iter().position(|gc| gc.column == col.column && gc.table == col.table) {
             // If it's a key column, access it via x.0.{position}
-            format!("x.0.{}.unwrap()", key_position)
+            if group_by.columns.len() == 1 {
+                format!("x.0")
+            } else {
+                format!("x.0.{}", key_position)
+            }
         } else {
             // Handle column reference based on whether we have joins
             if !query_object.has_join {
-                format!("x.1.{}.unwrap()", col.column)
+                format!("x.1.{}", col.column)
             } else {
                 let table = col.table.as_ref().unwrap();
                 let table_name = check_alias(table, query_object);
                 format!(
-                    "x.1{}.{}.unwrap()",
-                    query_object.table_to_tuple_access.get(&table_name).unwrap(),
-                    col.column
+                    "x.1{}",
+                    query_object.table_to_tuple_access.get(&table_name).unwrap()
                 )
             }
         }
     } else if let Some(lit) = &field.literal {
-        // Rest of the code remains the same...
         match lit {
             AquaLiteral::Integer(i) => i.to_string(),
             AquaLiteral::Float(f) => format!("{:.2}", f),
@@ -177,16 +194,14 @@ fn convert_complex_field(field: &ComplexField, query_object: &QueryObject, group
             AquaLiteral::ColumnRef(col_ref) => convert_column_ref(col_ref, query_object),
         }
     } else if let Some(agg) = &field.aggregate {
-        // Rest of the code remains the same...
         let inner_col = if !query_object.has_join {
-            format!("x.1.{}.unwrap()", agg.column.column)
+            format!("x.1.{}", agg.column.column)
         } else {
             let table = agg.column.table.as_ref().unwrap();
             let table_name = check_alias(table, query_object);
             format!(
-                "x.1{}.{}.unwrap()",
-                query_object.table_to_tuple_access.get(&table_name).unwrap(),
-                agg.column.column
+                "x.1{}",
+                query_object.table_to_tuple_access.get(&table_name).unwrap()
             )
         };
 
@@ -203,6 +218,14 @@ fn convert_complex_field(field: &ComplexField, query_object: &QueryObject, group
                 }
             }
         }
+    } else if let Some(nested) = &field.nested_expr {
+        let (left, op, right) = &**nested;
+        format!(
+            "({} {} {})",
+            convert_complex_field(left, query_object, group_by),
+            op,
+            convert_complex_field(right, query_object, group_by)
+        )
     } else {
         panic!("Invalid ComplexField: no valid field type found");
     }
@@ -229,7 +252,7 @@ mod tests {
         };
 
         let result = process_group_by(&group_by, &query_object);
-        assert_eq!(result, ".group_by(|x| (x.col1.unwrap())).drop_key()");
+        assert_eq!(result, ".group_by(|x| (x.col1.clone())).drop_key()");
     }
 
     #[test]
@@ -253,6 +276,6 @@ mod tests {
         };
 
         let result = process_group_by(&group_by, &query_object);
-        assert_eq!(result, ".group_by(|x| (x.0.col1.unwrap())).drop_key()");
+        assert_eq!(result, ".group_by(|x| (x.0.col1.clone())).drop_key()");
     }
 }
