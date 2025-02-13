@@ -76,7 +76,7 @@ column_list = {
 }
 
 column_item = {
-    (complex_op | aggregate_expr | qualified_column | identifier) ~
+    (aggregate_expr | identifier | qualified_column |  complex_op) ~
     (as_keyword ~ identifier)?
 }
 

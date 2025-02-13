@@ -394,7 +394,7 @@ impl QueryObject {
         name
     }
 
-    fn get_complex_field_type(&self, field: &ComplexField) -> String {
+    pub fn get_complex_field_type(&self, field: &ComplexField) -> String {
         if let Some(ref col) = field.column_ref {
             self.get_type(col)
         } else if let Some(ref lit) = field.literal {

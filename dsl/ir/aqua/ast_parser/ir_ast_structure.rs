@@ -58,7 +58,7 @@ pub struct ColumnRef {
     pub column: String,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
 pub enum AggregateType {
     Max,
     Min,
