@@ -170,42 +170,6 @@ impl GroupByParser {
         }
     }
 
-    fn parse_single_condition(condition_pair: Pair<Rule>) -> Result<HavingCondition, SqlParseError> {
-        let mut inner = condition_pair.into_inner();
-
-        //parse left field
-        let left_field_pair = inner.next()
-            .ok_or_else(|| SqlParseError::InvalidInput("Missing variable in condition".to_string()))?;
-
-        let left_field = Self::parse_having_field(left_field_pair)?;
-            
-        let operator = match inner.next()
-            .ok_or_else(|| SqlParseError::InvalidInput("Missing operator in left field".to_string()))?
-            .as_str() 
-        {
-            ">" => ComparisonOp::GreaterThan,
-            "<" => ComparisonOp::LessThan,
-            ">=" => ComparisonOp::GreaterOrEqualThan,
-            "<=" => ComparisonOp::LessOrEqualThan,
-            "=" => ComparisonOp::Equal,
-            "!=" | "<>" => ComparisonOp::NotEqual,
-            op => return Err(SqlParseError::InvalidInput(format!("Invalid operator: {}", op))),
-        };
-
-        //parse right condition
-
-        let right_field_pair = inner.next()
-            .ok_or_else(|| SqlParseError::InvalidInput("Missing value or variable in right field".to_string()))?;
-
-        let right_field = Self::parse_having_field(right_field_pair)?;
-
-        Ok(HavingCondition {
-            left_field,
-            operator,
-            right_field,
-        })
-    }
-
     // New helper function to parse column references
     fn parse_having_field(pair: Pair<Rule>) -> Result<HavingField, SqlParseError> {
         match pair.as_rule() {

@@ -258,26 +258,4 @@ impl GroupParser {
             _ => Err(AquaParseError::InvalidInput(format!("Expected column reference, got {:?}", pair.as_rule()))),
         }
     }
-
-    fn parse_null_condition(pair: Pair<Rule>) -> Result<NullCondition, AquaParseError> {
-        let mut inner = pair.into_inner();
-        
-        let field_pair = inner.next()
-            .ok_or_else(|| AquaParseError::InvalidInput("Missing field in null condition".to_string()))?;
-        
-        let field = Self::parse_field(field_pair)?;
-        
-        let operator = match inner.next()
-            .ok_or_else(|| AquaParseError::InvalidInput("Missing null operator".to_string()))?
-            .as_str()
-            .to_lowercase()
-            .as_str()
-        {
-            "is null" => NullOp::IsNull,
-            "is not null" => NullOp::IsNotNull,
-            op => return Err(AquaParseError::InvalidInput(format!("Invalid null operator: {}", op))),
-        };
-    
-        Ok(NullCondition { field, operator })
-    }
 }
