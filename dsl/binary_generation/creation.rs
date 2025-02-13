@@ -2,7 +2,7 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 
-use crate::dsl::struct_object::object::{QueryObject, Operation};
+use crate::dsl::struct_object::object::{Operation, QueryObject};
 
 pub struct RustProject {
     pub project_path: PathBuf,
@@ -227,19 +227,9 @@ pub fn generate_struct_declarations(
         next_op: "".to_string(),
     };
 
-    // Check if we have SELECT *
-    let has_select_star = query_object
-        .result_column_to_input
-        .iter()
-        .any(|(col, res)| col == "*" && res.operations.first().unwrap_or_else(|| &empty_operation).current_op.contains("*"));
-
-    // Add fields from result_column_to_input (if there is a join, add the suffix)
-    if has_select_star {
-        result.push_str(&generate_all_columns_output_struct(query_object));
-    } else {
-        for (result_col, res) in &query_object.result_column_to_input {
-            result.push_str(&format!("    {}: Option<{}>,\n", result_col, res.r_type));
-        }
+    // Add fields from result_column_types
+    for (field_name, field_type) in &query_object.result_column_types {
+        result.push_str(&format!("    {}: Option<{}>,\n", field_name, field_type));
     }
 
     result.push_str("}\n");

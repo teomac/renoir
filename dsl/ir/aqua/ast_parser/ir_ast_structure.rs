@@ -152,6 +152,18 @@ impl ColumnRef {
     }
 }
 
+impl AggregateType{
+    pub fn to_string(&self) -> String {
+        match self {
+            AggregateType::Max => "max".to_string(),
+            AggregateType::Min => "min".to_string(),
+            AggregateType::Avg => "avg".to_string(),
+            AggregateType::Sum => "sum".to_string(),
+            AggregateType::Count => "count".to_string(),
+        }
+    }
+}
+
 impl ComplexField {
     pub fn to_string(&self) -> String {
         if let Some(ref nested) = self.nested_expr {
