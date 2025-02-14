@@ -10,6 +10,9 @@ asterisk = { "*" }
 group_by_keyword = { "GROUP BY" }
 having_keyword = { "HAVING" }
 
+l_paren = { "(" }
+r_paren = { ")" }
+
 variable = @{ ('a'..'z' | "_") ~ ('a'..'z' | '0'..'9' | "_")* }
 number = @{ 
     ('0'..'9')+ // Integer part
@@ -24,6 +27,8 @@ aggregate_expr = { agg_function ~ "(" ~ (asterisk | table_column | variable) ~ "
 
 operator = @{ ">=" | "<=" | "!=" | "<>" | ">" | "<" | "=" }
 
+null_operator = @ { "IS NOT NULL" | "IS NULL" }
+
 binary_op = { 
     ^"AND" | 
     ^"OR"
@@ -34,18 +39,31 @@ table_column = {
 }
 
 // Condition parts
-condition = { (table_column | variable | number) ~ operator ~ (table_column | variable | number) }
+condition = { ((table_column | variable | number) ~ operator ~ (table_column | variable | number) | ((table_column | variable) ~ null_operator)) }
 where_conditions = { condition ~ (binary_op ~ condition)* }
 where_expr = { where_keyword ~ where_conditions }
+
+//Projections
 
 column_item = {select_expr | aggregate_expr | table_column | variable }
 column_with_alias = { column_item ~ (as_keyword ~ variable)? }
 column_list = { column_with_alias ~ ("," ~ column_with_alias)* }
-select_expr = { ((aggregate_expr | table_column | variable | number ) ~ symbol ~ (aggregate_expr | table_column | variable | number )) }
+select_expr = { 
+    (parenthesized_expr | column_operand) ~ 
+    (symbol ~ (parenthesized_expr | column_operand))*
+}
+
+column_operand = { aggregate_expr | table_column | variable | number }
+parenthesized_expr = { l_paren ~ select_expr ~ r_paren }
 
 
-having_condition = { (table_column | variable | number | aggregate_expr) ~ operator ~ (table_column | variable | number | aggregate_expr) }
+// Having clause
+
+having_condition = { ((table_column | variable | number | aggregate_expr) ~ operator ~ (table_column | variable | number | aggregate_expr) | ((table_column | variable) ~ null_operator)) }
 having_clause = { having_condition ~ (binary_op ~ having_condition)* }
+
+
+// Group by 
 
 group_by_list = { (table_column | variable) ~ ("," ~ (table_column | variable))* }
 group_by_expr = { group_by_keyword ~ group_by_list ~ ( having_keyword ~ having_clause )? }

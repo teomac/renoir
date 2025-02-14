@@ -35,7 +35,15 @@ pub struct JoinCondition {
 pub enum SelectClause {
     Column(ColumnRef, Option<String>),  // Added Option<String> for alias
     Aggregate(AggregateFunction, Option<String>),  // Added Option<String> for alias 
-    ComplexValue(ComplexField, String, ComplexField, Option<String>),  // Added Option<String> for alias
+    ComplexValue(ComplexField, Option<String>),  // Added Option<String> for alias
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct ComplexField {
+    pub column_ref: Option<ColumnRef>,
+    pub literal: Option<AquaLiteral>,
+    pub aggregate: Option<AggregateFunction>,
+    pub nested_expr: Option<Box<(ComplexField, String, ComplexField)>>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -50,7 +58,7 @@ pub struct ColumnRef {
     pub column: String,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
 pub enum AggregateType {
     Max,
     Min,
@@ -61,9 +69,15 @@ pub enum AggregateType {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct WhereClause {
-    pub condition: Condition,
+    pub condition: WhereConditionType,
     pub binary_op: Option<BinaryOp>,
     pub next: Option<Box<WhereClause>>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum WhereConditionType {
+    Comparison(Condition),
+    NullCheck(NullCondition)
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -74,11 +88,16 @@ pub struct GroupByClause {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct GroupCondition {
-    pub condition: Condition,
+    pub condition: GroupConditionType,
     pub binary_op: Option<BinaryOp>,
     pub next: Option<Box<GroupCondition>>,
 }
 
+#[derive(Debug, PartialEq, Clone)]
+pub enum GroupConditionType {
+    Comparison(Condition),
+    NullCheck(NullCondition)
+}
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Condition {
@@ -88,11 +107,9 @@ pub struct Condition {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct ComplexField {
-    pub column: Option<ColumnRef>,
-    pub literal: Option<AquaLiteral>,
-    pub aggregate: Option<AggregateFunction>,
-    
+pub struct NullCondition {
+    pub field: ComplexField,
+    pub operator: NullOp,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -112,6 +129,12 @@ pub enum BinaryOp {
 }
 
 #[derive(Debug, PartialEq, Clone)]
+pub enum NullOp {
+    IsNull,
+    IsNotNull,
+}
+
+#[derive(Debug, PartialEq, Clone)]
 pub enum AquaLiteral {
     Integer(i64),
     Float(f64),
@@ -128,3 +151,46 @@ impl ColumnRef {
         }
     }
 }
+
+impl AggregateType{
+    pub fn to_string(&self) -> String {
+        match self {
+            AggregateType::Max => "max".to_string(),
+            AggregateType::Min => "min".to_string(),
+            AggregateType::Avg => "avg".to_string(),
+            AggregateType::Sum => "sum".to_string(),
+            AggregateType::Count => "count".to_string(),
+        }
+    }
+}
+
+impl ComplexField {
+    pub fn to_string(&self) -> String {
+        if let Some(ref nested) = self.nested_expr {
+            let (left, op, right) = &**nested;
+            format!("({} {} {})", left.to_string(), op, right.to_string())
+        } else if let Some(ref col) = self.column_ref {
+            col.to_string()
+        } else if let Some(ref lit) = self.literal {
+            match lit {
+                AquaLiteral::Integer(i) => i.to_string(),
+                AquaLiteral::Float(f) => format!("{:.2}", f),
+                AquaLiteral::String(s) => s.clone(),
+                AquaLiteral::Boolean(b) => b.to_string(),
+                AquaLiteral::ColumnRef(cr) => cr.to_string(),
+            }
+        } else if let Some(ref agg) = self.aggregate {
+            format!("{}({})", 
+                match agg.function {
+                    AggregateType::Max => "max",
+                    AggregateType::Min => "min",
+                    AggregateType::Avg => "avg",
+                    AggregateType::Sum => "sum",
+                    AggregateType::Count => "count",
+                },
+                agg.column.to_string()
+            )
+        } else {
+            String::new()
+        }
+    }}

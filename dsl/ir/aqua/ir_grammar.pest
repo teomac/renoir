@@ -18,6 +18,11 @@ on = { "on" }
 asterisk = { "*" }
 group_keyword = { "group" }
 
+left_parenthesis = { "(" }
+right_parenthesis = { ")" }
+
+null_op = @{ "is null" | "is not null" }
+
 
 query = {
     SOI ~
@@ -52,7 +57,15 @@ qualified_column = {
     identifier ~ "." ~ identifier
 }
 
-complex_op = {(aggregate_expr | qualified_column | identifier | number) ~ symbol ~ (aggregate_expr | qualified_column | identifier | number) }
+select_expr = { complex_op | aggregate_expr | qualified_column | identifier }
+column_operand = { aggregate_expr | qualified_column | identifier | number }
+parenthesized_expr = { left_parenthesis ~ select_expr ~ right_parenthesis }
+
+
+complex_op = { 
+    (parenthesized_expr | column_operand) ~ 
+    (symbol ~ (parenthesized_expr | column_operand))*
+}
 
 // Aggregate expressions
 aggregate_expr = { aggregate_func ~ "(" ~ (asterisk | qualified_column | identifier) ~ ")" }
@@ -63,7 +76,7 @@ column_list = {
 }
 
 column_item = {
-    (complex_op | aggregate_expr | qualified_column | identifier) ~
+    (aggregate_expr | identifier | qualified_column |  complex_op) ~
     (as_keyword ~ identifier)?
 }
 
@@ -83,7 +96,7 @@ binary_op = {
 }
 
 // Conditions for WHERE clause
-condition = { (value | qualified_column | identifier ) ~ comparison_op ~ (value | qualified_column | identifier ) }
+condition = { ((value | qualified_column | identifier ) ~ comparison_op ~ (value | qualified_column | identifier ) | (qualified_column | identifier) ~ null_op) }
 comparison_op = @{ ">=" | "<=" | "!=" | ">" | "<" | "==" | "="}
 where_conditions = { condition ~ (binary_op ~ condition)* }
 
@@ -92,7 +105,8 @@ method_chain = { "." ~ (filter_op | agg_op) }
 filter_op = { "filter" ~ "(" ~ condition ~ ")" }
 agg_op = { ("max" | "min" | "avg") ~ "(" ~ identifier ~ ")" }
 
-having_condition = { (aggregate_expr | value | qualified_column | identifier) ~ comparison_op ~ (aggregate_expr | value | qualified_column | identifier ) }
+having_condition = { (aggregate_expr | value | qualified_column | identifier) ~ ((comparison_op ~ (aggregate_expr | value | qualified_column | identifier)
+                    ) | null_op) }
 having_clause = {"{"  ~ having_condition ~ (binary_op ~ having_condition)* ~ "}"}
 
 

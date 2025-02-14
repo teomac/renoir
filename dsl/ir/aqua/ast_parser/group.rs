@@ -1,5 +1,5 @@
 use pest::iterators::Pair;
-use super::ast_structure::*;
+use super::ir_ast_structure::*;
 use super::error::AquaParseError;
 use crate::dsl::ir::aqua::ast_parser::Rule;
 
@@ -113,40 +113,60 @@ impl GroupParser {
         Ok(current)
     }
 
-    fn parse_single_condition(condition_pair: Pair<Rule>) -> Result<Condition, AquaParseError> {
+    fn parse_single_condition(condition_pair: Pair<Rule>) -> Result<GroupConditionType, AquaParseError> {
         let mut inner = condition_pair.into_inner();
-
-        //parse left field
+    
+        // Get the first field
         let left_field_pair = inner.next()
             .ok_or_else(|| AquaParseError::InvalidInput("Missing variable in condition".to_string()))?;
-
+    
         let left_field = Self::parse_field(left_field_pair)?;
-            
-        let operator = match inner.next()
-            .ok_or_else(|| AquaParseError::InvalidInput("Missing operator in left field".to_string()))?
-            .as_str() 
-        {
-            ">" => ComparisonOp::GreaterThan,
-            "<" => ComparisonOp::LessThan,
-            ">=" => ComparisonOp::GreaterThanEquals,
-            "<=" => ComparisonOp::LessThanEquals,
-            "=" | "==" => ComparisonOp::Equal,
-            "!=" | "<>" => ComparisonOp::NotEqual,
-            op => return Err(AquaParseError::InvalidInput(format!("Invalid operator: {}", op))),
-        };
-
-        //parse right condition
-
-        let right_field_pair = inner.next()
-            .ok_or_else(|| AquaParseError   ::InvalidInput("Missing value or variable in right field".to_string()))?;
-
-        let right_field = Self::parse_field(right_field_pair)?;
-
-        Ok(Condition {
-            left_field,
-            operator,
-            right_field,
-        })
+        
+        // Get the operator - could be comparison or null
+        let operator_pair = inner.next()
+            .ok_or_else(|| AquaParseError::InvalidInput("Missing operator".to_string()))?;
+    
+        match operator_pair.as_rule() {
+            Rule::null_op => {
+                // Handle IS NULL / IS NOT NULL
+                let operator = match operator_pair.as_str().to_uppercase().as_str() {
+                    "IS NULL" => NullOp::IsNull,
+                    "IS NOT NULL" => NullOp::IsNotNull,
+                    _ => return Err(AquaParseError::InvalidInput(
+                        format!("Invalid null operator: {}", operator_pair.as_str())
+                    )),
+                };
+    
+                Ok(GroupConditionType::NullCheck(NullCondition {
+                    field: left_field,
+                    operator,
+                }))
+            },
+            Rule::comparison_op => {
+                // Handle regular comparison operators
+                let operator = match operator_pair.as_str() {
+                    ">" => ComparisonOp::GreaterThan,
+                    "<" => ComparisonOp::LessThan,
+                    ">=" => ComparisonOp::GreaterThanEquals,
+                    "<=" => ComparisonOp::LessThanEquals,
+                    "==" | "=" => ComparisonOp::Equal,
+                    "!=" | "<>" => ComparisonOp::NotEqual,
+                    op => return Err(AquaParseError::InvalidInput(format!("Invalid operator: {}", op))),
+                };
+    
+                let right_field_pair = inner.next()
+                    .ok_or_else(|| AquaParseError::InvalidInput("Missing value in condition".to_string()))?;
+    
+                let right_field = Self::parse_field(right_field_pair)?;
+    
+                Ok(GroupConditionType::Comparison(Condition {
+                    left_field,
+                    operator,
+                    right_field,
+                }))
+            },
+            _ => Err(AquaParseError::InvalidInput("Expected operator".to_string())),
+        }
     }
 
      // New helper function to parse column references
@@ -173,9 +193,11 @@ impl GroupParser {
                             })
                     });
                 Ok(ComplexField{
-                    column: None,
+                    column_ref: None,
                     literal: Some(value),
                     aggregate: None,
+                    nested_expr: None,
+
                 })
 
             }
@@ -192,12 +214,13 @@ impl GroupParser {
                 };
                 let column = Self::parse_column_ref(inner.next().unwrap())?;
                 Ok(ComplexField{
-                    column: None,
+                    column_ref: None,
                     literal: None,
                     aggregate: Some(AggregateFunction{
                         function,
                         column
                     }),
+                    nested_expr: None,
                 })
             }
 
@@ -212,22 +235,24 @@ impl GroupParser {
                     .as_str()
                     .to_string();
                 Ok(ComplexField{
-                    column: Some(ColumnRef {
+                    column_ref: Some(ColumnRef {
                         table: Some(table),
                         column,
                     }),
                     literal: None,
                     aggregate: None,
+                    nested_expr: None,
                 })
             }
             Rule::identifier => {
                 Ok(ComplexField{
-                    column: Some(ColumnRef {
+                    column_ref: Some(ColumnRef {
                         table: None,
                         column: pair.as_str().to_string(),
                     }),
                     literal: None,
                     aggregate: None,
+                    nested_expr: None,
                 })
             }
             _ => Err(AquaParseError::InvalidInput(format!("Expected column reference, got {:?}", pair.as_rule()))),

@@ -1,4 +1,4 @@
-use super::ast_structure::AquaLiteral;
+use super::ir_ast_structure::AquaLiteral;
 use super::error::AquaParseError;
 
 pub struct LiteralParser;
@@ -50,11 +50,11 @@ impl LiteralParser {
     pub fn parse_column_ref(column_ref: &str) -> Result<AquaLiteral, AquaParseError> {
         let parts: Vec<&str> = column_ref.split('.').collect();
         match parts.len() {
-            1 => Ok(AquaLiteral::ColumnRef(super::ast_structure::ColumnRef {
+            1 => Ok(AquaLiteral::ColumnRef(super::ir_ast_structure::ColumnRef {
                 table: None,
                 column: parts[0].to_string(),
             })),
-            2 => Ok(AquaLiteral::ColumnRef(super::ast_structure::ColumnRef {
+            2 => Ok(AquaLiteral::ColumnRef(super::ir_ast_structure::ColumnRef {
                 table: Some(parts[0].to_string()),
                 column: parts[1].to_string(),
             })),

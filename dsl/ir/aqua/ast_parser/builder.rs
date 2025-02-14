@@ -1,4 +1,4 @@
-use super::ast_structure::*;
+use super::ir_ast_structure::*;
 use super::error::AquaParseError;
 use super::group::GroupParser;
 use super::{condition::ConditionParser, sink::SinkParser, source::SourceParser};
