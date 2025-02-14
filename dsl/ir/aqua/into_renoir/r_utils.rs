@@ -90,8 +90,8 @@ pub fn convert_aggregate(aggregate: &AggregateFunction, query_object: &QueryObje
 
 // method to check if a table is an alias and return the table name
 pub fn check_alias(table: &str, query_object: &QueryObject) -> String {
-    if query_object.table_to_alias.contains_key(table) {
-        table.to_string()
+    if let Some((actual_table, _)) = query_object.table_to_alias.iter().find(|(_, alias)| *alias == table) {
+        actual_table.clone()
     } else {
         query_object.table_names_list.iter().find(|&x| x == table).unwrap().clone()
     }
