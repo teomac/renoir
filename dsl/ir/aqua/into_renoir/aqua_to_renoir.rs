@@ -1,5 +1,5 @@
 use crate::dsl::{ir::aqua::{ast_parser::ir_ast_structure::AquaAST, into_renoir::{r_condition::process_where_clause, r_source::*}, 
-//r_sink::process_select_clauses
+r_sink::process_select_clauses
 }, struct_object::object::QueryObject};
 
 use super::r_group::process_group_by;
@@ -35,7 +35,7 @@ impl AquaToRenoir {
         }
 
         // Process all select clauses together
-        //final_string.push_str(&process_select_clauses(&ast.select, query_object));
+        final_string.push_str(&process_select_clauses(&ast.select, query_object));
         
         
     
