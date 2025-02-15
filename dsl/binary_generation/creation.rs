@@ -2,7 +2,7 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 
-use crate::dsl::struct_object::object::{Operation, QueryObject};
+use crate::dsl::struct_object::object::QueryObject;
 
 pub struct RustProject {
     pub project_path: PathBuf,
@@ -62,40 +62,6 @@ impl RustProject {
     pub fn update_main_rs(&self, main_content: &str) -> io::Result<()> {
         fs::write(self.project_path.join("src").join("main.rs"), main_content)
     }
-}
-
-fn generate_all_columns_output_struct(query_object: &QueryObject) -> String {
-    let mut result = String::new();
-
-    // If it's a simple query without join
-    if !query_object.has_join {
-        let table_name = query_object.table_names_list.first().unwrap();
-        if let Some(struct_map) = query_object.table_to_struct.get(table_name) {
-            for (field_name, field_type) in struct_map {
-                result.push_str(&format!("    {}: Option<{}>,\n", field_name, field_type));
-            }
-        }
-    } else {
-        // For queries with joins
-        for table_name in &query_object.table_names_list {
-            let suffix = query_object
-                .get_alias(table_name)
-                .unwrap_or(table_name)
-                .to_string();
-
-            if let Some(struct_map) = query_object.table_to_struct.get(table_name) {
-                for (field_name, field_type) in struct_map {
-                    let field_name_with_suffix = format!("{}_{}", field_name, suffix);
-                    result.push_str(&format!(
-                        "    {}: Option<{}>,\n",
-                        field_name_with_suffix, field_type
-                    ));
-                }
-            }
-        }
-    }
-
-    result
 }
 
 pub fn create_template(query_object: &QueryObject) -> String {
@@ -219,13 +185,6 @@ pub fn generate_struct_declarations(
         "#[derive(Clone, Debug, Serialize, Deserialize, PartialOrd, PartialEq, Default)]\n",
     );
     result.push_str("struct OutputStruct {\n");
-
-    let empty_operation = Operation {
-        current_op: "".to_string(),
-        table: "".to_string(),
-        input_column: "".to_string(),
-        next_op: "".to_string(),
-    };
 
     // Add fields from result_column_types
     for (field_name, field_type) in &query_object.result_column_types {

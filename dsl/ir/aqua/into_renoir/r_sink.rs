@@ -177,7 +177,7 @@ fn create_aggregate_map(select_clauses: &Vec<SelectClause>, query_object: &Query
      // Generate fold accumulator updates
      let mut update_code = String::new();
 
-   for (value, (pos, val_type)) in acc_info.value_positions.iter() {
+   for (value, (pos, _)) in acc_info.value_positions.iter() {
        match value {
            AccumulatorValue::Aggregate(agg_type, col) => {
                let col_access = if query_object.has_join {
@@ -411,7 +411,7 @@ fn create_simple_map(select_clauses: &Vec<SelectClause>, query_object: &QueryObj
         .enumerate()  // Add enumerate to track position
         .map(|(i, clause)| {
             match clause {
-                SelectClause::Column(col_ref, alias) => {
+                SelectClause::Column(col_ref, _) => {
                     let field_name = query_object.result_column_types.get_index(i).unwrap_or_else(|| (&empty_string, &empty_string)).0;
                     let value = if query_object.has_join {
                         let table = col_ref.table.as_ref().unwrap();

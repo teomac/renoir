@@ -58,7 +58,7 @@ impl AquaASTBuilder {
         Ok(ast)
     }
 
-    pub fn validate_ast(ast: &AquaAST) -> Result<(), AquaParseError> {
+    pub fn validate_ast(_ast: &AquaAST) -> Result<(), AquaParseError> {
 
         //Validate the WHERE clause
         // column types must be coherent with the condition.
