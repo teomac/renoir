@@ -37,7 +37,7 @@ impl AquaParser {
             .map_err(|e| AquaParseError::PestError(e))?;
         
         let ast = AquaASTBuilder::build_ast_from_pairs(pairs)?;
-        //AquaASTBuilder::validate_ast(&ast)?;
+        AquaASTBuilder::validate_ast(&ast)?;
         
         Ok(ast)
     }

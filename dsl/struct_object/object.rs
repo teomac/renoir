@@ -194,16 +194,32 @@ impl QueryObject {
         // Add all joined tables
         for join in &joins_vec {
             let join_table = join.scan.stream_name.clone();
-            self.joined_tables.push(join_table.clone());
+
+            //check if the table is already in the list
+            if self.table_names_list.contains(&join_table) {
+                panic!("Table {} is already in the list. Please use unique names.", join_table);
+            }
+
+            //if it is not in the list, add it
             self.table_names_list.push(join_table.clone());
+            self.joined_tables.push(join_table.clone());
+            
             if let Some(join_alias) = &join.scan.alias {
+                //check if the alias is already in the list
+                for (_, alias) in &self.table_to_alias {
+                    if alias == join_alias {
+                        panic!("Alias {} is already in the list. Please use unique alias names.", join_alias);
+                    }
+                }
+
+                //if it is not in the list, add it
                 self.table_to_alias
                     .insert(join_table.clone(), join_alias.clone());
             }
         }
 
         // Collect all table names in order
-        let mut table_names = vec![main_table.clone()];
+        let mut table_names: Vec<String> = vec![main_table.clone()];
         for join in &joins_vec {
             table_names.push(join.scan.stream_name.clone());
         }
@@ -274,6 +290,10 @@ impl QueryObject {
                                 }
                             }
                         } else {
+                            
+                            //check if the column is valid
+                            self.check_column_validity(col_ref);
+
                             // Regular column selection
                             let col_name = alias.clone().unwrap_or_else(|| {
                                 if self.has_join {
@@ -288,6 +308,7 @@ impl QueryObject {
                                     col_ref.column.clone()
                                 }
                             });
+
                             let col_name = self.get_unique_name(&col_name, &mut used_names);
                             let col_type = self.get_type(col_ref);
                             self.result_column_types.insert(col_name, col_type);
@@ -295,6 +316,9 @@ impl QueryObject {
                     },
                     
                     SelectClause::Aggregate(agg_func, alias) => {
+                        //check if the column is valid
+                        self.check_column_validity(&agg_func.column);
+
                         let col_name = if let Some(alias_name) = alias {
                             self.get_unique_name(alias_name, &mut used_names)
                         } else {
@@ -396,6 +420,8 @@ impl QueryObject {
 
     pub fn get_complex_field_type(&self, field: &ComplexField) -> String {
         if let Some(ref col) = field.column_ref {
+            //check if the column is valid
+            self.check_column_validity(col);
             self.get_type(col)
         } else if let Some(ref lit) = field.literal {
             match lit {
@@ -417,6 +443,8 @@ impl QueryObject {
                 left_type
             }
         } else if let Some(ref agg) = field.aggregate {
+            //check if the column is valid
+            self.check_column_validity(&agg.column);
             match agg.function {
                 AggregateType::Count => "usize".to_string(),
                 AggregateType::Avg => "f64".to_string(),
@@ -424,6 +452,39 @@ impl QueryObject {
             }
         } else {
             panic!("Invalid complex field - no valid content")
+        }
+    }
+
+    pub fn check_column_validity(&self, col_ref: &ColumnRef) {
+        //check if the col ref corresponds to a real column
+        let col_to_check  = col_ref.column.clone();
+        if col_ref.table.is_some() {
+            let mut table = col_ref.table.as_ref().unwrap();
+
+            //check if the table is an alias. If it is, get the real table name
+            if self.get_table_from_alias(&table).is_some() {
+               table = self.get_table_from_alias(&table).unwrap();
+            }
+
+            //get the struct map for the table
+            let struct_map = self.table_to_struct.get(table).unwrap_or_else(|| {
+                panic!("Error in retrieving struct_map for table {}.", table);
+            });
+            if !struct_map.contains_key(&col_to_check) {
+                panic!("Column {} does not exist in table {}", col_to_check, table);
+            }
+        } else {
+            let mut found = false;
+            for table in &self.table_names_list {
+                let struct_map = self.table_to_struct.get(table).unwrap();
+                if struct_map.contains_key(&col_to_check) {
+                    found = true;
+                    break;
+                }
+            }
+            if !found {
+                panic!("Column {} does not exist in any table", col_to_check);
+            }
         }
     }
 }
