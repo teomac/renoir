@@ -20,7 +20,6 @@ pub struct ResultColumn {
 }
 #[derive(Clone, Debug)]
 pub struct QueryObject {
-    pub empty_string: String,
     pub has_join: bool, // true if the query has a join
 
     pub renoir_string: String, //Renoir final string
@@ -65,7 +64,6 @@ pub struct QueryObject {
 impl QueryObject {
     pub fn new() -> Self {
         QueryObject {
-            empty_string: String::new(),
             has_join: false,
             joined_tables: Vec::new(),
             table_names_list: Vec::new(),
@@ -294,7 +292,7 @@ impl QueryObject {
                         } else {
                             
                             //check if the column is valid
-                            self.check_column_validity(col_ref, &self.empty_string);
+                            self.check_column_validity(col_ref, &String::new());
 
                             // Regular column selection
                             let col_name = alias.clone().unwrap_or_else(|| {
@@ -319,7 +317,7 @@ impl QueryObject {
                     
                     SelectClause::Aggregate(agg_func, alias) => {
                         //check if the column is valid
-                        self.check_column_validity(&agg_func.column, &self.empty_string);
+                        self.check_column_validity(&agg_func.column, &String::new());
 
                         let col_name = if let Some(alias_name) = alias {
                             self.get_unique_name(alias_name, &mut used_names)
@@ -423,7 +421,7 @@ impl QueryObject {
     pub fn get_complex_field_type(&self, field: &ComplexField) -> String {
         if let Some(ref col) = field.column_ref {
             //check if the column is valid
-            self.check_column_validity(col, &self.empty_string);
+            self.check_column_validity(col, &String::new());
             self.get_type(col)
         } else if let Some(ref lit) = field.literal {
             match lit {
@@ -446,7 +444,7 @@ impl QueryObject {
             }
         } else if let Some(ref agg) = field.aggregate {
             //check if the column is valid
-            self.check_column_validity(&agg.column, &self.empty_string);
+            self.check_column_validity(&agg.column, &String::new());
             match agg.function {
                 AggregateType::Count => "usize".to_string(),
                 AggregateType::Avg => "f64".to_string(),

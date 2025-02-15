@@ -63,12 +63,7 @@ impl AquaASTBuilder {
         //Validate the WHERE clause
         // column types must be coherent with the condition.
 
-        //validate the GROUP BY clause
-        // column names must be valid.
-        //no aggregate functions in the group by clause.
-
         //validate HAVING clause
-        // column names must be valid.
         // column types must be coherent with the condition.
 
         //validate the SELECT clause

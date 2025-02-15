@@ -49,7 +49,10 @@ fn process_group_by_keys(columns: &Vec<ColumnRef>, query_object: &QueryObject) -
         // No joins - simple reference to columns
         columns
             .iter()
-            .map(|col| format!("x.{}.clone()", col.column))
+            .map(|col| {
+                //validate column_ref
+                query_object.check_column_validity(col, &String::new());
+                format!("x.{}.clone()", col.column)})
             .collect::<Vec<_>>()
             .join(", ")
     } else {
@@ -59,6 +62,10 @@ fn process_group_by_keys(columns: &Vec<ColumnRef>, query_object: &QueryObject) -
             .map(|col| {
                 let table = col.table.as_ref().unwrap();
                 let table_name = check_alias(table, query_object);
+
+                //validate column_ref
+                query_object.check_column_validity(col, &table_name);
+
                 format!(
                     "x{}.{}.clone()",
                     query_object.table_to_tuple_access.get(&table_name).unwrap(),
@@ -215,6 +222,8 @@ fn convert_complex_field(
     group_by: &GroupByClause,
 ) -> String {
     if let Some(col) = &field.column_ref {
+        //validate column_ref
+        query_object.check_column_validity(col, &String::new());
         // Check if this column is part of the GROUP BY key
         if let Some(key_position) = group_by
             .columns
@@ -254,6 +263,9 @@ fn convert_complex_field(
             AquaLiteral::ColumnRef(col_ref) => convert_column_ref(col_ref, query_object),
         }
     } else if let Some(agg) = &field.aggregate {
+        // validate column_ref
+        query_object.check_column_validity(&agg.column, &String::new());
+        
         let inner_col = if !query_object.has_join {
             format!(
                 "if x.1.{}.is_some() {{ x.1.{}.unwrap() }} else {{ false }}",
