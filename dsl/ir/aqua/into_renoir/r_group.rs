@@ -153,10 +153,12 @@ fn process_having_condition(
                     )
                 };
 
+                let column_type = query_object.get_type(col);
                 format!(
-                    "(if {}.is_some() {{ {}.unwrap() {} {} }} else {{ false }})",
+                    "(if {}.is_some() {{ {}{}.unwrap() {} {} }} else {{ false }})",
                     col_access,
                     col_access,
+                    if column_type.contains("String") { ".as_ref()" } else { "" },
                     match comp.operator {
                         ComparisonOp::GreaterThan => ">",
                         ComparisonOp::LessThan => "<",
@@ -230,27 +232,38 @@ fn convert_complex_field(
             .iter()
             .position(|gc| gc.column == col.column && gc.table == col.table)
         {
+            let column_type = query_object.get_type(col);
             if group_by.columns.len() == 1 {
-                format!("(if x.0.is_some() {{ x.0.unwrap() }} else {{ false }})")
+                format!(
+                    "(if x.0.is_some() {{ x.0{}.unwrap() }} else {{ false }})",
+                    if column_type.contains("String") { ".as_ref()" } else { "" }
+                )
             } else {
                 format!(
-                    "(if x.0.{}.is_some() {{ x.0.{}.unwrap() }} else {{ false }})",
-                    key_position, key_position
+                    "(if x.0.{}.is_some() {{ x.0.{}{}.unwrap() }} else {{ false }})",
+                    key_position, 
+                    key_position,
+                    if column_type.contains("String") { ".as_ref()" } else { "" }
                 )
             }
         } else {
             if !query_object.has_join {
+                let column_type = query_object.get_type(col);
                 format!(
-                    "(if x.1.{}.is_some() {{ x.1.{}.unwrap() }} else {{ false }})",
-                    col.column, col.column
+                    "(if x.1.{}.is_some() {{ x.1.{}{}.unwrap() }} else {{ false }})",
+                    col.column,
+                    col.column,
+                    if column_type.contains("String") { ".as_ref()" } else { "" }
                 )
             } else {
                 let table = col.table.as_ref().unwrap();
                 let table_name = check_alias(table, query_object);
+                let column_type = query_object.get_type(col);
                 format!(
-                    "(if x.1{}.is_some() {{ x.1{}.unwrap() }} else {{ false }})",
+                    "(if x.1{}.is_some() {{ x.1{}{}.unwrap() }} else {{ false }})",
                     query_object.table_to_tuple_access.get(&table_name).unwrap(),
-                    query_object.table_to_tuple_access.get(&table_name).unwrap()
+                    query_object.table_to_tuple_access.get(&table_name).unwrap(),
+                    if column_type.contains("String") { ".as_ref()" } else { "" }
                 )
             }
         }
@@ -266,18 +279,22 @@ fn convert_complex_field(
         // validate column_ref
         query_object.check_column_validity(&agg.column, &String::new());
         
+        let column_type = query_object.get_type(&agg.column);
         let inner_col = if !query_object.has_join {
             format!(
-                "if x.1.{}.is_some() {{ x.1.{}.unwrap() }} else {{ false }}",
-                agg.column.column, agg.column.column
+                "if x.1.{}.is_some() {{ x.1.{}{}.unwrap() }} else {{ false }}",
+                agg.column.column, 
+                agg.column.column,
+                if column_type.contains("String") { ".as_ref()" } else { "" }
             )
         } else {
             let table = agg.column.table.as_ref().unwrap();
             let table_name = check_alias(table, query_object);
             format!(
-                "if x.1{}.is_some() {{ x.1{}.unwrap() }} else {{ false }}",
+                "if x.1{}.is_some() {{ x.1{}{}.unwrap() }} else {{ false }}",
                 query_object.table_to_tuple_access.get(&table_name).unwrap(),
-                query_object.table_to_tuple_access.get(&table_name).unwrap()
+                query_object.table_to_tuple_access.get(&table_name).unwrap(),
+                if column_type.contains("String") { ".as_ref()" } else { "" }
             )
         };
 

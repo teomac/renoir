@@ -121,7 +121,7 @@ impl SqlToAqua {
                     match &cond.left_field.value {
                         Some(SqlLiteral::Float(val)) => format!("{:.2}", val),
                         Some(SqlLiteral::Integer(val)) => val.to_string(),
-                        Some(SqlLiteral::String(val)) => val.clone(),
+                        Some(SqlLiteral::String(val)) => format!("'{}'", val),
                         Some(SqlLiteral::Boolean(val)) => val.to_string(),
                         None => String::new(),
                     }
@@ -142,7 +142,7 @@ impl SqlToAqua {
                     match &cond.right_field.value {
                         Some(SqlLiteral::Float(val)) => format!("{:.2}", val),
                         Some(SqlLiteral::Integer(val)) => val.to_string(),
-                        Some(SqlLiteral::String(val)) => val.clone(),
+                        Some(SqlLiteral::String(val)) => format!("'{}'", val),
                         Some(SqlLiteral::Boolean(val)) => val.to_string(),
                         None => String::new(),
                     }
@@ -233,7 +233,7 @@ impl SqlToAqua {
                     match &cond.left_field.value {
                         Some(SqlLiteral::Float(val)) => format!("{:.2}", val),
                         Some(SqlLiteral::Integer(val)) => val.to_string(),
-                        Some(SqlLiteral::String(val)) => val.clone(),
+                        Some(SqlLiteral::String(val)) => format!("'{}'", val),
                         Some(SqlLiteral::Boolean(val)) => val.to_string(),
                         None => String::new(),
                     }
@@ -267,7 +267,7 @@ impl SqlToAqua {
                     match &cond.right_field.value {
                         Some(SqlLiteral::Float(val)) => format!("{:.2}", val),
                         Some(SqlLiteral::Integer(val)) => val.to_string(),
-                        Some(SqlLiteral::String(val)) => val.clone(),
+                        Some(SqlLiteral::String(val)) => format!("'{}'", val),
                         Some(SqlLiteral::Boolean(val)) => val.to_string(),
                         None => String::new(),
                     }
@@ -308,7 +308,7 @@ impl SqlToAqua {
             match lit {
                 SqlLiteral::Float(val) => format!("{:.2}", val),
                 SqlLiteral::Integer(val) => val.to_string(),
-                SqlLiteral::String(val) => val.clone(),
+                SqlLiteral::String(val) => format!("'{}'", val),
                 SqlLiteral::Boolean(val) => val.to_string(),
             }
         } else if let Some((agg_func, col_ref)) = &field.aggregate {

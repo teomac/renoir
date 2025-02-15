@@ -173,33 +173,43 @@ impl GroupParser {
      fn parse_field(pair: Pair<Rule>) -> Result<ComplexField, AquaParseError> {
         match pair.as_rule() {
             Rule::value => {
-                //first we try to parse as int
-                let value = pair.as_str().parse::<i64>()
-                    .map(AquaLiteral::Integer)
-                    .unwrap_or_else(|_| {
-                        //if it fails, we try to parse as float
-                        pair.as_str().parse::<f64>()
-                            .map(AquaLiteral::Float)
+                let inner = pair.into_inner().next()
+                    .ok_or_else(|| AquaParseError::InvalidInput("Empty value".to_string()))?;
+
+                let value = match inner.as_rule() {
+                    Rule::string => {
+                        // Remove the single quotes and store the inner content
+                        let inner_str = inner.as_str();
+                        let clean_str = inner_str[1..inner_str.len()-1].to_string();
+                        AquaLiteral::String(clean_str)
+                    },
+                    Rule::number => {
+                        //we try to parse it as a number
+                        inner.as_str().parse::<i64>()
+                            .map(AquaLiteral::Integer)
                             .unwrap_or_else(|_| {
-                                //parse as boolean
-                                match pair.as_str() {
-                                    "true" => AquaLiteral::Boolean(true),
-                                    "false" => AquaLiteral::Boolean(false),
-                                    _ => {
-                                        //if it fails, we return as string
-                                        AquaLiteral::String(pair.as_str().to_string())
-                                    }
-                                }
+                                //if it fails, we try to parse as float
+                                inner.as_str().parse::<f64>()
+                                    .map(AquaLiteral::Float)
+                                    .expect("Failed to parse number")
                             })
-                    });
+                    },
+                    Rule::boolean_keyword => {
+                        match inner.as_str() {
+                            "true" => AquaLiteral::Boolean(true),
+                            "false" => AquaLiteral::Boolean(false),
+                            _ => unreachable!("Invalid boolean value")
+                        }
+                    },
+                    _ => return Err(AquaParseError::InvalidInput(format!("Invalid value type: {:?}", inner.as_rule())))
+                };
+
                 Ok(ComplexField{
                     column_ref: None,
                     literal: Some(value),
                     aggregate: None,
                     nested_expr: None,
-
                 })
-
             }
 
             Rule::aggregate_expr => {

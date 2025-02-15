@@ -127,12 +127,17 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
             result_string.push_str(format!(
                 "x.{}.is_some() {{ x.{}.unwrap()",
                 if query_object.table_to_struct.get(table_names.first().unwrap()).unwrap().get(&condition.left_field.column_ref.clone().unwrap().to_string()).is_some() {
+                    
                     condition.left_field.column_ref.clone().unwrap().to_string()
                 } else {
                     "ERROR".to_string()
                 },
                 if query_object.table_to_struct.get(table_names.first().unwrap()).unwrap().get(&condition.left_field.column_ref.clone().unwrap().to_string()).is_some() {
-                    condition.left_field.column_ref.clone().unwrap().to_string()
+                    if query_object.table_to_struct.get(table_names.first().unwrap()).unwrap().get(&condition.left_field.column_ref.clone().unwrap().to_string()).unwrap().contains("String"){
+                        format!("{}.as_ref()", condition.left_field.column_ref.clone().unwrap().to_string())
+                    }
+                    else{
+                    condition.left_field.column_ref.clone().unwrap().to_string()}
                 } else {
                     "ERROR".to_string()
                 }
@@ -159,7 +164,11 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
                 if query_object.table_to_struct.get(table_names.first().unwrap()).unwrap().get(&condition.right_field.column_ref.clone().unwrap().to_string()).is_some() {
                     format!("if x.{}.is_some() {{ x.{}.unwrap() }} else {{ false }}", 
                         condition.right_field.column_ref.clone().unwrap().to_string(),
-                        condition.right_field.column_ref.clone().unwrap().to_string()
+                        if query_object.table_to_struct.get(table_names.first().unwrap()).unwrap().get(&condition.right_field.column_ref.clone().unwrap().to_string()).unwrap().contains("String"){
+                            format!("{}.as_ref()", condition.right_field.column_ref.clone().unwrap().to_string())
+                        }
+                        else{
+                        condition.right_field.column_ref.clone().unwrap().to_string()}
                     )
                 } else {
                     "ERROR".to_string()
@@ -199,7 +208,7 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
                 } else {
                     "ERROR".to_string()
                 },
-                if query_object.get_type(&condition.left_field.column_ref.clone().unwrap()).contains("String") { ".clone()" } else { "" }
+                if query_object.get_type(&condition.left_field.column_ref.clone().unwrap()).contains("String") { ".as_ref()" } else { "" }
             ).as_str());
         } else {
             result_string.push_str(format!(
@@ -234,7 +243,7 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
                     } else {
                         "ERROR".to_string()
                     },
-                    if query_object.get_type(&condition.right_field.column_ref.clone().unwrap()).contains("String") { ".clone()" } else { "" }
+                    if query_object.get_type(&condition.right_field.column_ref.clone().unwrap()).contains("String") { ".as_ref()" } else { "" }
                 )
             ).as_str());
         } else {

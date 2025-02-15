@@ -38,8 +38,10 @@ table_column = {
     variable ~ "." ~ variable
 }
 
+string_literal = @{ "'" ~ variable ~ "'" }
+
 // Condition parts
-condition = { ((table_column | variable | number) ~ operator ~ (table_column | variable | number) | ((table_column | variable) ~ null_operator)) }
+condition = { ((table_column | variable | number | string_literal) ~ operator ~ (table_column | variable | number | string_literal) | ((table_column | variable) ~ null_operator)) }
 where_conditions = { condition ~ (binary_op ~ condition)* }
 where_expr = { where_keyword ~ where_conditions }
 
@@ -59,7 +61,7 @@ parenthesized_expr = { l_paren ~ select_expr ~ r_paren }
 
 // Having clause
 
-having_condition = { ((table_column | variable | number | aggregate_expr) ~ operator ~ (table_column | variable | number | aggregate_expr) | ((table_column | variable) ~ null_operator)) }
+having_condition = { ((table_column | variable | number | string_literal | aggregate_expr) ~ operator ~ (table_column | variable | number | string_literal | aggregate_expr) | ((table_column | variable) ~ null_operator)) }
 having_clause = { having_condition ~ (binary_op ~ having_condition)* }
 
 

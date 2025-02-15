@@ -173,6 +173,16 @@ impl GroupByParser {
     // New helper function to parse column references
     fn parse_having_field(pair: Pair<Rule>) -> Result<HavingField, SqlParseError> {
         match pair.as_rule() {
+            Rule::string_literal => {
+                // Remove the single quotes and store the inner content
+                let inner_str = pair.as_str();
+                let clean_str = inner_str[1..inner_str.len()-1].to_string();
+                Ok(HavingField{
+                    column: None,
+                    value: Some(SqlLiteral::String(clean_str)),
+                    aggregate: None,
+                })
+            }
             Rule::number => {
                 //first we try to parse as int
                 let value = pair.as_str().parse::<i64>()

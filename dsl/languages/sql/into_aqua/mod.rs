@@ -1,1 +1,1 @@
-pub mod aqua_query_gen;
+pub mod ir_query_gen;

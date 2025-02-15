@@ -65,7 +65,7 @@ pub fn convert_literal(literal: &AquaLiteral) -> String {
     match literal {
         AquaLiteral::Integer(val) => format!("{}", val),
         AquaLiteral::Float(val) => format!("{:.2}", val),
-        AquaLiteral::String(val) => format!("{}", val),
+        AquaLiteral::String(val) => format!("\"{}\"", val),
         AquaLiteral::Boolean(val) => format!("{}", val),
         AquaLiteral::ColumnRef(_val) => "".to_string(),
         
