@@ -23,6 +23,12 @@ pub fn process_from_clause(from_clause: &FromClause, query_object: &mut QueryObj
         let left_table_name = check_alias(&left_col.table.clone().unwrap(), &query_object);
         let right_table_name = check_alias(&right_col.table.clone().unwrap(), &query_object);
 
+        //validate left and right columns
+        query_object.check_column_validity(&left_col, &left_table_name);
+        query_object.check_column_validity(&right_col, &right_table_name);
+
+        
+
         // Get struct names
         let joined_struct = query_object.get_struct_name(&joined_table).unwrap();
         let struct_index = joined_struct.chars().last().unwrap();

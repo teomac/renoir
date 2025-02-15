@@ -61,7 +61,6 @@ impl AquaASTBuilder {
     pub fn validate_ast(ast: &AquaAST) -> Result<(), AquaParseError> {
 
         //Validate the WHERE clause
-        // column names must be valid.
         // column types must be coherent with the condition.
 
         //validate the GROUP BY clause
@@ -73,13 +72,7 @@ impl AquaASTBuilder {
         // column types must be coherent with the condition.
 
         //validate the SELECT clause
-        // column names must be valid.
         // column types must be coherent with the operation.
-
-
-
-
-
        
         Ok(())
     }

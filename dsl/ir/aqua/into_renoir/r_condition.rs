@@ -54,11 +54,11 @@ fn process_condition(condition: &WhereConditionType, query_object: &QueryObject)
 
 /// Process a null check condition (IS NULL or IS NOT NULL)
 fn process_null_check_condition(condition: &NullCondition, query_object: &QueryObject) -> String {
-    let table_names = query_object.get_all_table_names();
-
     if !query_object.has_join {
         // Simple case - no joins
         let field = if condition.field.column_ref.is_some() {
+            //validate column
+            query_object.check_column_validity(&condition.field.column_ref.as_ref().unwrap(), query_object.get_all_table_names().first().unwrap());
             format!(
                 "x.{}", 
                 condition.field.column_ref.as_ref().unwrap().column
@@ -79,6 +79,9 @@ fn process_null_check_condition(condition: &NullCondition, query_object: &QueryO
                 &col_ref.table.clone().unwrap(), 
                 query_object
             );
+            //validate column
+            query_object.check_column_validity(&col_ref, &table_name);
+            
             format!(
                 "x{}.{}", 
                 query_object.table_to_tuple_access.get(&table_name).unwrap(),
@@ -117,6 +120,9 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
     if !query_object.has_join {
         // For single table queries
         if is_left_column {
+            //validate column
+            query_object.check_column_validity(&condition.left_field.column_ref.as_ref().unwrap(), table_names.first().unwrap());
+
             result_string.push_str("if ");
             result_string.push_str(format!(
                 "x.{}.is_some() {{ x.{}.unwrap()",
@@ -145,6 +151,9 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
         ).as_str());
     
         if is_right_column {
+            //validate column
+            query_object.check_column_validity(&condition.right_field.column_ref.as_ref().unwrap(), table_names.first().unwrap());
+
             result_string.push_str(format!(
                 "{}",
                 if query_object.table_to_struct.get(table_names.first().unwrap()).unwrap().get(&condition.right_field.column_ref.clone().unwrap().to_string()).is_some() {
@@ -172,6 +181,9 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
         // For queries with joins
         if is_left_column {
             let table_name = check_alias(&condition.left_field.column_ref.clone().unwrap().table.clone().unwrap(), query_object);
+            //validate column
+            query_object.check_column_validity(&condition.left_field.column_ref.clone().unwrap(), &table_name);
+
             result_string.push_str("if ");
             result_string.push_str(format!(
                 "x{}.{}.is_some() {{ x{}.{}{}.unwrap()",
@@ -204,6 +216,9 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
     
         if is_right_column {
             let table_name = check_alias(&condition.right_field.column_ref.clone().unwrap().table.clone().unwrap(), query_object);
+            //validate column
+            query_object.check_column_validity(&condition.right_field.column_ref.clone().unwrap(), &table_name);
+
             result_string.push_str(format!(
                 "{}",
                 format!("if x{}.{}.is_some() {{ x{}.{}{}.unwrap() }} else {{ false }}",
