@@ -109,154 +109,149 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
         ComparisonOp::NotEqual => "!=",
     };
 
-    let table_names = query_object.get_all_table_names();
-
     let is_left_column = condition.left_field.column_ref.is_some();
     let is_right_column = condition.right_field.column_ref.is_some();
 
-    let mut result_string = String::new();
-
-    //case no join
     if !query_object.has_join {
-        // For single table queries
-        if is_left_column {
-            //validate column
-            query_object.check_column_validity(&condition.left_field.column_ref.as_ref().unwrap(), table_names.first().unwrap());
+        // Case 1: Both sides are columns
+        if is_left_column && is_right_column {
+            let left_col = &condition.left_field.column_ref.as_ref().unwrap();
+            let right_col = &condition.right_field.column_ref.as_ref().unwrap();
+            
+            //validate columns
+            query_object.check_column_validity(left_col, query_object.get_all_table_names().first().unwrap());
+            query_object.check_column_validity(right_col, query_object.get_all_table_names().first().unwrap());
 
-            result_string.push_str("if ");
-            result_string.push_str(format!(
-                "x.{}.is_some() {{ x.{}.unwrap()",
-                if query_object.table_to_struct.get(table_names.first().unwrap()).unwrap().get(&condition.left_field.column_ref.clone().unwrap().to_string()).is_some() {
-                    
-                    condition.left_field.column_ref.clone().unwrap().to_string()
-                } else {
-                    "ERROR".to_string()
-                },
-                if query_object.table_to_struct.get(table_names.first().unwrap()).unwrap().get(&condition.left_field.column_ref.clone().unwrap().to_string()).is_some() {
-                    if query_object.table_to_struct.get(table_names.first().unwrap()).unwrap().get(&condition.left_field.column_ref.clone().unwrap().to_string()).unwrap().contains("String"){
-                        format!("{}.as_ref()", condition.left_field.column_ref.clone().unwrap().to_string())
-                    }
-                    else{
-                    condition.left_field.column_ref.clone().unwrap().to_string()}
-                } else {
-                    "ERROR".to_string()
-                }
-            ).as_str());
-        } else {
-            result_string.push_str(format!(
-                "{}",
-                convert_literal(&condition.left_field.literal.as_ref().unwrap())
-            ).as_str());
+            return format!(
+                "if x.{}.is_some() && x.{}.is_some() {{ x.{}{}.unwrap() {} x.{}{}.unwrap() }} else {{ false }}", 
+                left_col.column,
+                right_col.column,
+                left_col.column,
+                if query_object.get_type(left_col).contains("String") { ".as_ref()" } else { "" },
+                operator_str,
+                right_col.column,
+                if query_object.get_type(right_col).contains("String") { ".as_ref()" } else { "" }
+            );
         }
-    
-        // Push operator
-        result_string.push_str(format!(
-            " {} ",
-            operator_str
-        ).as_str());
-    
+
+        // Case 2: Left is column, right is literal
+        if is_left_column {
+            let left_col = &condition.left_field.column_ref.as_ref().unwrap();
+            let right_val = convert_literal(&condition.right_field.literal.as_ref().unwrap());
+            
+            //validate column
+            query_object.check_column_validity(left_col, query_object.get_all_table_names().first().unwrap());
+
+            return format!(
+                "if x.{}.is_some() {{ x.{}{}.unwrap() {} {} }} else {{ false }}", 
+                left_col.column,
+                left_col.column,
+                if query_object.get_type(left_col).contains("String") { ".as_ref()" } else { "" },
+                operator_str,
+                right_val
+            );
+        }
+
+        // Case 3: Right is column, left is literal
         if is_right_column {
+            let right_col = &condition.right_field.column_ref.as_ref().unwrap();
+            let left_val = convert_literal(&condition.left_field.literal.as_ref().unwrap());
+            
             //validate column
-            query_object.check_column_validity(&condition.right_field.column_ref.as_ref().unwrap(), table_names.first().unwrap());
+            query_object.check_column_validity(right_col, query_object.get_all_table_names().first().unwrap());
 
-            result_string.push_str(format!(
-                "{}",
-                if query_object.table_to_struct.get(table_names.first().unwrap()).unwrap().get(&condition.right_field.column_ref.clone().unwrap().to_string()).is_some() {
-                    format!("if x.{}.is_some() {{ x.{}.unwrap() }} else {{ false }}", 
-                        condition.right_field.column_ref.clone().unwrap().to_string(),
-                        if query_object.table_to_struct.get(table_names.first().unwrap()).unwrap().get(&condition.right_field.column_ref.clone().unwrap().to_string()).unwrap().contains("String"){
-                            format!("{}.as_ref()", condition.right_field.column_ref.clone().unwrap().to_string())
-                        }
-                        else{
-                        condition.right_field.column_ref.clone().unwrap().to_string()}
-                    )
-                } else {
-                    "ERROR".to_string()
-                }
-            ).as_str());
-        } else {
-            result_string.push_str(format!(
-                "{}",
-                convert_literal(&condition.right_field.literal.as_ref().unwrap())
-            ).as_str());
+            return format!(
+                "if x.{}.is_some() {{ {} {} x.{}{}.unwrap() }} else {{ false }}", 
+                right_col.column,
+                left_val,
+                operator_str,
+                right_col.column,
+                if query_object.get_type(right_col).contains("String") { ".as_ref()" } else { "" }
+            );
         }
-    
-        if is_left_column {
-            result_string.push_str(" } else { false }");
-        }
-    
-        result_string
+
+        // Case 4: Both sides are literals
+        let left_val = convert_literal(&condition.left_field.literal.as_ref().unwrap());
+        let right_val = convert_literal(&condition.right_field.literal.as_ref().unwrap());
+        return format!("{} {} {}", left_val, operator_str, right_val);
     } else {
-        // For queries with joins
-        if is_left_column {
-            let table_name = check_alias(&condition.left_field.column_ref.clone().unwrap().table.clone().unwrap(), query_object);
-            //validate column
-            query_object.check_column_validity(&condition.left_field.column_ref.clone().unwrap(), &table_name);
+        // JOIN CASES
+        
+        // Case 1: Both sides are columns
+        if is_left_column && is_right_column {
+            let left_col = &condition.left_field.column_ref.as_ref().unwrap();
+            let right_col = &condition.right_field.column_ref.as_ref().unwrap();
+            
+            let left_table_name = check_alias(&left_col.table.clone().unwrap(), query_object);
+            let right_table_name = check_alias(&right_col.table.clone().unwrap(), query_object);
+            
+            //validate columns
+            query_object.check_column_validity(left_col, &left_table_name);
+            query_object.check_column_validity(right_col, &right_table_name);
 
-            result_string.push_str("if ");
-            result_string.push_str(format!(
-                "x{}.{}.is_some() {{ x{}.{}{}.unwrap()",
-                query_object.table_to_tuple_access.get(&table_name).unwrap(),
-                if query_object.table_to_struct.get(&table_name).unwrap().get(&condition.left_field.column_ref.clone().unwrap().column).is_some() {
-                    condition.left_field.column_ref.clone().unwrap().column
-                } else {
-                    "ERROR".to_string()
-                },
-                query_object.table_to_tuple_access.get(&table_name).unwrap(),
-                if query_object.table_to_struct.get(&table_name).unwrap().get(&condition.left_field.column_ref.clone().unwrap().column).is_some() {
-                    condition.left_field.column_ref.clone().unwrap().column
-                } else {
-                    "ERROR".to_string()
-                },
-                if query_object.get_type(&condition.left_field.column_ref.clone().unwrap()).contains("String") { ".as_ref()" } else { "" }
-            ).as_str());
-        } else {
-            result_string.push_str(format!(
-                "{}",
-                convert_literal(&condition.left_field.literal.as_ref().unwrap())
-            ).as_str());
+            return format!(
+                "if x{}.{}.is_some() && x{}.{}.is_some() {{ x{}.{}{}.unwrap() {} x{}.{}{}.unwrap() }} else {{ false }}", 
+                query_object.table_to_tuple_access.get(&left_table_name).unwrap(),
+                left_col.column,
+                query_object.table_to_tuple_access.get(&right_table_name).unwrap(),
+                right_col.column,
+                query_object.table_to_tuple_access.get(&left_table_name).unwrap(),
+                left_col.column,
+                if query_object.get_type(left_col).contains("String") { ".as_ref()" } else { "" },
+                operator_str,
+                query_object.table_to_tuple_access.get(&right_table_name).unwrap(),
+                right_col.column,
+                if query_object.get_type(right_col).contains("String") { ".as_ref()" } else { "" }
+            );
         }
-    
-        // Push operator
-        result_string.push_str(format!(
-            " {} ",
-            operator_str
-        ).as_str());
-    
+
+        // Case 2: Left is column, right is literal
+        if is_left_column {
+            let left_col = &condition.left_field.column_ref.as_ref().unwrap();
+            let right_val = convert_literal(&condition.right_field.literal.as_ref().unwrap());
+            
+            let left_table_name = check_alias(&left_col.table.clone().unwrap(), query_object);
+            
+            //validate column
+            query_object.check_column_validity(left_col, &left_table_name);
+
+            return format!(
+                "if x{}.{}.is_some() {{ x{}.{}{}.unwrap() {} {} }} else {{ false }}", 
+                query_object.table_to_tuple_access.get(&left_table_name).unwrap(),
+                left_col.column,
+                query_object.table_to_tuple_access.get(&left_table_name).unwrap(),
+                left_col.column,
+                if query_object.get_type(left_col).contains("String") { ".as_ref()" } else { "" },
+                operator_str,
+                right_val
+            );
+        }
+
+        // Case 3: Right is column, left is literal
         if is_right_column {
-            let table_name = check_alias(&condition.right_field.column_ref.clone().unwrap().table.clone().unwrap(), query_object);
+            let right_col = &condition.right_field.column_ref.as_ref().unwrap();
+            let left_val = convert_literal(&condition.left_field.literal.as_ref().unwrap());
+            
+            let right_table_name = check_alias(&right_col.table.clone().unwrap(), query_object);
+            
             //validate column
-            query_object.check_column_validity(&condition.right_field.column_ref.clone().unwrap(), &table_name);
+            query_object.check_column_validity(right_col, &right_table_name);
 
-            result_string.push_str(format!(
-                "{}",
-                format!("if x{}.{}.is_some() {{ x{}.{}{}.unwrap() }} else {{ false }}",
-                    query_object.table_to_tuple_access.get(&table_name).unwrap(),
-                    if query_object.table_to_struct.get(&table_name).unwrap().get(&condition.right_field.column_ref.clone().unwrap().column).is_some() {
-                        condition.right_field.column_ref.clone().unwrap().column
-                    } else {
-                        "ERROR".to_string()
-                    },
-                    query_object.table_to_tuple_access.get(&table_name).unwrap(),
-                    if query_object.table_to_struct.get(&table_name).unwrap().get(&condition.right_field.column_ref.clone().unwrap().column).is_some() {
-                        condition.right_field.column_ref.clone().unwrap().column
-                    } else {
-                        "ERROR".to_string()
-                    },
-                    if query_object.get_type(&condition.right_field.column_ref.clone().unwrap()).contains("String") { ".as_ref()" } else { "" }
-                )
-            ).as_str());
-        } else {
-            result_string.push_str(format!(
-                "{}",
-                convert_literal(&condition.right_field.literal.as_ref().unwrap())
-            ).as_str());
+            return format!(
+                "if x{}.{}.is_some() {{ {} {} x{}.{}{}.unwrap() }} else {{ false }}", 
+                query_object.table_to_tuple_access.get(&right_table_name).unwrap(),
+                right_col.column,
+                left_val,
+                operator_str,
+                query_object.table_to_tuple_access.get(&right_table_name).unwrap(),
+                right_col.column,
+                if query_object.get_type(right_col).contains("String") { ".as_ref()" } else { "" }
+            );
         }
-    
-        if is_left_column {
-            result_string.push_str(" } else { false }");
-        }
-    
-        result_string
+
+        // Case 4: Both sides are literals
+        let left_val = convert_literal(&condition.left_field.literal.as_ref().unwrap());
+        let right_val = convert_literal(&condition.right_field.literal.as_ref().unwrap());
+        return format!("{} {} {}", left_val, operator_str, right_val);
     }
 }
