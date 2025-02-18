@@ -68,9 +68,6 @@ impl FromParser {
             .ok_or_else(|| SqlParseError::InvalidInput("Missing join table".to_string()))?;
         let join_scan = Self::parse_scan(scan_expr)?;
 
-        // save right table join name
-        let right_table_name = join_scan.variable.clone();
-
         inner
             .next()
             .ok_or_else(|| SqlParseError::InvalidInput("Missing ON keyword".to_string()))?;
@@ -79,68 +76,40 @@ impl FromParser {
             .next()
             .ok_or_else(|| SqlParseError::InvalidInput("Missing join condition".to_string()))?;
 
-        let mut condition_parts = join_condition.into_inner();
+        let mut conditions = Vec::new();
+        let mut condition_pairs = join_condition.into_inner().peekable();
 
-        // Parse both table.column references
-        let left_col = condition_parts.next().ok_or_else(|| {
-            SqlParseError::InvalidInput("Missing left join condition".to_string())
-        })?;
-        let left_parts = left_col.into_inner().collect::<Vec<_>>();
-        let left_var = format!("{}.{}", left_parts[0].as_str(), left_parts[1].as_str());
-
-        let right_col = condition_parts.next().ok_or_else(|| {
-            SqlParseError::InvalidInput("Missing right join condition".to_string())
-        })?;
-        let right_parts = right_col.into_inner().collect::<Vec<_>>();
-        let right_var = format!("{}.{}", right_parts[0].as_str(), right_parts[1].as_str());
-
-        // Check if the right table name is the same as the join alias or the table name
-        if right_parts[0].as_str() != right_table_name {
-            if join_scan.alias.is_none() {
-                // case 1: no alias and right table name is different --> swap left and right tables
-                return Ok(JoinClause {
-                    join_type: JoinType::Inner,
-                    join_scan,
-                    join_expr: JoinExpr {
-                        left_var: right_var,
-                        right_var: left_var,
-                    },
-                });
-            // case 2: alias is present and right table name is different
-            } else {
-                if right_parts[0].as_str() != join_scan.alias.as_ref().unwrap() {
-                    // case 3: alias is present and alias is different --> swap left and right tables
-                    return Ok(JoinClause {
-                        join_type: JoinType::Inner,
-                        join_scan,
-                        join_expr: JoinExpr {
-                            left_var: right_var,
-                            right_var: left_var,
-                        },
-                    });
-                }
-                // case 4: alias is the same: do nothing
-                else {
-                    return Ok(JoinClause {
-                        join_type: JoinType::Inner,
-                        join_scan,
-                        join_expr: JoinExpr {
-                            left_var: left_var,
-                            right_var: right_var,
-                        },
-                    });
-                }
-            }
-        } else {
-            // case 5: right table name is the same as the join alias or the table name
-            return Ok(JoinClause {
-                join_type: JoinType::Inner,
-                join_scan,
-                join_expr: JoinExpr {
-                    left_var: left_var,
-                    right_var: right_var,
-                },
+        while let Some(left_col) = condition_pairs.next() {
+            // Parse each condition pair
+            let right_col = condition_pairs.next()
+                .ok_or_else(|| SqlParseError::InvalidInput("Missing right part of join condition".to_string()))?;
+    
+            let left_parts = left_col.into_inner().collect::<Vec<_>>();
+            let right_parts = right_col.into_inner().collect::<Vec<_>>();
+    
+            let left_var = format!("{}.{}", left_parts[0].as_str(), left_parts[1].as_str());
+            let right_var = format!("{}.{}", right_parts[0].as_str(), right_parts[1].as_str());
+    
+            conditions.push(JoinCondition {
+                left_var,
+                right_var,
             });
+    
+            // Skip the AND operator if present
+            if condition_pairs.peek().map_or(false, |p| p.as_str().to_uppercase() == "AND") {
+                condition_pairs.next();
+            }
         }
+    
+        if conditions.is_empty() {
+            return Err(SqlParseError::InvalidInput("No valid join conditions found".to_string()));
+        }
+
+    
+        Ok(JoinClause {
+            join_type: JoinType::Inner,
+            join_scan,
+            join_expr: JoinExpr { conditions },
+        })
     }
 }

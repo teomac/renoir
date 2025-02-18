@@ -40,7 +40,7 @@ impl SourceParser {
                 let condition_pair = inner.next().ok_or_else(|| {
                     AquaParseError::InvalidInput("Missing join condition".to_string())
                 })?;
-                let condition = Self::parse_join_condition(condition_pair)?;
+                let condition = JoinCondition::parse(condition_pair)?;
 
                 joins.push(JoinClause {
                     scan: join_scan,
@@ -89,33 +89,6 @@ impl SourceParser {
         })
     }
 
-    fn parse_join_condition(pair: Pair<Rule>) -> Result<JoinCondition, AquaParseError> {
-        if pair.as_rule() != Rule::join_condition {
-            return Err(AquaParseError::InvalidInput(
-                "Expected join condition".to_string(),
-            ));
-        }
-
-        let mut inner = pair.into_inner();
-
-        // Parse left side
-        let left_pair = inner.next().ok_or_else(|| {
-            AquaParseError::InvalidInput("Missing left side of join condition".to_string())
-        })?;
-        let left_col = Self::parse_qualified_column(left_pair)?;
-
-        // Parse right side
-        let right_pair = inner.next().ok_or_else(|| {
-            AquaParseError::InvalidInput("Missing right side of join condition".to_string())
-        })?;
-        let right_col = Self::parse_qualified_column(right_pair)?;
-
-        Ok(JoinCondition {
-            left_col,
-            right_col,
-        })
-    }
-
     fn parse_qualified_column(pair: Pair<Rule>) -> Result<ColumnRef, AquaParseError> {
         if pair.as_rule() != Rule::qualified_column {
             return Err(AquaParseError::InvalidInput(
@@ -139,5 +112,29 @@ impl SourceParser {
             table: Some(stream),
             column: field,
         })
+    }
+}
+
+impl JoinCondition {
+    fn parse(pair: Pair<Rule>) -> Result<Self, AquaParseError> {
+        let mut conditions = Vec::new();
+        let mut pairs = pair.into_inner().peekable();
+        
+        while let Some(left_pair) = pairs.next() {
+            let right_pair = pairs.next()
+                .ok_or_else(|| AquaParseError::InvalidInput("Missing right side of join condition".to_string()))?;
+
+            conditions.push(JoinPair {
+                left_col: SourceParser::parse_qualified_column(left_pair)?,
+                right_col: SourceParser::parse_qualified_column(right_pair)?,
+            });
+
+            // Skip the AND if present
+            if pairs.peek().map_or(false, |p| p.as_str() == "AND") {
+                pairs.next();
+            }
+        }
+
+        Ok(JoinCondition { conditions })
     }
 }
