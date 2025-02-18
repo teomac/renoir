@@ -1,5 +1,6 @@
 use indexmap::IndexMap;
 use crate::dsl::ir::aqua::ir_ast_structure::ComplexField;
+use crate::dsl::ir::aqua::r_utils::check_alias;
 use crate::dsl::ir::aqua::{
     AggregateType, AquaLiteral, ColumnRef, SelectClause,
 };
@@ -414,9 +415,9 @@ fn create_simple_map(select_clauses: &Vec<SelectClause>, query_object: &QueryObj
                 SelectClause::Column(col_ref, _) => {
                     let field_name = query_object.result_column_types.get_index(i).unwrap_or_else(|| (&empty_string, &empty_string)).0;
                     let value = if query_object.has_join {
-                        let table = col_ref.table.as_ref().unwrap();
+                        let table = check_alias(&col_ref.table.as_ref().unwrap(), query_object);
                         let tuple_access = query_object.table_to_tuple_access
-                            .get(table)
+                            .get(&table)
                             .expect("Table not found in tuple access map");
                         format!("x{}.{}", tuple_access, col_ref.column)
                     } else {

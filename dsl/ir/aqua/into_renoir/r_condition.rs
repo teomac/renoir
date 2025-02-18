@@ -122,6 +122,39 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
             query_object.check_column_validity(left_col, query_object.get_all_table_names().first().unwrap());
             query_object.check_column_validity(right_col, query_object.get_all_table_names().first().unwrap());
 
+            //get column types
+            let left_type = query_object.get_type(left_col);
+            let right_type = query_object.get_type(right_col);
+
+            //check if both columns are of the same type
+            if left_type != right_type {
+                //if one of them is an integer and the other is a float, we can compare them
+                if (left_type.contains("i64") && right_type.contains("f64")) || (left_type.contains("f64") && right_type.contains("i64")) {
+                   // convert the integer to a float and compare
+                        if left_type.contains("i64") && right_type.contains("f64") {
+                            return format!(
+                                "if x.{}.is_some() && x.{}.is_some() {{ (x.{}.unwrap() as f64) {} x.{}.unwrap() }} else {{ false }}", 
+                                left_col.column,
+                                right_col.column,
+                                left_col.column,
+                                operator_str,
+                                right_col.column
+                            );
+                        } else {
+                            return format!(
+                                "if x.{}.is_some() && x.{}.is_some() {{ x.{}.unwrap() {} (x.{}.unwrap() as f64) }} else {{ false }}", 
+                                left_col.column,
+                                right_col.column,
+                                left_col.column,
+                                operator_str,
+                                right_col.column
+                            );
+                        }
+                } else {
+                    panic!("Cannot compare columns of different types: {} and {}", left_type, right_type);
+                }
+            }
+
             return format!(
                 "if x.{}.is_some() && x.{}.is_some() {{ x.{}{}.unwrap() {} x.{}{}.unwrap() }} else {{ false }}", 
                 left_col.column,
@@ -142,6 +175,38 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
             //validate column
             query_object.check_column_validity(left_col, query_object.get_all_table_names().first().unwrap());
 
+            //check column types
+            let left_type = query_object.get_type(left_col);
+            let right_type = get_type_from_literal(&condition.right_field.literal.as_ref().unwrap());
+
+            //check if both columns are of the same type
+            if left_type != right_type {
+                //if one of them is an integer and the other is a float, we can compare them
+                if (left_type.contains("i64") && right_type.contains("f64")) || (left_type.contains("f64") && right_type.contains("i64")) {
+                   // convert the integer to a float and compare
+                        if left_type.contains("i64") && right_type.contains("f64") {
+                            return format!(
+                                "if x.{}.is_some() {{ (x.{}.unwrap() as f64) {} {} }} else {{ false }}", 
+                                left_col.column,
+                                left_col.column,
+                                operator_str,
+                                right_val
+                            );
+                        } else if left_type.contains("f64") && right_type.contains("i64") {
+                            return format!(
+                                "if x.{}.is_some() {{ x.{}.unwrap() {} {}_f64 }} else {{ false }}", 
+                                left_col.column,
+                                left_col.column,
+                                operator_str,
+                                right_val
+                            );
+                            
+                        }
+                } else {
+                    panic!("Cannot compare columns of different types: {} and {}", left_type, right_type);
+                }
+            }
+
             return format!(
                 "if x.{}.is_some() {{ x.{}{}.unwrap() {} {} }} else {{ false }}", 
                 left_col.column,
@@ -160,6 +225,38 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
             //validate column
             query_object.check_column_validity(right_col, query_object.get_all_table_names().first().unwrap());
 
+            //check column types
+            let left_type = get_type_from_literal(&condition.left_field.literal.as_ref().unwrap());
+            let right_type = query_object.get_type(right_col);
+
+            //check if both columns are of the same type
+            if left_type != right_type {
+                //if one of them is an integer and the other is a float, we can compare them
+                if (left_type.contains("i64") && right_type.contains("f64")) || (left_type.contains("f64") && right_type.contains("i64")) {
+                   // convert the integer to a float and compare
+                        if left_type.contains("i64") && right_type.contains("f64") {
+                            return format!(
+                                "if x.{}.is_some() {{ {}_f64 {} x.{}.unwrap() }} else {{ false }}", 
+                                right_col.column,
+                                left_val,
+                                operator_str,
+                                right_col.column
+                            );
+                        } else if left_type.contains("f64") && right_type.contains("i64") {
+                            return format!(
+                                "if x.{}.is_some() {{ {} {} (x.{}.unwrap() as f64) }} else {{ false }}", 
+                                right_col.column,
+                                left_val,
+                                operator_str,
+                                right_col.column
+                            );
+                            
+                        }
+                } else {
+                    panic!("Cannot compare columns of different types: {} and {}", left_type, right_type);
+                }
+            }
+
             return format!(
                 "if x.{}.is_some() {{ {} {} x.{}{}.unwrap() }} else {{ false }}", 
                 right_col.column,
@@ -173,7 +270,38 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
         // Case 4: Both sides are literals
         let left_val = convert_literal(&condition.left_field.literal.as_ref().unwrap());
         let right_val = convert_literal(&condition.right_field.literal.as_ref().unwrap());
+
+        //check column types
+        let left_type = get_type_from_literal(&condition.left_field.literal.as_ref().unwrap());
+        let right_type = get_type_from_literal(&condition.right_field.literal.as_ref().unwrap());
+
+        //check if both columns are of the same type
+        if left_type != right_type {
+            //if one of them is an integer and the other is a float, we can compare them
+            if (left_type.contains("i64") && right_type.contains("f64")) || (left_type.contains("f64") && right_type.contains("i64")) {
+               // convert the integer to a float and compare
+                    if left_type.contains("i64") && right_type.contains("f64") {
+                        return format!(
+                            "{}_f64 {} {}", 
+                            left_val,
+                            operator_str,
+                            right_val
+                        );
+                    } else if left_type.contains("f64") && right_type.contains("i64") {
+                        return format!(
+                            "{} {} {}_f64", 
+                            left_val,
+                            operator_str,
+                            right_val
+                        );
+                        
+                    }
+            } else {
+                panic!("Cannot compare columns of different types: {} and {}", left_type, right_type);
+            }
+        }
         return format!("{} {} {}", left_val, operator_str, right_val);
+
     } else {
         // JOIN CASES
         
@@ -188,6 +316,47 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
             //validate columns
             query_object.check_column_validity(left_col, &left_table_name);
             query_object.check_column_validity(right_col, &right_table_name);
+
+            //get column types
+            let left_type = query_object.get_type(left_col);
+            let right_type = query_object.get_type(right_col);
+
+            //check if both columns are of the same type
+            if left_type != right_type {
+                //if one of them is an integer and the other is a float, we can compare them
+                if (left_type.contains("i64") && right_type.contains("f64")) || (left_type.contains("f64") && right_type.contains("i64")) {
+                   // convert the integer to a float and compare
+                        if left_type.contains("i64") && right_type.contains("f64") {
+                            return format!(
+                                "if x{}.{}.is_some() && x{}.{}.is_some() {{ (x{}.{}.unwrap() as f64) {} x{}.{}.unwrap() }} else {{ false }}", 
+                                query_object.table_to_tuple_access.get(&left_table_name).unwrap(),
+                                left_col.column,
+                                query_object.table_to_tuple_access.get(&right_table_name).unwrap(),
+                                right_col.column,
+                                query_object.table_to_tuple_access.get(&left_table_name).unwrap(),
+                                left_col.column,
+                                operator_str,
+                                query_object.table_to_tuple_access.get(&right_table_name).unwrap(),
+                                right_col.column
+                            );
+                        } else {
+                            return format!(
+                                "if x{}.{}.is_some() && x{}.{}.is_some() {{ x{}.{}.unwrap() {} (x{}.{}.unwrap() as f64) }} else {{ false }}", 
+                                query_object.table_to_tuple_access.get(&left_table_name).unwrap(),
+                                left_col.column,
+                                query_object.table_to_tuple_access.get(&right_table_name).unwrap(),
+                                right_col.column,
+                                query_object.table_to_tuple_access.get(&left_table_name).unwrap(),
+                                left_col.column,
+                                operator_str,
+                                query_object.table_to_tuple_access.get(&right_table_name).unwrap(),
+                                right_col.column
+                            );
+                        }
+                } else {
+                    panic!("Cannot compare columns of different types: {} and {}", left_type, right_type);
+                }
+            }
 
             return format!(
                 "if x{}.{}.is_some() && x{}.{}.is_some() {{ x{}.{}{}.unwrap() {} x{}.{}{}.unwrap() }} else {{ false }}", 
@@ -215,6 +384,41 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
             //validate column
             query_object.check_column_validity(left_col, &left_table_name);
 
+            //check column types
+            let left_type = query_object.get_type(left_col);
+            let right_type = get_type_from_literal(&condition.right_field.literal.as_ref().unwrap());
+
+            //check if both columns are of the same type
+            if left_type != right_type {
+                //if one of them is an integer and the other is a float, we can compare them
+                if (left_type.contains("i64") && right_type.contains("f64")) || (left_type.contains("f64") && right_type.contains("i64")) {
+                   // convert the integer to a float and compare
+                        if left_type.contains("i64") && right_type.contains("f64") {
+                            return format!(
+                                "if x{}.{}.is_some() {{ (x{}.{}.unwrap() as f64) {} {} }} else {{ false }}", 
+                                query_object.table_to_tuple_access.get(&left_table_name).unwrap(),
+                                left_col.column,
+                                query_object.table_to_tuple_access.get(&left_table_name).unwrap(),
+                                left_col.column,
+                                operator_str,
+                                right_val
+                            );
+                        } else if left_type.contains("f64") && right_type.contains("i64") {
+                            return format!(
+                                "if x{}.{}.is_some() {{ x{}.{}.unwrap() {} {}_f64 }} else {{ false }}", 
+                                query_object.table_to_tuple_access.get(&left_table_name).unwrap(),
+                                left_col.column,
+                                query_object.table_to_tuple_access.get(&left_table_name).unwrap(),
+                                left_col.column,
+                                operator_str,
+                                right_val
+                            );
+                            
+                        }
+                } else {
+                    panic!("Cannot compare columns of different types: {} and {}", left_type, right_type);
+                }
+            }
             return format!(
                 "if x{}.{}.is_some() {{ x{}.{}{}.unwrap() {} {} }} else {{ false }}", 
                 query_object.table_to_tuple_access.get(&left_table_name).unwrap(),
@@ -237,6 +441,42 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
             //validate column
             query_object.check_column_validity(right_col, &right_table_name);
 
+            //check column types
+            let left_type = get_type_from_literal(&condition.left_field.literal.as_ref().unwrap());
+            let right_type = query_object.get_type(right_col);
+
+            //check if both columns are of the same type
+            if left_type != right_type {
+                //if one of them is an integer and the other is a float, we can compare them
+                if (left_type.contains("i64") && right_type.contains("f64")) || (left_type.contains("f64") && right_type.contains("i64")) {
+                   // convert the integer to a float and compare
+                        if left_type.contains("i64") && right_type.contains("f64") {
+                            return format!(
+                                "if x{}.{}.is_some() {{ {}_f64 {} x{}.{}.unwrap() }} else {{ false }}", 
+                                query_object.table_to_tuple_access.get(&right_table_name).unwrap(),
+                                right_col.column,
+                                left_val,
+                                operator_str,
+                                query_object.table_to_tuple_access.get(&right_table_name).unwrap(),
+                                right_col.column
+                            );
+                        } else if left_type.contains("f64") && right_type.contains("i64") {
+                            return format!(
+                                "if x{}.{}.is_some() {{ {} {} (x{}.{}.unwrap() as f64) }} else {{ false }}", 
+                                query_object.table_to_tuple_access.get(&right_table_name).unwrap(),
+                                right_col.column,
+                                left_val,
+                                operator_str,
+                                query_object.table_to_tuple_access.get(&right_table_name).unwrap(),
+                                right_col.column
+                            );
+                            
+                        }
+                } else {
+                    panic!("Cannot compare columns of different types: {} and {}", left_type, right_type);
+                }
+            }
+
             return format!(
                 "if x{}.{}.is_some() {{ {} {} x{}.{}{}.unwrap() }} else {{ false }}", 
                 query_object.table_to_tuple_access.get(&right_table_name).unwrap(),
@@ -252,6 +492,38 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
         // Case 4: Both sides are literals
         let left_val = convert_literal(&condition.left_field.literal.as_ref().unwrap());
         let right_val = convert_literal(&condition.right_field.literal.as_ref().unwrap());
+
+        //  check column types
+        let left_type = get_type_from_literal(&condition.left_field.literal.as_ref().unwrap());
+        let right_type = get_type_from_literal(&condition.right_field.literal.as_ref().unwrap());
+
+        //check if both columns are of the same type
+        if left_type != right_type {
+            //if one of them is an integer and the other is a float, we can compare them
+            if (left_type.contains("i64") && right_type.contains("f64")) || (left_type.contains("f64") && right_type.contains("i64")) {
+               // convert the integer to a float and compare
+                    if left_type.contains("i64") && right_type.contains("f64") {
+                        return format!(
+                            "{}_f64 {} {}", 
+                            left_val,
+                            operator_str,
+                            right_val
+                        );
+                    } else if left_type.contains("f64") && right_type.contains("i64") {
+                        return format!(
+                            "{} {} {}_f64", 
+                            left_val,
+                            operator_str,
+                            right_val
+                        );
+                        
+                    }
+            } else {
+                panic!("Cannot compare columns of different types: {} and {}", left_type, right_type);
+            }
+        }
+        
+
         return format!("{} {} {}", left_val, operator_str, right_val);
     }
 }

@@ -72,6 +72,17 @@ pub fn convert_literal(literal: &AquaLiteral) -> String {
     }
 }
 
+// helper function to get the type of a literal
+pub fn get_type_from_literal(literal: &AquaLiteral) -> String {
+    match literal {
+        AquaLiteral::Integer(_) => "i64".to_string(),
+        AquaLiteral::Float(_) => "f64".to_string(),
+        AquaLiteral::String(_) => "String".to_string(),
+        AquaLiteral::Boolean(_) => "bool".to_string(),
+        AquaLiteral::ColumnRef(_) => "".to_string(),
+    }
+}
+
 pub fn convert_aggregate(aggregate: &AggregateFunction, query_object: &QueryObject) -> String {
     let func = match aggregate.function
         {
