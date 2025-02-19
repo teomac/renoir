@@ -23,15 +23,22 @@ impl SqlToAqua {
 
         // iterate over join(s)
         for (i, join) in sql_ast.from.joins.clone().unwrap().iter().enumerate() {
-            let input_num = i + 2; // input1 is used by base table, so joins start from input2
+            let input_num = i + 2;
             let join_table = match &join.join_scan.alias {
                 Some(alias) => format!("{} as {}", join.join_scan.variable, alias),
                 None => join.join_scan.variable.clone(),
             };
-
+        
+            // Create all join conditions
+            let conditions: Vec<String> = join.join_expr.conditions.iter()
+                .map(|cond| format!("{} == {}", cond.left_var, cond.right_var))
+                .collect();
+        
             from_str.push_str(&format!(
-                " join {} in input{} on {} == {}",
-                join_table, input_num, join.join_expr.left_var, join.join_expr.right_var
+                " join {} in input{} on {}",
+                join_table, 
+                input_num, 
+                conditions.join(" && ")
             ));
         }
 

@@ -63,8 +63,13 @@ pub enum JoinType {
     LeftOuter,
 }
 
-#[derive(Debug, PartialEq, Clone)] 
+#[derive(Debug, PartialEq, Clone)]
 pub struct JoinExpr {
+    pub conditions: Vec<JoinCondition>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct JoinCondition {
     pub left_var: String,
     pub right_var: String,
 }

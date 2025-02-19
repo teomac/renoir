@@ -27,6 +27,11 @@ pub struct JoinClause {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct JoinCondition {
+    pub conditions: Vec<JoinPair>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct JoinPair {
     pub left_col: ColumnRef,
     pub right_col: ColumnRef,
 }

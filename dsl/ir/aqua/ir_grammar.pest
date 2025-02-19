@@ -50,7 +50,7 @@ scan_expr = {
 }
 
 join_condition = {
-    qualified_column ~ "==" ~ qualified_column
+    qualified_column ~ "==" ~ qualified_column ~ ("&&" ~ qualified_column ~ "==" ~ qualified_column)*
 }
 
 qualified_column = {
