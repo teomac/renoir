@@ -1,4 +1,4 @@
-use crate::dsl::ir::aqua::ir_ast_structure::{WhereConditionType, NullCondition, NullOp, AquaLiteral, AggregateType, ColumnRef};
+use crate::dsl::ir::aqua::ir_ast_structure::{WhereConditionType, NullCondition, NullOp, AquaLiteral, ColumnRef};
 use crate::dsl::ir::aqua::BinaryOp;
 use crate::dsl::ir::aqua::WhereClause;
 use crate::dsl::ir::aqua::QueryObject;
@@ -41,39 +41,6 @@ pub fn process_where_clause(clause: &WhereClause, query_object: &QueryObject) ->
     conditions.join(" ")
 }
 
-fn get_arithmetic_expression_type(field: &ComplexField, query_object: &QueryObject) -> String {
-    if let Some(ref nested) = field.nested_expr {
-        let (left, op, right) = &**nested;
-        let left_type = get_arithmetic_expression_type(left, query_object);
-        let right_type = get_arithmetic_expression_type(right, query_object);
-
-        // Special case for division - always results in f64
-        if op == "/" {
-            return "f64".to_string();
-        }
-
-        // If either operand is f64, result is f64
-        if left_type == "f64" || right_type == "f64" {
-            "f64".to_string()
-        } else {
-            left_type
-        }
-    } else if let Some(ref col) = field.column_ref {
-        query_object.get_type(col)
-    } else if let Some(ref lit) = field.literal {
-        get_type_from_literal(lit)
-    } else if let Some(ref agg) = field.aggregate {
-        match agg.function {
-            AggregateType::Count => "usize".to_string(),
-            AggregateType::Avg => "f64".to_string(),
-            _ => query_object.get_type(&agg.column)
-        }
-    } else {
-        panic!("Invalid ComplexField - no valid content");
-    }
-}
-
-
 // Added new helper function to process arithmetic expressions
 fn process_arithmetic_expression(field: &ComplexField, query_object: &QueryObject, table_name: &str) -> String {
     if let Some(ref nested) = field.nested_expr {
@@ -82,7 +49,11 @@ fn process_arithmetic_expression(field: &ComplexField, query_object: &QueryObjec
         let left_type = query_object.get_complex_field_type(left);
         let right_type = query_object.get_complex_field_type(right);
 
-        // Division always results in f64
+        //type checking
+        //if types are different: case 1. they are both numeric, case 2. one is numeric and the other is not
+        if left_type != right_type {
+            if (left_type == "f64" || left_type == "i64") && (right_type=="f64"|| right_type == "i64") {
+                // Division always results in f64
         if op == "/" {
             return format!("({} as f64) {} ({} as f64)",
                 process_arithmetic_expression(left, query_object, table_name),
@@ -104,19 +75,18 @@ fn process_arithmetic_expression(field: &ComplexField, query_object: &QueryObjec
                 );
             } else {
                 // Both are integers, use pow
-                return format!("({}).pow({} as u32)", 
+                return format!("({}).pow({} as i64)", 
                     left_expr,
                     right_expr
                 );
             }
         }
 
-        // If either operand is f64, we need to ensure numeric literals are float
-        if left_type == "f64" || right_type == "f64" {
+        
             let left_expr = process_arithmetic_expression(left, query_object, table_name);
             let right_expr = process_arithmetic_expression(right, query_object, table_name);
             
-            // Add .0 to integer literals when needed
+            // Add as f64 to integer literals when needed
             let processed_left = if let Some(ref lit) = left.literal {
                 if let AquaLiteral::Integer(_) = lit {
                     format!("{} as f64", left_expr)
@@ -137,31 +107,101 @@ fn process_arithmetic_expression(field: &ComplexField, query_object: &QueryObjec
                 right_expr
             };
 
+            //if left is i64 and right is float or vice versa, convert the i64 to f64
+            if left_type == "i64" && right_type == "f64" {
+                return format!("({} as f64 {} {})", 
+                processed_left,
+                op,
+                processed_right
+            );
+            }
+            else if left_type == "f64" && right_type == "i64" {
+                return format!("({} {} {} as f64)", 
+                processed_left,
+                op,
+                processed_right
+            );
+            }
+
+
             return format!("({} {} {})", 
                 processed_left,
                 op,
                 processed_right
             );
+        
+
+
+            }
+            else {
+                panic!("Invalid arithmetic expression - incompatible types: {} and {}", left_type, right_type);
+            }
+        }
+        else {
+            //case same type
+            //if operation is plus, minus, multiply, division, or power and types are not numeric, panic
+            if op == "+" || op == "-" || op == "*" || op == "/" || op == "^" {
+                if left_type != "f64" && left_type != "i64" {
+                    panic!("Invalid arithmetic expression - non-numeric types: {} and {}", left_type, right_type);
+                }
+            }
+
+            // Division always results in f64
+            if op == "/" {
+                return format!("({} as f64) {} ({} as f64)",
+                    process_arithmetic_expression(left, query_object, table_name),
+                    op,
+                    process_arithmetic_expression(right, query_object, table_name)
+                );
+            }
+
+            // Special handling for power operation (^)
+            if op == "^" {
+                let left_expr = process_arithmetic_expression(left, query_object, table_name);
+                let right_expr = process_arithmetic_expression(right, query_object, table_name);
+                
+                // If both are f64, use powf
+                if left_type == "f64" {
+                    return format!("({}).powf({})", 
+                        left_expr,
+                        right_expr
+                    );
+                } else {
+                    // Both are integers, use pow
+                    return format!("({}).pow({})", 
+                        left_expr,
+                        right_expr
+                    );
+                }
+            }
+
+             // Regular arithmetic with same types
+        format!("({} {} {})", 
+        process_arithmetic_expression(left, query_object, table_name),
+        op,
+        process_arithmetic_expression(right, query_object, table_name)
+    )
+
+
+
         }
         
-        // Regular arithmetic with same types
-        format!("({} {} {})", 
-            process_arithmetic_expression(left, query_object, table_name),
-            op,
-            process_arithmetic_expression(right, query_object, table_name)
-        )
+       
     } else if let Some(ref col) = field.column_ref {
         // Validate column
         query_object.check_column_validity(col, &table_name.to_string());
         
         if query_object.has_join {
             let table = check_alias(&col.table.clone().unwrap(), query_object);
-            format!("x{}.{}.unwrap()", 
+            let c_type = query_object.get_type(col);
+            format!("x{}.{}{}.unwrap()", 
                 query_object.table_to_tuple_access.get(&table).unwrap(),
-                col.column
+                col.column,
+                if c_type == "String" { ".clone()" } else { "" }
             )
         } else {
-            format!("x.{}.unwrap()", col.column)
+            let c_type = query_object.get_type(col);
+            format!("x.{}{}.unwrap()", col.column, if c_type == "String" { ".clone()" } else { "" })
         }
     } else if let Some(ref lit) = field.literal {
         match lit {
@@ -171,14 +211,16 @@ fn process_arithmetic_expression(field: &ComplexField, query_object: &QueryObjec
             AquaLiteral::Boolean(b) => b.to_string(),
             AquaLiteral::ColumnRef(col_ref) => {
                 query_object.check_column_validity(col_ref, &table_name.to_string());
+                let c_type = query_object.get_type(&col_ref);
                 if query_object.has_join {
                     let table = check_alias(&col_ref.table.clone().unwrap(), query_object);
-                    format!("x{}.{}.unwrap()", 
+                    format!("x{}.{}{}.unwrap()", 
                         query_object.table_to_tuple_access.get(&table).unwrap(),
-                        col_ref.column
+                        col_ref.column,
+                        if c_type == "String" { ".clone()" } else { "" },
                     )
                 } else {
-                    format!("x.{}.unwrap()", col_ref.column)
+                    format!("x.{}{}.unwrap()", col_ref.column, if c_type == "String" { ".clone()" } else { "" })
                 }
             }
         }
@@ -275,6 +317,27 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
         ("", "")
     };
 
+    //type checking
+    //if types are different
+    if left_type != right_type{
+        if (left_type == "String" && right_type != "String") || (left_type != "String" && right_type == "String") {
+            panic!("Invalid comparison - cannot compare string with other type");
+        }
+        if (left_type == "bool" && right_type != "bool") || (left_type != "bool" && right_type == "bool") {
+            panic!("Invalid comparison - cannot compare boolean with other type");
+        }
+    }
+    else{
+        //if operand is plus, minus, multiply, division, or power and types are not numeric, panic
+        if operator_str == "+" || operator_str == "-" || operator_str == "*" || operator_str == "/" || operator_str == "^" {
+            if left_type != "f64" && left_type != "i64" {
+                panic!("Invalid arithmetic expression - non-numeric types: {} and {}", left_type, right_type);
+            }
+        }
+
+    }
+
+
     if !query_object.has_join {
         let all_table_names = query_object.get_all_table_names();
         let table_name = all_table_names.first().unwrap();
@@ -329,6 +392,11 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
                     collect_column_null_checks(&condition.right_field, query_object, &table, &mut null_checks);
                 }
             }
+
+            //remove duplicates from null_checks
+            null_checks.sort();
+            null_checks.dedup();
+
 
             let null_check_str = null_checks.join(" && ");
             format!(

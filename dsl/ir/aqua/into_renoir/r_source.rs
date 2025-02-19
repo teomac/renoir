@@ -24,7 +24,7 @@ pub fn process_from_clause(from_clause: &FromClause, query_object: &mut QueryObj
         let joined_struct = query_object.get_struct_name(&joined_table).unwrap();
         let struct_index = joined_struct.chars().last().unwrap();
 
-        for (j, join) in join.condition.conditions.iter().enumerate() {
+        for (_j, join) in join.condition.conditions.iter().enumerate() {
             let mut left_col = join.left_col.clone();
             let mut right_col = join.right_col.clone();
 
