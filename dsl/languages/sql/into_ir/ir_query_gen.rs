@@ -7,6 +7,7 @@ use crate::dsl::languages::sql::ast_parser::sql_ast_structure::BinaryOp;
 use crate::dsl::languages::sql::ast_parser::sql_ast_structure::ComparisonOp;
 use crate::dsl::languages::sql::ast_parser::sql_ast_structure::NullOp;
 use crate::dsl::languages::sql::ast_parser::sql_ast_structure::ComplexField;
+use crate::dsl::languages::sql::ast_parser::sql_ast_structure::ArithmeticExpr;
 
 pub struct SqlToAqua;
 
@@ -115,7 +116,9 @@ impl SqlToAqua {
     fn condition_to_string(condition: &WhereConditionType) -> String {
         match condition {
             WhereConditionType::Comparison(cond) => {
-                let left = if cond.left_field.column.is_some() {
+                let left = if let Some(ref arith) = cond.left_field.arithmetic {
+                    Self::arithmetic_expr_to_string(arith)
+                } else if cond.left_field.column.is_some() {
                     cond.left_field.column.as_ref().unwrap().to_string()
                 } else {
                     match &cond.left_field.value {
@@ -126,7 +129,7 @@ impl SqlToAqua {
                         None => String::new(),
                     }
                 };
-
+    
                 let operator_str = match cond.operator {
                     ComparisonOp::GreaterThan => ">",
                     ComparisonOp::LessThan => "<",
@@ -135,8 +138,10 @@ impl SqlToAqua {
                     ComparisonOp::Equal => "=",
                     ComparisonOp::NotEqual => "!=",
                 };
-
-                let right = if cond.right_field.column.is_some() {
+    
+                let right = if let Some(ref arith) = cond.right_field.arithmetic {
+                    Self::arithmetic_expr_to_string(arith)
+                } else if cond.right_field.column.is_some() {
                     cond.right_field.column.as_ref().unwrap().to_string()
                 } else {
                     match &cond.right_field.value {
@@ -147,20 +152,51 @@ impl SqlToAqua {
                         None => String::new(),
                     }
                 };
-
+    
                 format!("{} {} {}", left, operator_str, right)
             }
             WhereConditionType::NullCheck(null_cond) => {
+                // Existing null check code remains the same
                 let field = if null_cond.field.column.is_some() {
                     null_cond.field.column.as_ref().unwrap().to_string()
                 } else {
                     String::new()
                 };
-
+    
                 match null_cond.operator {
                     NullOp::IsNull => format!("{} is null", field),
                     NullOp::IsNotNull => format!("{} is not null", field),
                 }
+            }
+        }
+    }
+    
+    // Add new helper function to convert arithmetic expressions to strings
+    fn arithmetic_expr_to_string(expr: &ArithmeticExpr) -> String {
+        match expr {
+            ArithmeticExpr::Column(col_ref) => col_ref.to_string(),
+            ArithmeticExpr::Literal(lit) => match lit {
+                SqlLiteral::Float(val) => format!("{:.2}", val),
+                SqlLiteral::Integer(val) => val.to_string(),
+                SqlLiteral::String(val) => format!("'{}'", val),
+                SqlLiteral::Boolean(val) => val.to_string(),
+            },
+            ArithmeticExpr::Aggregate(func, col_ref) => {
+                let agg = match func {
+                    AggregateFunction::Max => "max",
+                    AggregateFunction::Min => "min",
+                    AggregateFunction::Sum => "sum",
+                    AggregateFunction::Avg => "avg",
+                    AggregateFunction::Count => "count",
+                };
+                format!("{}({})", agg, col_ref.to_string())
+            },
+            ArithmeticExpr::BinaryOp(left, op, right) => {
+                format!("({} {} {})", 
+                    Self::arithmetic_expr_to_string(left),
+                    op,
+                    Self::arithmetic_expr_to_string(right)
+                )
             }
         }
     }

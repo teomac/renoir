@@ -54,19 +54,164 @@ impl ConditionParser {
         Ok(current)
     }
 
-    // Before the existing function
+    fn parse_arithmetic_expr(pair: Pair<Rule>) -> Result<ArithmeticExpr, SqlParseError> {
+        match pair.as_rule() {
+            Rule::arithmetic_expr => {
+                let mut pairs = pair.into_inner().peekable();
+                
+                // Parse first term
+                let first_term = pairs.next()
+                    .ok_or_else(|| SqlParseError::InvalidInput("Missing first term".to_string()))?;
+                let mut left = Self::parse_arithmetic_term(first_term)?;
+                
+                // Process any subsequent operations
+                while let Some(op) = pairs.next() {
+                    if let Some(next_term) = pairs.next() {
+                        let right = Self::parse_arithmetic_term(next_term)?;
+                        left = ArithmeticExpr::BinaryOp(
+                            Box::new(left),
+                            op.as_str().to_string(),
+                            Box::new(right)
+                        );
+                    }
+                }
+                
+                Ok(left)
+            },
+            _ => Err(SqlParseError::InvalidInput(format!("Expected arithmetic expression, got {:?}", pair.as_rule())))
+        }
+    }
+
+    fn parse_arithmetic_term(pair: Pair<Rule>) -> Result<ArithmeticExpr, SqlParseError> {
+        match pair.as_rule() {
+            Rule::arithmetic_term => {
+                let mut inner = pair.into_inner();
+                let first = inner.next()
+                    .ok_or_else(|| SqlParseError::InvalidInput("Empty arithmetic primary".to_string()))?;
+    
+                match first.as_rule() {
+                    Rule::l_paren => {
+                        // For parenthesized expressions, get the inner expression
+                        let expr = inner.next()
+                            .ok_or_else(|| SqlParseError::InvalidInput("Empty parentheses".to_string()))?;
+                        
+                        // Skip the right parenthesis
+                        inner.next();
+                        
+                        Self::parse_arithmetic_expr(expr)
+                    },
+                    _ => Self::parse_arithmetic_factor(first)
+                }
+            },
+            _ => Err(SqlParseError::InvalidInput(format!("Expected arithmetic primary, got {:?}", pair.as_rule())))
+        }
+    }
+
+    fn parse_arithmetic_factor(pair: Pair<Rule>) -> Result<ArithmeticExpr, SqlParseError> {
+        let factor = pair.into_inner().next()
+            .ok_or_else(|| SqlParseError::InvalidInput("Empty arithmetic factor".to_string()))?;
+        
+        match factor.as_rule() {
+            Rule::number => {
+                // Parse number as SqlLiteral
+                let value = if let Ok(int_val) = factor.as_str().parse::<i64>() {
+                    SqlLiteral::Integer(int_val)
+                } else if let Ok(float_val) = factor.as_str().parse::<f64>() {
+                    SqlLiteral::Float(float_val)
+                } else {
+                    return Err(SqlParseError::InvalidInput("Invalid number format".to_string()));
+                };
+                Ok(ArithmeticExpr::Literal(value))
+            },
+            Rule::string_literal => {
+                let inner_str = factor.as_str();
+                let clean_str = inner_str[1..inner_str.len()-1].to_string();
+                Ok(ArithmeticExpr::Literal(SqlLiteral::String(clean_str)))
+            },
+            Rule::table_column => {
+                let mut inner = factor.into_inner();
+                let table = inner.next()
+                    .ok_or_else(|| SqlParseError::InvalidInput("Missing table name".to_string()))?
+                    .as_str()
+                    .to_string();
+                let column = inner.next()
+                    .ok_or_else(|| SqlParseError::InvalidInput("Missing column name".to_string()))?
+                    .as_str()
+                    .to_string();
+                Ok(ArithmeticExpr::Column(ColumnRef {
+                    table: Some(table),
+                    column,
+                }))
+            },
+            Rule::variable => {
+                Ok(ArithmeticExpr::Column(ColumnRef {
+                    table: None,
+                    column: factor.as_str().to_string(),
+                }))
+            },
+            Rule::aggregate_expr => {
+                let mut agg = factor.into_inner();
+                let func = match agg.next()
+                    .ok_or_else(|| SqlParseError::InvalidInput("Missing aggregate function".to_string()))?
+                    .as_str()
+                    .to_uppercase()
+                    .as_str()
+                {
+                    "MAX" => AggregateFunction::Max,
+                    "MIN" => AggregateFunction::Min,
+                    "SUM" => AggregateFunction::Sum,
+                    "COUNT" => AggregateFunction::Count,
+                    "AVG" => AggregateFunction::Avg,
+                    _ => return Err(SqlParseError::InvalidInput("Unknown aggregate function".to_string())),
+                };
+                
+                let col_ref = Self::parse_column_ref(agg.next()
+                    .ok_or_else(|| SqlParseError::InvalidInput("Missing aggregate column".to_string()))?)?;
+                
+                Ok(ArithmeticExpr::Aggregate(func, col_ref))
+            },
+            _ => Err(SqlParseError::InvalidInput(format!("Invalid arithmetic factor: {:?}", factor.as_rule())))
+        }
+    }
+
+    fn parse_column_ref(pair: Pair<Rule>) -> Result<ColumnRef, SqlParseError> {
+        match pair.as_rule() {
+            Rule::asterisk => Ok(ColumnRef {
+                table: None,
+                column: "*".to_string(),
+            }),
+            Rule::table_column => {
+                let mut inner = pair.into_inner();
+                let table = inner.next()
+                    .ok_or_else(|| SqlParseError::InvalidInput("Missing table name".to_string()))?
+                    .as_str()
+                    .to_string();
+                let column = inner.next()
+                    .ok_or_else(|| SqlParseError::InvalidInput("Missing column name".to_string()))?
+                    .as_str()
+                    .to_string();
+                Ok(ColumnRef {
+                    table: Some(table),
+                    column,
+                })
+            }
+            Rule::variable => {
+                Ok(ColumnRef {
+                    table: None,
+                    column: pair.as_str().to_string(),
+                })
+            }
+            _ => Err(SqlParseError::InvalidInput(format!("Expected column reference, got {:?}", pair.as_rule()))),
+        }
+    }
+
     fn parse_single_condition(condition_pair: Pair<Rule>) -> Result<WhereClause, SqlParseError> {
         let mut inner = condition_pair.into_inner();
 
-        let left_field_pair = inner.next().ok_or_else(|| {
-            SqlParseError::InvalidInput("Missing variable in condition".to_string())
-        })?;
+        let left = inner.next()
+            .ok_or_else(|| SqlParseError::InvalidInput("Missing left side of condition".to_string()))?;
 
-        let left_field = Self::parse_where_field(left_field_pair)?;
-
-        // Check if the next token is a null operator
-        let next_token = inner
-            .next()
+        let next_token = inner.next()
             .ok_or_else(|| SqlParseError::InvalidInput("Missing operator".to_string()))?;
 
         match next_token.as_rule() {
@@ -83,6 +228,8 @@ impl ConditionParser {
                     }
                 };
 
+                let left_field = Self::parse_where_field(left)?;
+
                 Ok(WhereClause {
                     condition: WhereConditionType::NullCheck(WhereNullCondition {
                         field: left_field,
@@ -93,7 +240,6 @@ impl ConditionParser {
                 })
             }
             Rule::operator => {
-                // Existing comparison operator logic
                 let operator = match next_token.as_str() {
                     ">" => ComparisonOp::GreaterThan,
                     "<" => ComparisonOp::LessThan,
@@ -101,27 +247,29 @@ impl ConditionParser {
                     "<=" => ComparisonOp::LessOrEqualThan,
                     "=" => ComparisonOp::Equal,
                     "!=" | "<>" => ComparisonOp::NotEqual,
-                    op => {
-                        return Err(SqlParseError::InvalidInput(format!(
-                            "Invalid operator: {}",
-                            op
-                        )))
-                    }
+                    op => return Err(SqlParseError::InvalidInput(format!("Invalid operator: {}", op))),
                 };
 
-                let right_field_pair = inner.next().ok_or_else(|| {
-                    SqlParseError::InvalidInput(
-                        "Missing value or variable in right field".to_string(),
-                    )
-                })?;
+                let right = inner.next()
+                    .ok_or_else(|| SqlParseError::InvalidInput("Missing right side of condition".to_string()))?;
 
-                let right_field = Self::parse_where_field(right_field_pair)?;
+                // Parse arithmetic expressions for both sides
+                let left_expr = Self::parse_arithmetic_expr(left)?;
+                let right_expr = Self::parse_arithmetic_expr(right)?;
 
                 Ok(WhereClause {
                     condition: WhereConditionType::Comparison(WhereCondition {
-                        left_field,
+                        left_field: WhereField {
+                            column: None,
+                            value: None,
+                            arithmetic: Some(left_expr),
+                        },
                         operator,
-                        right_field,
+                        right_field: WhereField {
+                            column: None,
+                            value: None,
+                            arithmetic: Some(right_expr),
+                        },
                     }),
                     binary_op: None,
                     next: None,
@@ -131,9 +279,17 @@ impl ConditionParser {
         }
     }
 
-    // New helper function to parse column references
     fn parse_where_field(pair: Pair<Rule>) -> Result<WhereField, SqlParseError> {
         match pair.as_rule() {
+            Rule::arithmetic_expr => {
+                // Parse arithmetic expression and wrap it in WhereField
+                let expr = Self::parse_arithmetic_expr(pair)?;
+                Ok(WhereField {
+                    column: None,
+                    value: None,
+                    arithmetic: Some(expr),
+                })
+            }
             Rule::string_literal => {
                 // Remove the single quotes and store the inner content
                 let inner_str = pair.as_str();
@@ -141,6 +297,7 @@ impl ConditionParser {
                 Ok(WhereField {
                     column: None,
                     value: Some(SqlLiteral::String(clean_str)),
+                    arithmetic: None,
                 })
             }
             Rule::number => {
@@ -169,6 +326,7 @@ impl ConditionParser {
                 Ok(WhereField {
                     column: None,
                     value: Some(value),
+                    arithmetic: None,
                 })
             }
             Rule::table_column => {
@@ -189,6 +347,7 @@ impl ConditionParser {
                         column,
                     }),
                     value: None,
+                    arithmetic: None,
                 })
             }
             Rule::variable => Ok(WhereField {
@@ -197,9 +356,10 @@ impl ConditionParser {
                     column: pair.as_str().to_string(),
                 }),
                 value: None,
+                arithmetic: None,
             }),
             _ => Err(SqlParseError::InvalidInput(format!(
-                "Expected column reference, got {:?}",
+                "Expected where field, got {:?}",
                 pair.as_rule()
             ))),
         }

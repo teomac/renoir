@@ -1,5 +1,5 @@
 use super::ast_parser::*;
-use crate::dsl::languages::sql::into_aqua::ir_query_gen::SqlToAqua;
+use crate::dsl::languages::sql::into_ir::ir_query_gen::SqlToAqua;
 
 pub fn sql_to_aqua(query_str: &str) -> String {
     //println!("Input SQL query: {}", query_str);

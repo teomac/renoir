@@ -24,7 +24,6 @@ right_parenthesis = { ")" }
 
 null_op = @{ "is null" | "is not null" }
 
-
 query = {
     SOI ~
     from_clause  ~
@@ -58,10 +57,37 @@ qualified_column = {
     identifier ~ "." ~ identifier
 }
 
+// Arithmetic expressions for conditions
+arithmetic_expr = {
+    arithmetic_term ~ (symbol ~ arithmetic_term)*
+}
+
+arithmetic_term = {
+    left_parenthesis ~ arithmetic_expr ~ right_parenthesis |
+    arithmetic_operand
+}
+
+arithmetic_operand = {
+    value |
+    qualified_column |
+    identifier |
+    aggregate_expr
+}
+
+// Conditions for WHERE clause
+condition = { 
+    arithmetic_expr ~ comparison_op ~ arithmetic_expr | 
+    (qualified_column | identifier) ~ null_op
+}
+
+comparison_op = @{ ">=" | "<=" | "!=" | ">" | "<" | "==" | "="}
+where_conditions = { condition ~ (binary_op ~ condition)* }
+where_clause = { "where" ~ where_conditions }
+
+// Select clause expressions
 select_expr = { complex_op | aggregate_expr | qualified_column | identifier }
 column_operand = { aggregate_expr | qualified_column | identifier | number }
 parenthesized_expr = { left_parenthesis ~ select_expr ~ right_parenthesis }
-
 
 complex_op = { 
     (parenthesized_expr | column_operand) ~ 
@@ -81,14 +107,7 @@ column_item = {
     (as_keyword ~ identifier)?
 }
 
-
 select_clause = { "select" ~ (asterisk | column_list) }
-where_clause = { "where" ~ where_conditions }
-
-// Stream definitions
-stream_identifier = @{ ('a'..'z' | "_") ~ ('a'..'z' | '0'..'9' | "_")* }
-stream_type = { "Stream" }
-
 
 // Binary logical operators
 binary_op = { 
@@ -96,20 +115,10 @@ binary_op = {
     ^"OR"
 }
 
-// Conditions for WHERE clause
-condition = { ((value | qualified_column | identifier ) ~ comparison_op ~ (value | qualified_column | identifier ) | (qualified_column | identifier) ~ null_op) }
-comparison_op = @{ ">=" | "<=" | "!=" | ">" | "<" | "==" | "="}
-where_conditions = { condition ~ (binary_op ~ condition)* }
-
-// Optional method chain syntax for filter and aggregation operations
-method_chain = { "." ~ (filter_op | agg_op) }
-filter_op = { "filter" ~ "(" ~ condition ~ ")" }
-agg_op = { ("max" | "min" | "avg") ~ "(" ~ identifier ~ ")" }
-
+// Group by clause
 having_condition = { (aggregate_expr | value | qualified_column | identifier) ~ ((comparison_op ~ (aggregate_expr | value | qualified_column | identifier)
                     ) | null_op) }
 having_clause = {"{"  ~ having_condition ~ (binary_op ~ having_condition)* ~ "}"}
-
 
 group_columns = { (qualified_column | identifier)  ~ ("," ~ (qualified_column | identifier))* }
 group_clause = { group_keyword  ~  group_columns ~ ( having_clause )? }

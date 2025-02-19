@@ -20,13 +20,11 @@ number = @{
 }
 symbol = @{ ("^"| "+" | "-" | "*" | "/")}
 
-
 // Aggregate function definition
 agg_function = { ("MAX" | "MIN" | "AVG" | "SUM" | "COUNT") }
 aggregate_expr = { agg_function ~ "(" ~ (asterisk | table_column | variable) ~ ")" }
 
 operator = @{ ">=" | "<=" | "!=" | "<>" | ">" | "<" | "=" }
-
 null_operator = @ { "IS NOT NULL" | "IS NULL" }
 
 binary_op = { 
@@ -40,13 +38,34 @@ table_column = {
 
 string_literal = @{ "'" ~ variable ~ "'" }
 
+// Arithmetic expression components
+arithmetic_expr = {
+    arithmetic_term ~ (symbol ~ arithmetic_term)*
+}
+
+arithmetic_term = {
+    l_paren ~ arithmetic_expr ~ r_paren |
+    arithmetic_factor
+}
+
+arithmetic_factor = {
+    number |
+    string_literal |
+    table_column |
+    variable |
+    aggregate_expr
+}
+
 // Condition parts
-condition = { ((table_column | variable | number | string_literal) ~ operator ~ (table_column | variable | number | string_literal) | ((table_column | variable) ~ null_operator)) }
+condition = { 
+    arithmetic_expr ~ operator ~ arithmetic_expr | 
+    (table_column | variable) ~ null_operator 
+}
+
 where_conditions = { condition ~ (binary_op ~ condition)* }
 where_expr = { where_keyword ~ where_conditions }
 
 //Projections
-
 column_item = {select_expr | aggregate_expr | table_column | variable }
 column_with_alias = { column_item ~ (as_keyword ~ variable)? }
 column_list = { column_with_alias ~ ("," ~ column_with_alias)* }
@@ -58,21 +77,15 @@ select_expr = {
 column_operand = { aggregate_expr | table_column | variable | number }
 parenthesized_expr = { l_paren ~ select_expr ~ r_paren }
 
-
 // Having clause
-
 having_condition = { ((table_column | variable | number | string_literal | aggregate_expr) ~ operator ~ (table_column | variable | number | string_literal | aggregate_expr) | ((table_column | variable) ~ null_operator)) }
 having_clause = { having_condition ~ (binary_op ~ having_condition)* }
 
-
 // Group by 
-
 group_by_list = { (table_column | variable) ~ ("," ~ (table_column | variable))* }
 group_by_expr = { group_by_keyword ~ group_by_list ~ ( having_keyword ~ having_clause )? }
 
-
 join_condition = { table_column ~ "=" ~ table_column }
-
 
 from_expr = { from ~ scan_expr ~ join_expr* }
 scan_expr = { variable ~ (as_keyword ~ variable)? }
@@ -80,8 +93,6 @@ join_expr = { join_kind? ~ join ~ scan_expr ~ on ~ join_condition }
 join_kind = _{ ( InnerJoinKind | LeftJoinKind ) }
                 InnerJoinKind = { ^"inner" }
                 LeftJoinKind = { ^"left" ~ (^"outer")? }
-
-
 
 query = {
     SOI ~

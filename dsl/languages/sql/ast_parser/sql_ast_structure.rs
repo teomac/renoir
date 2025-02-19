@@ -163,6 +163,15 @@ pub enum SqlLiteral {
 pub struct WhereField {
     pub column: Option<ColumnRef>,
     pub value: Option<SqlLiteral>,
+    pub arithmetic: Option<ArithmeticExpr>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum ArithmeticExpr {
+    Column(ColumnRef),
+    Literal(SqlLiteral),
+    Aggregate(AggregateFunction, ColumnRef),
+    BinaryOp(Box<ArithmeticExpr>, String, Box<ArithmeticExpr>),
 }
 
 #[derive(Debug, PartialEq, Clone)]

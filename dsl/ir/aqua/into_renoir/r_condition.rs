@@ -1,8 +1,9 @@
-use crate::dsl::ir::aqua::ir_ast_structure::{WhereConditionType, NullCondition, NullOp};
+use crate::dsl::ir::aqua::ir_ast_structure::{WhereConditionType, NullCondition, NullOp, AquaLiteral, AggregateType, ColumnRef};
 use crate::dsl::ir::aqua::BinaryOp;
 use crate::dsl::ir::aqua::WhereClause;
 use crate::dsl::ir::aqua::QueryObject;
 use crate::dsl::ir::aqua::{ComparisonOp, Condition};
+use crate::dsl::ir::aqua::ir_ast_structure::ComplexField;
 use crate::dsl::ir::aqua::r_utils::*;
 
 /// Processes a `WhereClause` and generates a string representation of the conditions.
@@ -40,6 +41,153 @@ pub fn process_where_clause(clause: &WhereClause, query_object: &QueryObject) ->
     conditions.join(" ")
 }
 
+fn get_arithmetic_expression_type(field: &ComplexField, query_object: &QueryObject) -> String {
+    if let Some(ref nested) = field.nested_expr {
+        let (left, op, right) = &**nested;
+        let left_type = get_arithmetic_expression_type(left, query_object);
+        let right_type = get_arithmetic_expression_type(right, query_object);
+
+        // Special case for division - always results in f64
+        if op == "/" {
+            return "f64".to_string();
+        }
+
+        // If either operand is f64, result is f64
+        if left_type == "f64" || right_type == "f64" {
+            "f64".to_string()
+        } else {
+            left_type
+        }
+    } else if let Some(ref col) = field.column_ref {
+        query_object.get_type(col)
+    } else if let Some(ref lit) = field.literal {
+        get_type_from_literal(lit)
+    } else if let Some(ref agg) = field.aggregate {
+        match agg.function {
+            AggregateType::Count => "usize".to_string(),
+            AggregateType::Avg => "f64".to_string(),
+            _ => query_object.get_type(&agg.column)
+        }
+    } else {
+        panic!("Invalid ComplexField - no valid content");
+    }
+}
+
+
+// Added new helper function to process arithmetic expressions
+fn process_arithmetic_expression(field: &ComplexField, query_object: &QueryObject, table_name: &str) -> String {
+    if let Some(ref nested) = field.nested_expr {
+        let (left, op, right) = &**nested;
+        
+        let left_type = query_object.get_complex_field_type(left);
+        let right_type = query_object.get_complex_field_type(right);
+
+        // Division always results in f64
+        if op == "/" {
+            return format!("({} as f64) {} ({} as f64)",
+                process_arithmetic_expression(left, query_object, table_name),
+                op,
+                process_arithmetic_expression(right, query_object, table_name)
+            );
+        }
+
+        // Special handling for power operation (^)
+        if op == "^" {
+            let left_expr = process_arithmetic_expression(left, query_object, table_name);
+            let right_expr = process_arithmetic_expression(right, query_object, table_name);
+            
+            // If either operand is f64, use powf
+            if left_type == "f64" || right_type == "f64" {
+                return format!("({}).powf({} as f64)", 
+                    if left_type == "i64" { format!("({} as f64)", left_expr) } else { left_expr },
+                    right_expr
+                );
+            } else {
+                // Both are integers, use pow
+                return format!("({}).pow({} as u32)", 
+                    left_expr,
+                    right_expr
+                );
+            }
+        }
+
+        // If either operand is f64, we need to ensure numeric literals are float
+        if left_type == "f64" || right_type == "f64" {
+            let left_expr = process_arithmetic_expression(left, query_object, table_name);
+            let right_expr = process_arithmetic_expression(right, query_object, table_name);
+            
+            // Add .0 to integer literals when needed
+            let processed_left = if let Some(ref lit) = left.literal {
+                if let AquaLiteral::Integer(_) = lit {
+                    format!("{} as f64", left_expr)
+                } else {
+                    left_expr
+                }
+            } else {
+                left_expr
+            };
+            
+            let processed_right = if let Some(ref lit) = right.literal {
+                if let AquaLiteral::Integer(_) = lit {
+                    format!("{} as f64", right_expr)
+                } else {
+                    right_expr
+                }
+            } else {
+                right_expr
+            };
+
+            return format!("({} {} {})", 
+                processed_left,
+                op,
+                processed_right
+            );
+        }
+        
+        // Regular arithmetic with same types
+        format!("({} {} {})", 
+            process_arithmetic_expression(left, query_object, table_name),
+            op,
+            process_arithmetic_expression(right, query_object, table_name)
+        )
+    } else if let Some(ref col) = field.column_ref {
+        // Validate column
+        query_object.check_column_validity(col, &table_name.to_string());
+        
+        if query_object.has_join {
+            let table = check_alias(&col.table.clone().unwrap(), query_object);
+            format!("x{}.{}.unwrap()", 
+                query_object.table_to_tuple_access.get(&table).unwrap(),
+                col.column
+            )
+        } else {
+            format!("x.{}.unwrap()", col.column)
+        }
+    } else if let Some(ref lit) = field.literal {
+        match lit {
+            AquaLiteral::Integer(i) => i.to_string(),
+            AquaLiteral::Float(f) => format!("{:.2}", f),
+            AquaLiteral::String(s) => format!("\"{}\"", s),
+            AquaLiteral::Boolean(b) => b.to_string(),
+            AquaLiteral::ColumnRef(col_ref) => {
+                query_object.check_column_validity(col_ref, &table_name.to_string());
+                if query_object.has_join {
+                    let table = check_alias(&col_ref.table.clone().unwrap(), query_object);
+                    format!("x{}.{}.unwrap()", 
+                        query_object.table_to_tuple_access.get(&table).unwrap(),
+                        col_ref.column
+                    )
+                } else {
+                    format!("x.{}.unwrap()", col_ref.column)
+                }
+            }
+        }
+    } else {
+        panic!("Invalid ComplexField - no valid content");
+    }
+}
+
+
 /// Process a condition which can be either a comparison or a null check
 fn process_condition(condition: &WhereConditionType, query_object: &QueryObject) -> String {
     match condition {
@@ -51,6 +199,8 @@ fn process_condition(condition: &WhereConditionType, query_object: &QueryObject)
         }
     }
 }
+
+
 
 /// Process a null check condition (IS NULL or IS NOT NULL)
 fn process_null_check_condition(condition: &NullCondition, query_object: &QueryObject) -> String {
@@ -109,421 +259,187 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
         ComparisonOp::NotEqual => "!=",
     };
 
-    let is_left_column = condition.left_field.column_ref.is_some();
-    let is_right_column = condition.right_field.column_ref.is_some();
+    // Get types for both sides of comparison
+    let left_type = query_object.get_complex_field_type(&condition.left_field);
+    let right_type = query_object.get_complex_field_type(&condition.right_field);
+
+    let has_left_column = has_column_reference(&condition.left_field);
+    let has_right_column = has_column_reference(&condition.right_field);
+    
+    // Handle type conversions for comparison
+    let (left_conversion, right_conversion) = if left_type == "f64" && right_type == "i64" {
+        ("", " as f64")
+    } else if left_type == "i64" && right_type == "f64" {
+        (" as f64", "")
+    } else {
+        ("", "")
+    };
 
     if !query_object.has_join {
-        // Case 1: Both sides are columns
-        if is_left_column && is_right_column {
-            let left_col = &condition.left_field.column_ref.as_ref().unwrap();
-            let right_col = &condition.right_field.column_ref.as_ref().unwrap();
-            
-            //validate columns
-            query_object.check_column_validity(left_col, query_object.get_all_table_names().first().unwrap());
-            query_object.check_column_validity(right_col, query_object.get_all_table_names().first().unwrap());
+        let all_table_names = query_object.get_all_table_names();
+        let table_name = all_table_names.first().unwrap();
 
-            //get column types
-            let left_type = query_object.get_type(left_col);
-            let right_type = query_object.get_type(right_col);
-
-            //check if both columns are of the same type
-            if left_type != right_type {
-                //if one of them is an integer and the other is a float, we can compare them
-                if (left_type.contains("i64") && right_type.contains("f64")) || (left_type.contains("f64") && right_type.contains("i64")) {
-                   // convert the integer to a float and compare
-                        if left_type.contains("i64") && right_type.contains("f64") {
-                            return format!(
-                                "if x.{}.is_some() && x.{}.is_some() {{ (x.{}.unwrap() as f64) {} x.{}.unwrap() }} else {{ false }}", 
-                                left_col.column,
-                                right_col.column,
-                                left_col.column,
-                                operator_str,
-                                right_col.column
-                            );
-                        } else {
-                            return format!(
-                                "if x.{}.is_some() && x.{}.is_some() {{ x.{}.unwrap() {} (x.{}.unwrap() as f64) }} else {{ false }}", 
-                                left_col.column,
-                                right_col.column,
-                                left_col.column,
-                                operator_str,
-                                right_col.column
-                            );
-                        }
-                } else {
-                    panic!("Cannot compare columns of different types: {} and {}", left_type, right_type);
-                }
+        // Case with at least one column reference - need null checking
+        if has_left_column || has_right_column {
+            let mut null_checks = Vec::new();
+            if has_left_column {
+                collect_column_null_checks(&condition.left_field, query_object, table_name, &mut null_checks);
+            }
+            if has_right_column {
+                collect_column_null_checks(&condition.right_field, query_object, table_name, &mut null_checks);
             }
 
-            return format!(
-                "if x.{}.is_some() && x.{}.is_some() {{ x.{}{}.unwrap() {} x.{}{}.unwrap() }} else {{ false }}", 
-                left_col.column,
-                right_col.column,
-                left_col.column,
-                if query_object.get_type(left_col).contains("String") { ".as_ref()" } else { "" },
+            let null_check_str = null_checks.join(" && ");
+            format!(
+                "if {} {{ ({}{}) {} ({}{}) }} else {{ false }}", 
+                null_check_str,
+                process_arithmetic_expression(&condition.left_field, query_object, table_name),
+                left_conversion,
                 operator_str,
-                right_col.column,
-                if query_object.get_type(right_col).contains("String") { ".as_ref()" } else { "" }
-            );
-        }
-
-        // Case 2: Left is column, right is literal
-        if is_left_column {
-            let left_col = &condition.left_field.column_ref.as_ref().unwrap();
-            let right_val = convert_literal(&condition.right_field.literal.as_ref().unwrap());
-            
-            //validate column
-            query_object.check_column_validity(left_col, query_object.get_all_table_names().first().unwrap());
-
-            //check column types
-            let left_type = query_object.get_type(left_col);
-            let right_type = get_type_from_literal(&condition.right_field.literal.as_ref().unwrap());
-
-            //check if both columns are of the same type
-            if left_type != right_type {
-                //if one of them is an integer and the other is a float, we can compare them
-                if (left_type.contains("i64") && right_type.contains("f64")) || (left_type.contains("f64") && right_type.contains("i64")) {
-                   // convert the integer to a float and compare
-                        if left_type.contains("i64") && right_type.contains("f64") {
-                            return format!(
-                                "if x.{}.is_some() {{ (x.{}.unwrap() as f64) {} {} }} else {{ false }}", 
-                                left_col.column,
-                                left_col.column,
-                                operator_str,
-                                right_val
-                            );
-                        } else if left_type.contains("f64") && right_type.contains("i64") {
-                            return format!(
-                                "if x.{}.is_some() {{ x.{}.unwrap() {} {}_f64 }} else {{ false }}", 
-                                left_col.column,
-                                left_col.column,
-                                operator_str,
-                                right_val
-                            );
-                            
-                        }
-                } else {
-                    panic!("Cannot compare columns of different types: {} and {}", left_type, right_type);
-                }
-            }
-
-            return format!(
-                "if x.{}.is_some() {{ x.{}{}.unwrap() {} {} }} else {{ false }}", 
-                left_col.column,
-                left_col.column,
-                if query_object.get_type(left_col).contains("String") { ".as_ref()" } else { "" },
+                process_arithmetic_expression(&condition.right_field, query_object, table_name),
+                right_conversion
+            )
+        } else {
+            // No column references - direct comparison
+            format!("{}{} {} {}{}",
+                process_arithmetic_expression(&condition.left_field, query_object, table_name),
+                left_conversion,
                 operator_str,
-                right_val
-            );
+                process_arithmetic_expression(&condition.right_field, query_object, table_name),
+                right_conversion
+            )
         }
-
-        // Case 3: Right is column, left is literal
-        if is_right_column {
-            let right_col = &condition.right_field.column_ref.as_ref().unwrap();
-            let left_val = convert_literal(&condition.left_field.literal.as_ref().unwrap());
-            
-            //validate column
-            query_object.check_column_validity(right_col, query_object.get_all_table_names().first().unwrap());
-
-            //check column types
-            let left_type = get_type_from_literal(&condition.left_field.literal.as_ref().unwrap());
-            let right_type = query_object.get_type(right_col);
-
-            //check if both columns are of the same type
-            if left_type != right_type {
-                //if one of them is an integer and the other is a float, we can compare them
-                if (left_type.contains("i64") && right_type.contains("f64")) || (left_type.contains("f64") && right_type.contains("i64")) {
-                   // convert the integer to a float and compare
-                        if left_type.contains("i64") && right_type.contains("f64") {
-                            return format!(
-                                "if x.{}.is_some() {{ {}_f64 {} x.{}.unwrap() }} else {{ false }}", 
-                                right_col.column,
-                                left_val,
-                                operator_str,
-                                right_col.column
-                            );
-                        } else if left_type.contains("f64") && right_type.contains("i64") {
-                            return format!(
-                                "if x.{}.is_some() {{ {} {} (x.{}.unwrap() as f64) }} else {{ false }}", 
-                                right_col.column,
-                                left_val,
-                                operator_str,
-                                right_col.column
-                            );
-                            
-                        }
-                } else {
-                    panic!("Cannot compare columns of different types: {} and {}", left_type, right_type);
-                }
-            }
-
-            return format!(
-                "if x.{}.is_some() {{ {} {} x.{}{}.unwrap() }} else {{ false }}", 
-                right_col.column,
-                left_val,
-                operator_str,
-                right_col.column,
-                if query_object.get_type(right_col).contains("String") { ".as_ref()" } else { "" }
-            );
-        }
-
-        // Case 4: Both sides are literals
-        let left_val = convert_literal(&condition.left_field.literal.as_ref().unwrap());
-        let right_val = convert_literal(&condition.right_field.literal.as_ref().unwrap());
-
-        //check column types
-        let left_type = get_type_from_literal(&condition.left_field.literal.as_ref().unwrap());
-        let right_type = get_type_from_literal(&condition.right_field.literal.as_ref().unwrap());
-
-        //check if both columns are of the same type
-        if left_type != right_type {
-            //if one of them is an integer and the other is a float, we can compare them
-            if (left_type.contains("i64") && right_type.contains("f64")) || (left_type.contains("f64") && right_type.contains("i64")) {
-               // convert the integer to a float and compare
-                    if left_type.contains("i64") && right_type.contains("f64") {
-                        return format!(
-                            "{}_f64 {} {}", 
-                            left_val,
-                            operator_str,
-                            right_val
-                        );
-                    } else if left_type.contains("f64") && right_type.contains("i64") {
-                        return format!(
-                            "{} {} {}_f64", 
-                            left_val,
-                            operator_str,
-                            right_val
-                        );
-                        
-                    }
-            } else {
-                panic!("Cannot compare columns of different types: {} and {}", left_type, right_type);
-            }
-        }
-        return format!("{} {} {}", left_val, operator_str, right_val);
-
     } else {
-        // JOIN CASES
-        
-        // Case 1: Both sides are columns
-        if is_left_column && is_right_column {
-            let left_col = &condition.left_field.column_ref.as_ref().unwrap();
-            let right_col = &condition.right_field.column_ref.as_ref().unwrap();
+        // Handle JOIN case
+        if has_left_column || has_right_column {
+            let mut null_checks = Vec::new();
             
-            let left_table_name = check_alias(&left_col.table.clone().unwrap(), query_object);
-            let right_table_name = check_alias(&right_col.table.clone().unwrap(), query_object);
-            
-            //validate columns
-            query_object.check_column_validity(left_col, &left_table_name);
-            query_object.check_column_validity(right_col, &right_table_name);
-
-            //get column types
-            let left_type = query_object.get_type(left_col);
-            let right_type = query_object.get_type(right_col);
-
-            //check if both columns are of the same type
-            if left_type != right_type {
-                //if one of them is an integer and the other is a float, we can compare them
-                if (left_type.contains("i64") && right_type.contains("f64")) || (left_type.contains("f64") && right_type.contains("i64")) {
-                   // convert the integer to a float and compare
-                        if left_type.contains("i64") && right_type.contains("f64") {
-                            return format!(
-                                "if x{}.{}.is_some() && x{}.{}.is_some() {{ (x{}.{}.unwrap() as f64) {} x{}.{}.unwrap() }} else {{ false }}", 
-                                query_object.table_to_tuple_access.get(&left_table_name).unwrap(),
-                                left_col.column,
-                                query_object.table_to_tuple_access.get(&right_table_name).unwrap(),
-                                right_col.column,
-                                query_object.table_to_tuple_access.get(&left_table_name).unwrap(),
-                                left_col.column,
-                                operator_str,
-                                query_object.table_to_tuple_access.get(&right_table_name).unwrap(),
-                                right_col.column
-                            );
-                        } else {
-                            return format!(
-                                "if x{}.{}.is_some() && x{}.{}.is_some() {{ x{}.{}.unwrap() {} (x{}.{}.unwrap() as f64) }} else {{ false }}", 
-                                query_object.table_to_tuple_access.get(&left_table_name).unwrap(),
-                                left_col.column,
-                                query_object.table_to_tuple_access.get(&right_table_name).unwrap(),
-                                right_col.column,
-                                query_object.table_to_tuple_access.get(&left_table_name).unwrap(),
-                                left_col.column,
-                                operator_str,
-                                query_object.table_to_tuple_access.get(&right_table_name).unwrap(),
-                                right_col.column
-                            );
-                        }
-                } else {
-                    panic!("Cannot compare columns of different types: {} and {}", left_type, right_type);
+            // For JOIN case, we need to get the correct table names
+            if has_left_column {
+                let left_columns = collect_columns(&condition.left_field);
+                for col in left_columns {
+                    let table = check_alias(&col.table.clone().unwrap(), query_object);
+                    collect_column_null_checks(&condition.left_field, query_object, &table, &mut null_checks);
+                }
+            }
+            if has_right_column {
+                let right_columns = collect_columns(&condition.right_field);
+                for col in right_columns {
+                    let table = check_alias(&col.table.clone().unwrap(), query_object);
+                    collect_column_null_checks(&condition.right_field, query_object, &table, &mut null_checks);
                 }
             }
 
-            return format!(
-                "if x{}.{}.is_some() && x{}.{}.is_some() {{ x{}.{}{}.unwrap() {} x{}.{}{}.unwrap() }} else {{ false }}", 
-                query_object.table_to_tuple_access.get(&left_table_name).unwrap(),
-                left_col.column,
-                query_object.table_to_tuple_access.get(&right_table_name).unwrap(),
-                right_col.column,
-                query_object.table_to_tuple_access.get(&left_table_name).unwrap(),
-                left_col.column,
-                if query_object.get_type(left_col).contains("String") { ".as_ref()" } else { "" },
+            let null_check_str = null_checks.join(" && ");
+            format!(
+                "if {} {{ ({}{}) {} ({}{}) }} else {{ false }}", 
+                null_check_str,
+                process_arithmetic_expression(&condition.left_field, query_object, ""),
+                left_conversion,
                 operator_str,
-                query_object.table_to_tuple_access.get(&right_table_name).unwrap(),
-                right_col.column,
-                if query_object.get_type(right_col).contains("String") { ".as_ref()" } else { "" }
-            );
-        }
-
-        // Case 2: Left is column, right is literal
-        if is_left_column {
-            let left_col = &condition.left_field.column_ref.as_ref().unwrap();
-            let right_val = convert_literal(&condition.right_field.literal.as_ref().unwrap());
-            
-            let left_table_name = check_alias(&left_col.table.clone().unwrap(), query_object);
-            
-            //validate column
-            query_object.check_column_validity(left_col, &left_table_name);
-
-            //check column types
-            let left_type = query_object.get_type(left_col);
-            let right_type = get_type_from_literal(&condition.right_field.literal.as_ref().unwrap());
-
-            //check if both columns are of the same type
-            if left_type != right_type {
-                //if one of them is an integer and the other is a float, we can compare them
-                if (left_type.contains("i64") && right_type.contains("f64")) || (left_type.contains("f64") && right_type.contains("i64")) {
-                   // convert the integer to a float and compare
-                        if left_type.contains("i64") && right_type.contains("f64") {
-                            return format!(
-                                "if x{}.{}.is_some() {{ (x{}.{}.unwrap() as f64) {} {} }} else {{ false }}", 
-                                query_object.table_to_tuple_access.get(&left_table_name).unwrap(),
-                                left_col.column,
-                                query_object.table_to_tuple_access.get(&left_table_name).unwrap(),
-                                left_col.column,
-                                operator_str,
-                                right_val
-                            );
-                        } else if left_type.contains("f64") && right_type.contains("i64") {
-                            return format!(
-                                "if x{}.{}.is_some() {{ x{}.{}.unwrap() {} {}_f64 }} else {{ false }}", 
-                                query_object.table_to_tuple_access.get(&left_table_name).unwrap(),
-                                left_col.column,
-                                query_object.table_to_tuple_access.get(&left_table_name).unwrap(),
-                                left_col.column,
-                                operator_str,
-                                right_val
-                            );
-                            
-                        }
-                } else {
-                    panic!("Cannot compare columns of different types: {} and {}", left_type, right_type);
-                }
-            }
-            return format!(
-                "if x{}.{}.is_some() {{ x{}.{}{}.unwrap() {} {} }} else {{ false }}", 
-                query_object.table_to_tuple_access.get(&left_table_name).unwrap(),
-                left_col.column,
-                query_object.table_to_tuple_access.get(&left_table_name).unwrap(),
-                left_col.column,
-                if query_object.get_type(left_col).contains("String") { ".as_ref()" } else { "" },
+                process_arithmetic_expression(&condition.right_field, query_object, ""),
+                right_conversion
+            )
+        } else {
+            // No column references - direct comparison
+            format!("{}{} {} {}{}",
+                process_arithmetic_expression(&condition.left_field, query_object, ""),
+                left_conversion,
                 operator_str,
-                right_val
-            );
+                process_arithmetic_expression(&condition.right_field, query_object, ""),
+                right_conversion
+            )
         }
+    }
+}
 
-        // Case 3: Right is column, left is literal
-        if is_right_column {
-            let right_col = &condition.right_field.column_ref.as_ref().unwrap();
-            let left_val = convert_literal(&condition.left_field.literal.as_ref().unwrap());
-            
-            let right_table_name = check_alias(&right_col.table.clone().unwrap(), query_object);
-            
-            //validate column
-            query_object.check_column_validity(right_col, &right_table_name);
-
-            //check column types
-            let left_type = get_type_from_literal(&condition.left_field.literal.as_ref().unwrap());
-            let right_type = query_object.get_type(right_col);
-
-            //check if both columns are of the same type
-            if left_type != right_type {
-                //if one of them is an integer and the other is a float, we can compare them
-                if (left_type.contains("i64") && right_type.contains("f64")) || (left_type.contains("f64") && right_type.contains("i64")) {
-                   // convert the integer to a float and compare
-                        if left_type.contains("i64") && right_type.contains("f64") {
-                            return format!(
-                                "if x{}.{}.is_some() {{ {}_f64 {} x{}.{}.unwrap() }} else {{ false }}", 
-                                query_object.table_to_tuple_access.get(&right_table_name).unwrap(),
-                                right_col.column,
-                                left_val,
-                                operator_str,
-                                query_object.table_to_tuple_access.get(&right_table_name).unwrap(),
-                                right_col.column
-                            );
-                        } else if left_type.contains("f64") && right_type.contains("i64") {
-                            return format!(
-                                "if x{}.{}.is_some() {{ {} {} (x{}.{}.unwrap() as f64) }} else {{ false }}", 
-                                query_object.table_to_tuple_access.get(&right_table_name).unwrap(),
-                                right_col.column,
-                                left_val,
-                                operator_str,
-                                query_object.table_to_tuple_access.get(&right_table_name).unwrap(),
-                                right_col.column
-                            );
-                            
-                        }
-                } else {
-                    panic!("Cannot compare columns of different types: {} and {}", left_type, right_type);
-                }
-            }
-
-            return format!(
-                "if x{}.{}.is_some() {{ {} {} x{}.{}{}.unwrap() }} else {{ false }}", 
-                query_object.table_to_tuple_access.get(&right_table_name).unwrap(),
-                right_col.column,
-                left_val,
-                operator_str,
-                query_object.table_to_tuple_access.get(&right_table_name).unwrap(),
-                right_col.column,
-                if query_object.get_type(right_col).contains("String") { ".as_ref()" } else { "" }
-            );
+// Helper function to check if a ComplexField contains any column references
+fn has_column_reference(field: &ComplexField) -> bool {
+    if field.column_ref.is_some() {
+        return true;
+    }
+    if let Some(ref nested) = field.nested_expr {
+        let (left, _, right) = &**nested;
+        return has_column_reference(left) || has_column_reference(right);
+    }
+    if let Some(ref lit) = field.literal {
+        if let AquaLiteral::ColumnRef(_) = lit {
+            return true;
         }
+    }
+    if let Some(ref _agg) = field.aggregate {
+        return true;
+    }
+    false
+}
 
-        // Case 4: Both sides are literals
-        let left_val = convert_literal(&condition.left_field.literal.as_ref().unwrap());
-        let right_val = convert_literal(&condition.right_field.literal.as_ref().unwrap());
+// Helper function to collect all column references from a ComplexField
+fn collect_columns(field: &ComplexField) -> Vec<ColumnRef> {
+    let mut columns = Vec::new();
+    
+    if let Some(ref col) = field.column_ref {
+        columns.push(col.clone());
+    }
+    if let Some(ref nested) = field.nested_expr {
+        let (left, _, right) = &**nested;
+        columns.extend(collect_columns(left));
+        columns.extend(collect_columns(right));
+    }
+    if let Some(ref lit) = field.literal {
+        if let AquaLiteral::ColumnRef(col) = lit {
+            columns.push(col.clone());
+        }
+    }
+    if let Some(ref agg) = field.aggregate {
+        columns.push(agg.column.clone());
+    }
+    
+    columns
+}
 
-        //  check column types
-        let left_type = get_type_from_literal(&condition.left_field.literal.as_ref().unwrap());
-        let right_type = get_type_from_literal(&condition.right_field.literal.as_ref().unwrap());
-
-        //check if both columns are of the same type
-        if left_type != right_type {
-            //if one of them is an integer and the other is a float, we can compare them
-            if (left_type.contains("i64") && right_type.contains("f64")) || (left_type.contains("f64") && right_type.contains("i64")) {
-               // convert the integer to a float and compare
-                    if left_type.contains("i64") && right_type.contains("f64") {
-                        return format!(
-                            "{}_f64 {} {}", 
-                            left_val,
-                            operator_str,
-                            right_val
-                        );
-                    } else if left_type.contains("f64") && right_type.contains("i64") {
-                        return format!(
-                            "{} {} {}_f64", 
-                            left_val,
-                            operator_str,
-                            right_val
-                        );
-                        
-                    }
+// Helper function to collect null checks for all columns in a ComplexField
+fn collect_column_null_checks(field: &ComplexField, query_object: &QueryObject, table_name: &str, checks: &mut Vec<String>) {
+    if let Some(ref col) = field.column_ref {
+        query_object.check_column_validity(col, &table_name.to_string());
+        if query_object.has_join {
+            let table = check_alias(&col.table.clone().unwrap(), query_object);
+            checks.push(format!("x{}.{}.is_some()", 
+                query_object.table_to_tuple_access.get(&table).unwrap(),
+                col.column
+            ));
+        } else {
+            checks.push(format!("x.{}.is_some()", col.column));
+        }
+    }
+    if let Some(ref nested) = field.nested_expr {
+        let (left, _, right) = &**nested;
+        collect_column_null_checks(left, query_object, table_name, checks);
+        collect_column_null_checks(right, query_object, table_name, checks);
+    }
+    if let Some(ref lit) = field.literal {
+        if let AquaLiteral::ColumnRef(col) = lit {
+            query_object.check_column_validity(col, &table_name.to_string());
+            if query_object.has_join {
+                let table = check_alias(&col.table.clone().unwrap(), query_object);
+                checks.push(format!("x{}.{}.is_some()", 
+                    query_object.table_to_tuple_access.get(&table).unwrap(),
+                    col.column
+                ));
             } else {
-                panic!("Cannot compare columns of different types: {} and {}", left_type, right_type);
+                checks.push(format!("x.{}.is_some()", col.column));
             }
         }
-        
-
-        return format!("{} {} {}", left_val, operator_str, right_val);
+    }
+    if let Some(ref agg) = field.aggregate {
+        query_object.check_column_validity(&agg.column, &table_name.to_string());
+        if query_object.has_join {
+            let table = check_alias(&agg.column.table.clone().unwrap(), query_object);
+            checks.push(format!("x{}.{}.is_some()", 
+                query_object.table_to_tuple_access.get(&table).unwrap(),
+                agg.column.column
+            ));
+        } else {
+            checks.push(format!("x.{}.is_some()", agg.column.column));
+        }
     }
 }
