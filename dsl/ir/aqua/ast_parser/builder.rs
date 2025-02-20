@@ -1,6 +1,7 @@
 use super::ir_ast_structure::*;
 use super::error::AquaParseError;
 use super::group::GroupParser;
+use super::limit::LimitParser;
 use super::{condition::ConditionParser, sink::SinkParser, source::SourceParser};
 use crate::dsl::ir::aqua::ast_parser::Rule;
 use pest::iterators::Pairs;
@@ -13,6 +14,7 @@ impl AquaASTBuilder {
         let mut select = Vec::new();
         let mut filter = None;
         let mut group_by = None;
+        let mut limit = None;
 
         // Process each clause in the query
         for pair in pairs {
@@ -31,6 +33,9 @@ impl AquaASTBuilder {
                             }
                             Rule::group_clause => {
                                 group_by = Some(GroupParser::parse(clause)?);
+                            }
+                            Rule::limit_expr => {
+                                limit = Some(LimitParser::parse(clause)?);
                             }
                             Rule::EOI => {}
                             _ => {
@@ -53,6 +58,7 @@ impl AquaASTBuilder {
             select,
             filter,
             group_by,
+            limit,
         };
 
         Ok(ast)

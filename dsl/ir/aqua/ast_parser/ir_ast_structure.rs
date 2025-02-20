@@ -4,6 +4,7 @@ pub struct AquaAST {
     pub select: Vec<SelectClause>,
     pub filter: Option<WhereClause>,
     pub group_by: Option<GroupByClause>,
+    pub limit: Option<LimitClause>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -146,6 +147,12 @@ pub enum AquaLiteral {
     String(String),
     Boolean(bool),
     ColumnRef(ColumnRef),
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct LimitClause {
+    pub limit: i64,
+    pub offset: Option<i64>,
 }
 
 impl ColumnRef {

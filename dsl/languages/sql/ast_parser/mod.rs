@@ -6,6 +6,7 @@ pub mod from;
 pub mod literal;
 pub mod group_by;
 pub mod sql_ast_structure;
+pub mod limit;
 pub use sql_ast_structure::{
     SqlAST, 
     WhereCondition, 

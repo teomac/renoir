@@ -9,6 +9,8 @@ on = { "ON" }
 asterisk = { "*" }
 group_by_keyword = { "GROUP BY" }
 having_keyword = { "HAVING" }
+limit_keyword = { "LIMIT" }
+offset_keyword = { "OFFSET" }
 
 l_paren = { "(" }
 r_paren = { ")" }
@@ -94,6 +96,13 @@ join_expr = { join_kind? ~ join ~ scan_expr ~ on ~ join_condition }
 join_kind = _{ ( InnerJoinKind | LeftJoinKind ) }
                 InnerJoinKind = { ^"inner" }
                 LeftJoinKind = { ^"left" ~ (^"outer")? }
+            
+limit_expr = { 
+    limit_clause ~ offset_clause? 
+}
+
+limit_clause = { limit_keyword ~ number }
+offset_clause = { offset_keyword ~ number }
 
 query = {
     SOI ~
@@ -101,5 +110,6 @@ query = {
     from_expr ~
     where_expr? ~
     group_by_expr? ~
+    limit_expr? ~
     EOI
 }

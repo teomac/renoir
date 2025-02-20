@@ -2,6 +2,7 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 
+use crate::dsl::query;
 use crate::dsl::struct_object::object::QueryObject;
 
 pub struct RustProject {
@@ -37,6 +38,7 @@ impl RustProject {
                 renoir = {{ path = "{}" }}
                 serde_json = "1.0.133"
                 serde = "1.0.217"
+                csv = "1.2.2"
                 "#,
                 renoir_path
             );
@@ -78,30 +80,77 @@ pub fn create_template(query_object: &QueryObject) -> String {
 
     let mut stream_declarations = Vec::new();
 
+    let csv_path = query_object.output_path.replace("\\", "/");
+
+    // Generate limit/offset handling code if needed
+    let limit_offset_code = if let Some(limit_clause) = &query_object.ir_ast.as_ref().unwrap().limit {
+        let start_index = limit_clause.offset.unwrap_or(0);
+        format!(
+            r#"
+            // Process limit and offset after CSV is written
+            let mut rdr = csv::Reader::from_path(format!("{}.csv")).unwrap();
+            let mut wtr = csv::Writer::from_path(format!("{}_final.csv")).unwrap();
+            
+            // Copy the header
+            let headers = rdr.headers().unwrap().clone();
+            wtr.write_record(&headers).unwrap();
+
+            // Process records with limit and offset
+            for (i, result) in rdr.records().enumerate() {{
+                if i >= {} && i < {} {{
+                    if let Ok(record) = result {{
+                        wtr.write_record(&record).unwrap();
+                    }}
+                }}
+                if i >= {} {{
+                    break;
+                }}
+            }}
+            wtr.flush().unwrap();
+            drop(wtr);
+            drop(rdr);
+
+            "#,
+            csv_path,
+            csv_path,
+            start_index,
+            start_index + limit_clause.limit,
+            start_index + limit_clause.limit,
+
+        )
+    } else {
+        String::new()
+    };
+
     // case 1: no join inside the query
     if !query_object.has_join {
         let table_name = table_names.first().unwrap();
         let stream = format!(
-            r#"let stream0 = ctx.stream_csv::<{}>("{}"){}.write_csv(move |_| r"{}.csv".into(), true);"#,
+            r#"let stream0 = ctx.stream_csv::<{}>("{}"){}.write_csv(move |_| r"{}.csv".into(), true);
+            ctx.execute_blocking();
+            {}"#,
             query_object.get_struct_name(table_name).unwrap(),
             query_object.get_csv(table_name).unwrap(),
             query_object.renoir_string,
-            query_object.output_path
+            query_object.output_path,
+            limit_offset_code
         );
         stream_declarations.push(stream);
     }
     // case 2: join inside the query
     else {
-        // println!("{:?}", table_names);
         for (i, table_name) in table_names.iter().enumerate() {
             if i == 0 {
                 let stream = format!(
-                    r#"let stream{} = ctx.stream_csv::<{}>("{}"){}.write_csv(move |_| r"{}.csv".into(), true);"#,
+                    r#"let stream{} = ctx.stream_csv::<{}>("{}"){}.write_csv(move |_| r"{}.csv".into(), true);
+                    ctx.execute_blocking();
+                    {}"#,
                     i,
                     query_object.get_struct_name(table_name).unwrap(),
                     query_object.get_csv(table_name).unwrap(),
                     query_object.renoir_string,
-                    query_object.output_path
+                    query_object.output_path,
+                    limit_offset_code
                 );
                 stream_declarations.push(stream);
             } else {
@@ -120,14 +169,13 @@ pub fn create_template(query_object: &QueryObject) -> String {
     // Join all stream declarations with newlines
     let streams = stream_declarations.join("\n");
 
-    // Generate output handling for all streams
-
     // Create the main.rs content
     format!(
         r#"use renoir::prelude::*;
         use serde::{{Deserialize, Serialize}};
         use serde_json;
         use std::fs;
+        use csv;
 
         {}
 
@@ -136,7 +184,6 @@ pub fn create_template(query_object: &QueryObject) -> String {
 
             {}
             
-            ctx.execute_blocking();
         }}"#,
         struct_definitions, streams,
     )

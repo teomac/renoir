@@ -1,3 +1,4 @@
+use super::limit::LimitParser;
 use super::sql_ast_structure::*;
 use super::error::SqlParseError;
 use super::{
@@ -73,10 +74,15 @@ impl SqlASTBuilder {
 
                     let mut group_by_part = None;
 
+                    let mut limit_part = None; 
+
                     while let Some(next_part) = inner.next() {
                         match next_part.as_rule() {
                             Rule::where_expr => where_part = Some(next_part),
                             Rule::group_by_expr => group_by_part = Some(next_part),
+                            Rule::limit_expr => {
+                                limit_part = Some(next_part);
+                            }
                             _ => {}
                         }
                     }
@@ -91,6 +97,11 @@ impl SqlASTBuilder {
                         },
                         group_by: if let Some(group_expr) = group_by_part {
                             Some(GroupByParser::parse(group_expr)?)
+                        } else {
+                            None
+                        },
+                        limit: if let Some(limit) = limit_part {
+                            Some(LimitParser::parse(limit)?)
                         } else {
                             None
                         },

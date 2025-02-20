@@ -18,6 +18,8 @@ join = { "join" }
 on = { "on" }
 asterisk = { "*" }
 group_keyword = { "group" }
+limit_keyword = { "limit" }
+offset_keyword = { "offset" }
 
 left_parenthesis = { "(" }
 right_parenthesis = { ")" }
@@ -30,6 +32,7 @@ query = {
     where_clause?  ~
     group_clause?  ~
     select_clause  ~
+    limit_expr? ~
     EOI
 }
 
@@ -122,3 +125,10 @@ having_clause = {"{"  ~ having_condition ~ (binary_op ~ having_condition)* ~ "}"
 
 group_columns = { (qualified_column | identifier)  ~ ("," ~ (qualified_column | identifier))* }
 group_clause = { group_keyword  ~  group_columns ~ ( having_clause )? }
+
+limit_expr = { 
+    limit_clause ~ offset_clause? 
+}
+
+limit_clause = { limit_keyword ~ number }
+offset_clause = { offset_keyword ~ number }

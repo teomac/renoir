@@ -96,6 +96,15 @@ impl SqlToAqua {
 
         parts.push(format!("select {}", select_strs.join(", ")));
 
+        // Add LIMIT clause (if present)
+        if let Some(limit_clause) = &sql_ast.limit {
+            let mut limit_str = format!("limit {}", limit_clause.limit);
+            if let Some(offset) = limit_clause.offset {
+                limit_str.push_str(&format!(" offset {}", offset));
+            }
+            parts.push(limit_str);
+        }
+
         parts.join("\n")
     }
 
