@@ -293,26 +293,128 @@ fn process_complex_field_for_accumulator(
         // Handle nested expression (left_field OP right_field)
         let (left, op, right) = &**nested;
         
-        // Special handling for power operation
-        if op == "^" {
-            let left_type = query_object.get_complex_field_type(left);
-            let right_type = query_object.get_complex_field_type(right);
-            
-            // If either operand is f64, use powf
-            if left_type == "f64" || right_type == "f64" {
-                format!("({} as f64).powf({} as f64)", 
-                    process_complex_field_for_accumulator(left, acc_info, query_object),
-                    process_complex_field_for_accumulator(right, acc_info, query_object)
-                )
+        let left_type = query_object.get_complex_field_type(left);
+        let right_type = query_object.get_complex_field_type(right);
+
+        // Different types case
+        if left_type != right_type {
+            if (left_type == "f64" || left_type == "i64") && (right_type == "f64" || right_type == "i64") {
+                // Division always results in f64
+                if op == "/" {
+                    return format!("({} as f64) {} ({} as f64)",
+                        process_complex_field_for_accumulator(left, acc_info, query_object),
+                        op,
+                        process_complex_field_for_accumulator(right, acc_info, query_object)
+                    );
+                }
+
+                // Special handling for power operation (^)
+                if op == "^" {
+                    let left_expr = process_complex_field_for_accumulator(left, acc_info, query_object);
+                    let right_expr = process_complex_field_for_accumulator(right, acc_info, query_object);
+                    
+                    // If either operand is f64, use powf
+                    if left_type == "f64" || right_type == "f64" {
+                        return format!("({}).powf({} as f64)", 
+                            if left_type == "i64" { format!("({} as f64)", left_expr) } else { left_expr },
+                            right_expr
+                        );
+                    } else {
+                        // Both are integers, use pow
+                        return format!("({}).pow({} as u32)", 
+                            left_expr,
+                            right_expr
+                        );
+                    }
+                }
+
+                let left_expr = process_complex_field_for_accumulator(left, acc_info, query_object);
+                let right_expr = process_complex_field_for_accumulator(right, acc_info, query_object);
+                
+                // Add as f64 to integer literals when needed
+                let processed_left = if let Some(ref lit) = left.literal {
+                    if let AquaLiteral::Integer(_) = lit {
+                        format!("{} as f64", left_expr)
+                    } else {
+                        left_expr
+                    }
+                } else {
+                    left_expr
+                };
+                
+                let processed_right = if let Some(ref lit) = right.literal {
+                    if let AquaLiteral::Integer(_) = lit {
+                        format!("{} as f64", right_expr)
+                    } else {
+                        right_expr
+                    }
+                } else {
+                    right_expr
+                };
+
+                //if left is i64 and right is float or vice versa, convert the i64 to f64
+                if left_type == "i64" && right_type == "f64" {
+                    return format!("({} as f64 {} {})", 
+                        processed_left,
+                        op,
+                        processed_right
+                    );
+                }
+                else if left_type == "f64" && right_type == "i64" {
+                    return format!("({} {} {} as f64)", 
+                        processed_left,
+                        op,
+                        processed_right
+                    );
+                }
+
+                return format!("({} {} {})", 
+                    processed_left,
+                    op,
+                    processed_right
+                );
             } else {
-                // Both are integers, use pow
-                // Note: pow expects u32 for exponent
-                format!("({}).pow({} as u32)", 
-                    process_complex_field_for_accumulator(left, acc_info, query_object),
-                    process_complex_field_for_accumulator(right, acc_info, query_object)
-                )
+                panic!("Invalid arithmetic expression - incompatible types: {} and {}", left_type, right_type);
             }
         } else {
+            //case same type
+            //if operation is plus, minus, multiply, division, or power and types are not numeric, panic
+            if op == "+" || op == "-" || op == "*" || op == "/" || op == "^" {
+                if left_type != "f64" && left_type != "i64" {
+                    panic!("Invalid arithmetic expression - non-numeric types: {} and {}", left_type, right_type);
+                }
+            }
+
+            // Division always results in f64
+            if op == "/" {
+                return format!("({} as f64) {} ({} as f64)",
+                    process_complex_field_for_accumulator(left, acc_info, query_object),
+                    op,
+                    process_complex_field_for_accumulator(right, acc_info, query_object)
+                );
+            }
+
+            // Special handling for power operation (^)
+            if op == "^" {
+                let left_expr = process_complex_field_for_accumulator(left, acc_info, query_object);
+                let right_expr = process_complex_field_for_accumulator(right, acc_info, query_object);
+                
+                // If both are f64, use powf
+                if left_type == "f64" {
+                    return format!("({}).powf({})", 
+                        left_expr,
+                        right_expr
+                    );
+                } else {
+                    // Both are integers, use pow
+                    return format!("({}).pow({} as u32)", 
+                        left_expr,
+                        right_expr
+                    );
+                }
+            }
+
+            // Regular arithmetic with same types
             format!("({} {} {})", 
                 process_complex_field_for_accumulator(left, acc_info, query_object),
                 op,
@@ -446,31 +548,133 @@ fn create_simple_map(select_clauses: &Vec<SelectClause>, query_object: &QueryObj
     map_string
 }
 
-fn process_complex_field(field: &ComplexField, query_object: &QueryObject) -> String {
+pub fn process_complex_field(field: &ComplexField, query_object: &QueryObject) -> String {
     if let Some(ref nested) = field.nested_expr {
         // Handle nested expression (left_field OP right_field)
         let (left, op, right) = &**nested;
         
-        // Special handling for power operation
-        if op == "^" {
-            let left_type = query_object.get_complex_field_type(left);
-            let right_type = query_object.get_complex_field_type(right);
-            
-            // If either operand is f64, use powf
-            if left_type == "f64" || right_type == "f64" {
-                format!("({} as f64).powf({} as f64)", 
-                    process_complex_field(left, query_object),
-                    process_complex_field(right, query_object)
-                )
+        let left_type = query_object.get_complex_field_type(left);
+        let right_type = query_object.get_complex_field_type(right);
+
+        // Different types case
+        if left_type != right_type {
+            if (left_type == "f64" || left_type == "i64") && (right_type == "f64" || right_type == "i64") {
+                // Division always results in f64
+                if op == "/" {
+                    return format!("({} as f64) {} ({} as f64)",
+                        process_complex_field(left, query_object),
+                        op,
+                        process_complex_field(right, query_object)
+                    );
+                }
+
+                // Special handling for power operation (^)
+                if op == "^" {
+                    let left_expr = process_complex_field(left, query_object);
+                    let right_expr = process_complex_field(right, query_object);
+                    
+                    // If either operand is f64, use powf
+                    if left_type == "f64" || right_type == "f64" {
+                        return format!("({}).powf({} as f64)", 
+                            if left_type == "i64" { format!("({} as f64)", left_expr) } else { left_expr },
+                            right_expr
+                        );
+                    } else {
+                        // Both are integers, use pow
+                        return format!("({}).pow({} as u32)", 
+                            left_expr,
+                            right_expr
+                        );
+                    }
+                }
+
+                let left_expr = process_complex_field(left, query_object);
+                let right_expr = process_complex_field(right, query_object);
+                
+                // Add as f64 to integer literals when needed
+                let processed_left = if let Some(ref lit) = left.literal {
+                    if let AquaLiteral::Integer(_) = lit {
+                        format!("{} as f64", left_expr)
+                    } else {
+                        left_expr
+                    }
+                } else {
+                    left_expr
+                };
+                
+                let processed_right = if let Some(ref lit) = right.literal {
+                    if let AquaLiteral::Integer(_) = lit {
+                        format!("{} as f64", right_expr)
+                    } else {
+                        right_expr
+                    }
+                } else {
+                    right_expr
+                };
+
+                //if left is i64 and right is float or vice versa, convert the i64 to f64
+                if left_type == "i64" && right_type == "f64" {
+                    return format!("({} as f64 {} {})", 
+                        processed_left,
+                        op,
+                        processed_right
+                    );
+                }
+                else if left_type == "f64" && right_type == "i64" {
+                    return format!("({} {} {} as f64)", 
+                        processed_left,
+                        op,
+                        processed_right
+                    );
+                }
+
+                return format!("({} {} {})", 
+                    processed_left,
+                    op,
+                    processed_right
+                );
             } else {
-                // Both are integers, use pow
-                // Note: pow expects u32 for exponent
-                format!("({}).pow({} as u32)", 
-                    process_complex_field(left, query_object),
-                    process_complex_field(right, query_object)
-                )
+                panic!("Invalid arithmetic expression - incompatible types: {} and {}", left_type, right_type);
             }
         } else {
+            //case same type
+            //if operation is plus, minus, multiply, division, or power and types are not numeric, panic
+            if op == "+" || op == "-" || op == "*" || op == "/" || op == "^" {
+                if left_type != "f64" && left_type != "i64" {
+                    panic!("Invalid arithmetic expression - non-numeric types: {} and {}", left_type, right_type);
+                }
+            }
+
+            // Division always results in f64
+            if op == "/" {
+                return format!("({} as f64) {} ({} as f64)",
+                    process_complex_field(left, query_object),
+                    op,
+                    process_complex_field(right, query_object)
+                );
+            }
+
+            // Special handling for power operation (^)
+            if op == "^" {
+                let left_expr = process_complex_field(left, query_object);
+                let right_expr = process_complex_field(right, query_object);
+                
+                // If both are f64, use powf
+                if left_type == "f64" {
+                    return format!("({}).powf({})", 
+                        left_expr,
+                        right_expr
+                    );
+                } else {
+                    // Both are integers, use pow
+                    return format!("({}).pow({} as u32)", 
+                        left_expr,
+                        right_expr
+                    );
+                }
+            }
+
+            // Regular arithmetic with same types
             format!("({} {} {})", 
                 process_complex_field(left, query_object),
                 op,

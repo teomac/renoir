@@ -5,20 +5,6 @@ use crate::dsl::ir::aqua::{
 use indexmap::IndexMap;
 
 #[derive(Clone, Debug)]
-pub struct Operation {
-    pub input_column: String,
-    pub table: String,
-    pub current_op: String, 
-    pub next_op: String,
-}
-
-#[derive(Clone, Debug)]
-pub struct ResultColumn {
-    pub name: String,
-    pub r_type: String,
-    pub operations: Vec<Operation>,
-}
-#[derive(Clone, Debug)]
 pub struct QueryObject {
     pub has_join: bool, // true if the query has a join
 
