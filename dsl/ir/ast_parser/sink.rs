@@ -1,13 +1,13 @@
-use super::error::AquaParseError;
+use super::error::IrParseError;
 use super::ir_ast_structure::*;
 use super::literal::LiteralParser;
-use crate::dsl::ir::aqua::ast_parser::Rule;
+use crate::dsl::ir::ast_parser::Rule;
 use pest::iterators::Pair;
 
 pub struct SinkParser;
 
 impl SinkParser {
-    pub fn parse(pair: Pair<Rule>) -> Result<Vec<SelectClause>, AquaParseError> {
+    pub fn parse(pair: Pair<Rule>) -> Result<Vec<SelectClause>, IrParseError> {
         let mut inner = pair.into_inner();
 
         // Skip the 'select' keyword if present
@@ -17,7 +17,7 @@ impl SinkParser {
 
         let sink_expr = inner
             .next()
-            .ok_or_else(|| AquaParseError::InvalidInput("Missing sink expression".to_string()))?;
+            .ok_or_else(|| IrParseError::InvalidInput("Missing sink expression".to_string()))?;
 
         match sink_expr.as_rule() {
             Rule::asterisk => Ok(vec![SelectClause::Column(
@@ -35,7 +35,7 @@ impl SinkParser {
 
                         // Get the main expression
                         let expr = inner_pairs.next().ok_or_else(|| {
-                            AquaParseError::InvalidInput("Missing column expression".to_string())
+                            IrParseError::InvalidInput("Missing column expression".to_string())
                         })?;
 
                         // Look for alias - will be after AS keyword
@@ -68,7 +68,7 @@ impl SinkParser {
                                 },
                                 alias,
                             )),
-                            _ => Err(AquaParseError::InvalidInput(format!(
+                            _ => Err(IrParseError::InvalidInput(format!(
                                 "Invalid column expression: {:?}",
                                 expr.as_rule()
                             ))),
@@ -76,25 +76,25 @@ impl SinkParser {
                     })
                     .collect()
             }
-            _ => Err(AquaParseError::InvalidInput(format!(
+            _ => Err(IrParseError::InvalidInput(format!(
                 "Invalid sink expression: {:?}",
                 sink_expr.as_rule()
             ))),
         }
     }
 
-    fn parse_column_ref(pair: Pair<Rule>) -> Result<ColumnRef, AquaParseError> {
+    fn parse_column_ref(pair: Pair<Rule>) -> Result<ColumnRef, IrParseError> {
         match pair.as_rule() {
             Rule::qualified_column => {
                 let mut inner = pair.into_inner();
                 let table = inner
                     .next()
-                    .ok_or_else(|| AquaParseError::InvalidInput("Missing stream name".to_string()))?
+                    .ok_or_else(|| IrParseError::InvalidInput("Missing stream name".to_string()))?
                     .as_str()
                     .to_string();
                 let column = inner
                     .next()
-                    .ok_or_else(|| AquaParseError::InvalidInput("Missing field name".to_string()))?
+                    .ok_or_else(|| IrParseError::InvalidInput("Missing field name".to_string()))?
                     .as_str()
                     .to_string();
                 println!("table: {}, column: {}", table, column);
@@ -110,7 +110,7 @@ impl SinkParser {
                     column: pair.as_str().to_string(),
                 })
             }
-            _ => Err(AquaParseError::InvalidInput(format!(
+            _ => Err(IrParseError::InvalidInput(format!(
                 "Expected field reference, got {:?}",
                 pair.as_rule()
             ))),
@@ -118,12 +118,12 @@ impl SinkParser {
     }
 
     // Modified to return AggregateFunction directly instead of SelectClause
-    fn parse_aggregate_function(pair: Pair<Rule>) -> Result<AggregateFunction, AquaParseError> {
+    fn parse_aggregate_function(pair: Pair<Rule>) -> Result<AggregateFunction, IrParseError> {
         let mut agg = pair.into_inner();
 
         let func = match agg
             .next()
-            .ok_or_else(|| AquaParseError::InvalidInput("Missing aggregate function".to_string()))?
+            .ok_or_else(|| IrParseError::InvalidInput("Missing aggregate function".to_string()))?
             .as_str()
             .to_lowercase()
             .as_str()
@@ -134,7 +134,7 @@ impl SinkParser {
             "sum" => AggregateType::Sum,
             "count" => AggregateType::Count,
             unknown => {
-                return Err(AquaParseError::InvalidInput(format!(
+                return Err(IrParseError::InvalidInput(format!(
                     "Unknown aggregate function: {}",
                     unknown
                 )))
@@ -143,7 +143,7 @@ impl SinkParser {
 
         let var_pair = agg
             .next()
-            .ok_or_else(|| AquaParseError::InvalidInput("Missing aggregate field".to_string()))?;
+            .ok_or_else(|| IrParseError::InvalidInput("Missing aggregate field".to_string()))?;
         let col_ref = Self::parse_column_ref(var_pair)?;
 
         Ok(AggregateFunction {
@@ -156,7 +156,7 @@ impl SinkParser {
     fn parse_complex_operation(
         pair: Pair<Rule>,
         alias: Option<String>,
-    ) -> Result<SelectClause, AquaParseError> {
+    ) -> Result<SelectClause, IrParseError> {
         let mut pairs = pair.into_inner().peekable();
         
         // Parse first operand
@@ -164,28 +164,28 @@ impl SinkParser {
             Some(first) => match first.as_rule() {
                 Rule::parenthesized_expr => Self::parse_parenthesized_expr(first)?,
                 Rule::column_operand => Self::parse_operand(first)?,
-                _ => return Err(AquaParseError::InvalidInput(
+                _ => return Err(IrParseError::InvalidInput(
                     format!("Invalid first operand: {:?}", first.as_rule())
                 )),
             },
-            None => return Err(AquaParseError::InvalidInput("Missing operand".to_string())),
+            None => return Err(IrParseError::InvalidInput("Missing operand".to_string())),
         };
     
         // Process operators and operands in pairs
         while pairs.peek().is_some() {
             let op = pairs.next()
                 .map(|p| p.as_str().to_string())
-                .ok_or_else(|| AquaParseError::InvalidInput("Expected operator".to_string()))?;
+                .ok_or_else(|| IrParseError::InvalidInput("Expected operator".to_string()))?;
             
             let right_field = match pairs.next() {
                 Some(right_pair) => match right_pair.as_rule() {
                     Rule::parenthesized_expr => Self::parse_parenthesized_expr(right_pair)?,
                     Rule::column_operand => Self::parse_operand(right_pair)?,
-                    _ => return Err(AquaParseError::InvalidInput(
+                    _ => return Err(IrParseError::InvalidInput(
                         format!("Invalid right operand: {:?}", right_pair.as_rule())
                     )),
                 },
-                None => return Err(AquaParseError::InvalidInput("Missing right operand".to_string())),
+                None => return Err(IrParseError::InvalidInput("Missing right operand".to_string())),
             };
     
             left_field = ComplexField {
@@ -199,19 +199,19 @@ impl SinkParser {
         Ok(SelectClause::ComplexValue(left_field, alias))
     }
     
-    fn parse_parenthesized_expr(pair: Pair<Rule>) -> Result<ComplexField, AquaParseError> {
+    fn parse_parenthesized_expr(pair: Pair<Rule>) -> Result<ComplexField, IrParseError> {
         let mut inner = pair.into_inner();
         
         // Skip left parenthesis
         inner.next();
     
         let expr = inner.next()
-            .ok_or_else(|| AquaParseError::InvalidInput("Empty parentheses".to_string()))?;
+            .ok_or_else(|| IrParseError::InvalidInput("Empty parentheses".to_string()))?;
     
         match expr.as_rule() {
             Rule::select_expr => {
                 let inner_expr = expr.into_inner().next()
-                    .ok_or_else(|| AquaParseError::InvalidInput("Empty expression".to_string()))?;
+                    .ok_or_else(|| IrParseError::InvalidInput("Empty expression".to_string()))?;
     
                 match inner_expr.as_rule() {
                     Rule::complex_op => {
@@ -219,21 +219,21 @@ impl SinkParser {
                             Self::parse_complex_operation(inner_expr, None)? {
                             Ok(left_field)
                         } else {
-                            Err(AquaParseError::InvalidInput("Invalid complex operation".to_string()))
+                            Err(IrParseError::InvalidInput("Invalid complex operation".to_string()))
                         }
                     },
-                    _ => Err(AquaParseError::InvalidInput("Invalid parenthesized expression".to_string())),
+                    _ => Err(IrParseError::InvalidInput("Invalid parenthesized expression".to_string())),
                 }
             },
-            _ => Err(AquaParseError::InvalidInput("Invalid parenthesized expression content".to_string())),
+            _ => Err(IrParseError::InvalidInput("Invalid parenthesized expression content".to_string())),
         }
     }
 
-    fn parse_operand(pair: Pair<Rule>) -> Result<ComplexField, AquaParseError> {
+    fn parse_operand(pair: Pair<Rule>) -> Result<ComplexField, IrParseError> {
         let operand = pair
             .into_inner()
             .next()
-            .ok_or_else(|| AquaParseError::InvalidInput("Empty operand".to_string()))?;
+            .ok_or_else(|| IrParseError::InvalidInput("Empty operand".to_string()))?;
 
         match operand.as_rule() {
             Rule::number => Ok(ComplexField {
@@ -263,7 +263,7 @@ impl SinkParser {
                 aggregate: Some(Self::parse_aggregate_function(operand)?),
                 nested_expr: None,
             }),
-            _ => Err(AquaParseError::InvalidInput(format!(
+            _ => Err(IrParseError::InvalidInput(format!(
                 "Invalid operand: {:?}",
                 operand.as_rule()
             ))),

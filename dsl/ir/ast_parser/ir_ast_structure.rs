@@ -1,5 +1,5 @@
 #[derive(Debug, PartialEq, Clone)]
-pub struct AquaAST {
+pub struct IrAST {
     pub from: FromClause,
     pub select: Vec<SelectClause>,
     pub filter: Option<WhereClause>,
@@ -48,7 +48,7 @@ pub enum SelectClause {
 #[derive(Debug, PartialEq, Clone)]
 pub struct ComplexField {
     pub column_ref: Option<ColumnRef>,
-    pub literal: Option<AquaLiteral>,
+    pub literal: Option<IrLiteral>,
     pub aggregate: Option<AggregateFunction>,
     pub nested_expr: Option<Box<(ComplexField, String, ComplexField)>>,
 }
@@ -145,7 +145,7 @@ pub enum NullOp {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum AquaLiteral {
+pub enum IrLiteral {
     Integer(i64),
     Float(f64),
     String(String),
@@ -206,11 +206,11 @@ impl ComplexField {
             col.to_string()
         } else if let Some(ref lit) = self.literal {
             match lit {
-                AquaLiteral::Integer(i) => i.to_string(),
-                AquaLiteral::Float(f) => format!("{:.2}", f),
-                AquaLiteral::String(s) => s.clone(),
-                AquaLiteral::Boolean(b) => b.to_string(),
-                AquaLiteral::ColumnRef(cr) => cr.to_string(),
+                IrLiteral::Integer(i) => i.to_string(),
+                IrLiteral::Float(f) => format!("{:.2}", f),
+                IrLiteral::String(s) => s.clone(),
+                IrLiteral::Boolean(b) => b.to_string(),
+                IrLiteral::ColumnRef(cr) => cr.to_string(),
             }
         } else if let Some(ref agg) = self.aggregate {
             format!("{}({})", 

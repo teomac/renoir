@@ -1,20 +1,20 @@
 use pest::iterators::Pair;
 use super::ir_ast_structure::*;
-use super::error::AquaParseError;
-use crate::dsl::ir::aqua::ast_parser::Rule;
+use super::error::IrParseError;
+use crate::dsl::ir::ast_parser::Rule;
 
 pub struct OrderParser;
 
 impl OrderParser {
-    pub fn parse(pair: Pair<Rule>) -> Result<OrderByClause, AquaParseError> {
+    pub fn parse(pair: Pair<Rule>) -> Result<OrderByClause, IrParseError> {
         let mut inner = pair.into_inner();
 
         inner.next()
-            .ok_or_else(|| AquaParseError::InvalidInput("Missing order keyword".to_string()))?;
+            .ok_or_else(|| IrParseError::InvalidInput("Missing order keyword".to_string()))?;
         
         // Get the order list
         let order_list = inner.next()
-            .ok_or_else(|| AquaParseError::InvalidInput("Missing order columns".to_string()))?;
+            .ok_or_else(|| IrParseError::InvalidInput("Missing order columns".to_string()))?;
 
         let mut items = Vec::new();
 
@@ -26,7 +26,7 @@ impl OrderParser {
                     
                     // First element is the column reference
                     let column_ref = item_inner.next()
-                        .ok_or_else(|| AquaParseError::InvalidInput("Missing column in order".to_string()))?;
+                        .ok_or_else(|| IrParseError::InvalidInput("Missing column in order".to_string()))?;
                     
                     let column = match column_ref.as_rule() {
                         Rule::qualified_column => Self::parse_qualified_column(column_ref)?,
@@ -34,7 +34,7 @@ impl OrderParser {
                             table: None,
                             column: column_ref.as_str().to_string(),
                         },
-                        _ => return Err(AquaParseError::InvalidInput(format!(
+                        _ => return Err(IrParseError::InvalidInput(format!(
                             "Expected column reference, got {:?}", column_ref.as_rule()
                         ))),
                     };
@@ -46,10 +46,10 @@ impl OrderParser {
                                 match dir.as_str() {
                                     "asc" => OrderDirection::Asc,
                                     "desc" => OrderDirection::Desc,
-                                    _ => return Err(AquaParseError::InvalidInput("Invalid sort direction".to_string())),
+                                    _ => return Err(IrParseError::InvalidInput("Invalid sort direction".to_string())),
                                 }
                             },
-                            _ => return Err(AquaParseError::InvalidInput(format!(
+                            _ => return Err(IrParseError::InvalidInput(format!(
                                 "Expected order direction, got {:?}", dir.as_rule()
                             ))),
                         }
@@ -62,27 +62,27 @@ impl OrderParser {
                         direction,
                     });
                 },
-                _ => return Err(AquaParseError::InvalidInput(format!(
+                _ => return Err(IrParseError::InvalidInput(format!(
                     "Expected order item, got {:?}", item.as_rule()
                 ))),
             }
         }
 
         if items.is_empty() {
-            return Err(AquaParseError::InvalidInput("Empty order clause".to_string()));
+            return Err(IrParseError::InvalidInput("Empty order clause".to_string()));
         }
         
         Ok(OrderByClause { items })
     }
 
-    fn parse_qualified_column(pair: Pair<Rule>) -> Result<ColumnRef, AquaParseError> {
+    fn parse_qualified_column(pair: Pair<Rule>) -> Result<ColumnRef, IrParseError> {
         let mut inner = pair.into_inner();
         let table = inner.next()
-            .ok_or_else(|| AquaParseError::InvalidInput("Missing table name".to_string()))?
+            .ok_or_else(|| IrParseError::InvalidInput("Missing table name".to_string()))?
             .as_str()
             .to_string();
         let column = inner.next()
-            .ok_or_else(|| AquaParseError::InvalidInput("Missing column name".to_string()))?
+            .ok_or_else(|| IrParseError::InvalidInput("Missing column name".to_string()))?
             .as_str()
             .to_string();
         

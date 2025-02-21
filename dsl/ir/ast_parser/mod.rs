@@ -10,7 +10,7 @@ pub mod limit;
 pub mod order;
 
 pub use ir_ast_structure::{
-    AquaAST, 
+    IrAST, 
     Condition, 
     FromClause, 
     SelectClause, 
@@ -19,28 +19,28 @@ pub use ir_ast_structure::{
     ColumnRef,
     AggregateFunction,
     AggregateType,
-    AquaLiteral,
+    IrLiteral,
     BinaryOp,
 };
 
 use pest::Parser;
 use pest_derive::Parser;
-use crate::dsl::ir::aqua::ast_parser::error::AquaParseError;
-use crate::dsl::ir::aqua::ast_parser::builder::AquaASTBuilder;
+use crate::dsl::ir::ast_parser::error::IrParseError;
+use crate::dsl::ir::ast_parser::builder::IrASTBuilder;
 
 
 #[derive(Parser)]
-#[grammar = "dsl/ir/aqua/ir_grammar.pest"] 
-pub struct AquaParser;
+#[grammar = "dsl/ir/ir_grammar.pest"] 
+pub struct IrParser;
 
-impl AquaParser {
-    pub fn parse_query(input: &str) -> Result<AquaAST, AquaParseError> {
+impl IrParser {
+    pub fn parse_query(input: &str) -> Result<IrAST, IrParseError> {
         let pairs = Self::parse(Rule::query, input)
-            .map_err(|e| AquaParseError::PestError(e))?;
+            .map_err(|e| IrParseError::PestError(e))?;
         
-        let ast = AquaASTBuilder::build_ast_from_pairs(pairs)?;
-        AquaASTBuilder::validate_ast(&ast)?;
-        println!("Aqua AST: {:#?}", ast);
+        let ast = IrASTBuilder::build_ast_from_pairs(pairs)?;
+        IrASTBuilder::validate_ast(&ast)?;
+        println!("Ir AST: {:#?}", ast);
         Ok(ast)
     }
 }
@@ -52,30 +52,30 @@ mod tests {
     #[test]
     fn test_basic_query() {
         let input = "from stream1 in input1 select field1";
-        assert!(AquaParser::parse_query(input).is_ok());
+        assert!(IrParser::parse_query(input).is_ok());
     }
 
     #[test]
     fn test_query_with_condition() {
         let input = "from stream1 in input1 where field1 > 10 select field2";
-        assert!(AquaParser::parse_query(input).is_ok());
+        assert!(IrParser::parse_query(input).is_ok());
     }
 
     #[test]
     fn test_query_with_join() {
         let input = "from stream1 in input1 join stream2 in input2 on stream1.id == stream2.id select stream1.value";
-        assert!(AquaParser::parse_query(input).is_ok());
+        assert!(IrParser::parse_query(input).is_ok());
     }
 
     #[test]
     fn test_query_with_aggregate() {
         let input = "from stream1 in input1 select max(value)";
-        assert!(AquaParser::parse_query(input).is_ok());
+        assert!(IrParser::parse_query(input).is_ok());
     }
 
     #[test]
     fn test_invalid_query() {
         let input = "invalid query syntax";
-        assert!(AquaParser::parse_query(input).is_err());
+        assert!(IrParser::parse_query(input).is_err());
     }
 }

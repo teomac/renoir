@@ -2,8 +2,8 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 
-use crate::dsl::ir::aqua::r_limit::process_limit;
-use crate::dsl::ir::aqua::r_order::process_order_by;
+use crate::dsl::ir::r_limit::process_limit;
+use crate::dsl::ir::r_order::process_order_by;
 use crate::dsl::struct_object::object::QueryObject;
 
 pub struct RustProject {

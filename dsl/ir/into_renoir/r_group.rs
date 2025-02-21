@@ -1,14 +1,14 @@
-use crate::dsl::ir::aqua::ir_ast_structure::{GroupByClause, GroupCondition};
-use crate::dsl::ir::aqua::ir_ast_structure::{GroupConditionType, NullOp};
-use crate::dsl::ir::aqua::r_utils::{check_alias, convert_literal};
-use crate::dsl::ir::aqua::{BinaryOp, ComparisonOp};
-use crate::dsl::ir::aqua::{ColumnRef, QueryObject};
+use crate::dsl::ir::ir_ast_structure::{GroupByClause, GroupCondition};
+use crate::dsl::ir::ir_ast_structure::{GroupConditionType, NullOp};
+use crate::dsl::ir::r_utils::{check_alias, convert_literal};
+use crate::dsl::ir::{BinaryOp, ComparisonOp};
+use crate::dsl::ir::{ColumnRef, QueryObject};
 
-/// Process the GroupByClause from Aqua AST and generate the corresponding Renoir operator string.
+/// Process the GroupByClause from Ir AST and generate the corresponding Renoir operator string.
 ///
 /// # Arguments
 ///
-/// * `group_by` - The GroupByClause from the Aqua AST containing group by columns and having conditions
+/// * `group_by` - The GroupByClause from the Ir AST containing group by columns and having conditions
 /// * `query_object` - The QueryObject containing metadata about tables and columns
 ///
 /// # Returns

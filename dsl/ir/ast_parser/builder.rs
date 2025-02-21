@@ -1,16 +1,16 @@
 use super::ir_ast_structure::*;
-use super::error::AquaParseError;
+use super::error::IrParseError;
 use super::group::GroupParser;
 use super::limit::LimitParser;
 use super::order::OrderParser;
 use super::{condition::ConditionParser, sink::SinkParser, source::SourceParser};
-use crate::dsl::ir::aqua::ast_parser::Rule;
+use crate::dsl::ir::ast_parser::Rule;
 use pest::iterators::Pairs;
 
-pub struct AquaASTBuilder;
+pub struct IrASTBuilder;
 
-impl AquaASTBuilder {
-    pub fn build_ast_from_pairs(pairs: Pairs<Rule>) -> Result<AquaAST, AquaParseError> {
+impl IrASTBuilder {
+    pub fn build_ast_from_pairs(pairs: Pairs<Rule>) -> Result<IrAST, IrParseError> {
         let mut from = None;
         let mut select = Vec::new();
         let mut filter = None;
@@ -44,7 +44,7 @@ impl AquaASTBuilder {
                             }
                             Rule::EOI => {}
                             _ => {
-                                return Err(AquaParseError::InvalidInput(format!(
+                                return Err(IrParseError::InvalidInput(format!(
                                     "Unexpected clause: {:?}",
                                     clause.as_rule()
                                 )))
@@ -52,14 +52,14 @@ impl AquaASTBuilder {
                         }
                     }
                 }
-                _ => return Err(AquaParseError::InvalidInput("Expected query".to_string())),
+                _ => return Err(IrParseError::InvalidInput("Expected query".to_string())),
             }
         }
 
         // Create and validate the AST
-        let ast = AquaAST {
+        let ast = IrAST {
             from: from
-                .ok_or_else(|| AquaParseError::InvalidInput("Missing FROM clause".to_string()))?,
+                .ok_or_else(|| IrParseError::InvalidInput("Missing FROM clause".to_string()))?,
             select,
             filter,
             group_by,
@@ -70,7 +70,7 @@ impl AquaASTBuilder {
         Ok(ast)
     }
 
-    pub fn validate_ast(_ast: &AquaAST) -> Result<(), AquaParseError> {
+    pub fn validate_ast(_ast: &IrAST) -> Result<(), IrParseError> {
 
         //Validate the WHERE clause
         // column types must be coherent with the condition.

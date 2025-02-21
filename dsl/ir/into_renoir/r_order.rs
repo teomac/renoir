@@ -1,5 +1,5 @@
-use crate::dsl::ir::aqua::ir_ast_structure::{OrderByClause, OrderDirection};
-use crate::dsl::ir::aqua::QueryObject;
+use crate::dsl::ir::ir_ast_structure::{OrderByClause, OrderDirection};
+use crate::dsl::ir::QueryObject;
 
 /// Process the OrderByClause and generate sorting code for the output CSV.
 /// This function assumes the CSV has already been written and will sort it in place.

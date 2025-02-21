@@ -1,6 +1,6 @@
-use crate::dsl::ir::aqua::{AggregateFunction, AggregateType, AquaLiteral};
-use crate::dsl::ir::aqua::ColumnRef;
-use crate::dsl::ir::aqua::QueryObject;
+use crate::dsl::ir::{AggregateFunction, AggregateType, IrLiteral};
+use crate::dsl::ir::ColumnRef;
+use crate::dsl::ir::QueryObject;
 
 // helper function to convert column reference to string
 pub fn convert_column_ref(column_ref: &ColumnRef, query_object: &QueryObject) -> String {
@@ -61,25 +61,25 @@ pub fn convert_column_ref(column_ref: &ColumnRef, query_object: &QueryObject) ->
 }
 
 // helper function to convert literal to string
-pub fn convert_literal(literal: &AquaLiteral) -> String {
+pub fn convert_literal(literal: &IrLiteral) -> String {
     match literal {
-        AquaLiteral::Integer(val) => format!("{}", val),
-        AquaLiteral::Float(val) => format!("{:.2}", val),
-        AquaLiteral::String(val) => format!("\"{}\"", val),
-        AquaLiteral::Boolean(val) => format!("{}", val),
-        AquaLiteral::ColumnRef(_val) => "".to_string(),
+        IrLiteral::Integer(val) => format!("{}", val),
+        IrLiteral::Float(val) => format!("{:.2}", val),
+        IrLiteral::String(val) => format!("\"{}\"", val),
+        IrLiteral::Boolean(val) => format!("{}", val),
+        IrLiteral::ColumnRef(_val) => "".to_string(),
         
     }
 }
 
 // helper function to get the type of a literal
-pub fn get_type_from_literal(literal: &AquaLiteral) -> String {
+pub fn get_type_from_literal(literal: &IrLiteral) -> String {
     match literal {
-        AquaLiteral::Integer(_) => "i64".to_string(),
-        AquaLiteral::Float(_) => "f64".to_string(),
-        AquaLiteral::String(_) => "String".to_string(),
-        AquaLiteral::Boolean(_) => "bool".to_string(),
-        AquaLiteral::ColumnRef(_) => "".to_string(),
+        IrLiteral::Integer(_) => "i64".to_string(),
+        IrLiteral::Float(_) => "f64".to_string(),
+        IrLiteral::String(_) => "String".to_string(),
+        IrLiteral::Boolean(_) => "bool".to_string(),
+        IrLiteral::ColumnRef(_) => "".to_string(),
     }
 }
 

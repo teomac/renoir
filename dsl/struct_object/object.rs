@@ -1,6 +1,6 @@
-use crate::dsl::ir::aqua::{
+use crate::dsl::ir::{
     ir_ast_structure::{AggregateType, JoinClause, SelectClause, ComplexField},
-    AquaAST, ColumnRef, AquaLiteral,
+    IrAST, ColumnRef, IrLiteral,
 };
 use indexmap::IndexMap;
 
@@ -12,7 +12,7 @@ pub struct QueryObject {
 
     pub output_path: String, //output path
 
-    pub ir_ast: Option<AquaAST>,                  //ir ast
+    pub ir_ast: Option<IrAST>,                  //ir ast
     pub joined_tables: Vec<String>,               // list of joined tables
     pub table_names_list: Vec<String>,            // list of table names
 
@@ -149,16 +149,16 @@ impl QueryObject {
 
     pub fn populate(
         mut self,
-        aqua_ast: &AquaAST,
+        ir_ast: &IrAST,
         csv_paths: &Vec<String>,
         hash_maps: &Vec<IndexMap<String, String>>,
     ) -> Self {
         //insert the ir ast
-        self.ir_ast = Some(aqua_ast.clone());
+        self.ir_ast = Some(ir_ast.clone());
         let mut joins_vec: Vec<JoinClause> = Vec::new();
 
         // Check if query has join
-        match &aqua_ast.from.joins {
+        match &ir_ast.from.joins {
             Some(joins) => {
                 self.has_join = true;
                 joins_vec = joins.clone();
@@ -169,10 +169,10 @@ impl QueryObject {
         }
 
         // Add main table
-        let main_table = aqua_ast.from.scan.stream_name.clone();
+        let main_table = ir_ast.from.scan.stream_name.clone();
         self.table_names_list.push(main_table.clone());
 
-        if let Some(alias) = &aqua_ast.from.scan.alias {
+        if let Some(alias) = &ir_ast.from.scan.alias {
             self.table_to_alias
                 .insert(main_table.clone(), alias.to_string());
         }
@@ -252,10 +252,10 @@ impl QueryObject {
 
 
         // Populate the result column types based on select clauses
-        if let Some(ref aqua_ast) = self.ir_ast {
+        if let Some(ref ir_ast) = self.ir_ast {
             let mut used_names = std::collections::HashSet::new();
             
-            for select_clause in &aqua_ast.select {
+            for select_clause in &ir_ast.select {
                 match select_clause {
                     SelectClause::Column(col_ref, alias) => {
                         // Handle SELECT * case
@@ -411,11 +411,11 @@ impl QueryObject {
             self.get_type(col)
         } else if let Some(ref lit) = field.literal {
             match lit {
-                AquaLiteral::Integer(_) => "i64".to_string(),
-                AquaLiteral::Float(_) => "f64".to_string(),
-                AquaLiteral::String(_) => "String".to_string(),
-                AquaLiteral::Boolean(_) => "bool".to_string(),
-                AquaLiteral::ColumnRef(col) => self.get_type(col),
+                IrLiteral::Integer(_) => "i64".to_string(),
+                IrLiteral::Float(_) => "f64".to_string(),
+                IrLiteral::String(_) => "String".to_string(),
+                IrLiteral::Boolean(_) => "bool".to_string(),
+                IrLiteral::ColumnRef(col) => self.get_type(col),
             }
         } else if let Some(ref nested) = field.nested_expr {
             let (left, op, right) = &**nested;

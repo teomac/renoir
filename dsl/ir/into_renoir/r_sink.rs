@@ -1,8 +1,8 @@
 use indexmap::IndexMap;
-use crate::dsl::ir::aqua::ir_ast_structure::ComplexField;
-use crate::dsl::ir::aqua::r_utils::check_alias;
-use crate::dsl::ir::aqua::{
-    AggregateType, AquaLiteral, ColumnRef, SelectClause,
+use crate::dsl::ir::ir_ast_structure::ComplexField;
+use crate::dsl::ir::r_utils::check_alias;
+use crate::dsl::ir::{
+    AggregateType, IrLiteral, ColumnRef, SelectClause,
 };
 use crate::dsl::struct_object::object::QueryObject;
 
@@ -333,7 +333,7 @@ fn process_complex_field_for_accumulator(
                 
                 // Add as f64 to integer literals when needed
                 let processed_left = if let Some(ref lit) = left.literal {
-                    if let AquaLiteral::Integer(_) = lit {
+                    if let IrLiteral::Integer(_) = lit {
                         format!("{} as f64", left_expr)
                     } else {
                         left_expr
@@ -343,7 +343,7 @@ fn process_complex_field_for_accumulator(
                 };
                 
                 let processed_right = if let Some(ref lit) = right.literal {
-                    if let AquaLiteral::Integer(_) = lit {
+                    if let IrLiteral::Integer(_) = lit {
                         format!("{} as f64", right_expr)
                     } else {
                         right_expr
@@ -431,11 +431,11 @@ fn process_complex_field_for_accumulator(
     } else if let Some(ref lit) = field.literal {
         // Handle literal values
         match lit {
-            AquaLiteral::Integer(i) => i.to_string(),
-            AquaLiteral::Float(f) => format!("{:.2}", f),
-            AquaLiteral::String(s) => format!("\"{}\"", s),
-            AquaLiteral::Boolean(b) => b.to_string(),
-            AquaLiteral::ColumnRef(col) => {
+            IrLiteral::Integer(i) => i.to_string(),
+            IrLiteral::Float(f) => format!("{:.2}", f),
+            IrLiteral::String(s) => format!("\"{}\"", s),
+            IrLiteral::Boolean(b) => b.to_string(),
+            IrLiteral::ColumnRef(col) => {
                 let pos = acc_info.add_value(
                     AccumulatorValue::Column(col.clone()),
                     query_object.get_type(col)
@@ -593,7 +593,7 @@ pub fn process_complex_field(field: &ComplexField, query_object: &QueryObject) -
                 
                 // Add as f64 to integer literals when needed
                 let processed_left = if let Some(ref lit) = left.literal {
-                    if let AquaLiteral::Integer(_) = lit {
+                    if let IrLiteral::Integer(_) = lit {
                         format!("{} as f64", left_expr)
                     } else {
                         left_expr
@@ -603,7 +603,7 @@ pub fn process_complex_field(field: &ComplexField, query_object: &QueryObject) -
                 };
                 
                 let processed_right = if let Some(ref lit) = right.literal {
-                    if let AquaLiteral::Integer(_) = lit {
+                    if let IrLiteral::Integer(_) = lit {
                         format!("{} as f64", right_expr)
                     } else {
                         right_expr
@@ -695,11 +695,11 @@ pub fn process_complex_field(field: &ComplexField, query_object: &QueryObject) -
     } else if let Some(ref lit) = field.literal {
         // Handle literal value
         match lit {
-            AquaLiteral::Integer(i) => i.to_string(),
-            AquaLiteral::Float(f) => format!("{:.2}", f),
-            AquaLiteral::String(s) => format!("\"{}\"", s),
-            AquaLiteral::Boolean(b) => b.to_string(),
-            AquaLiteral::ColumnRef(col_ref) => {
+            IrLiteral::Integer(i) => i.to_string(),
+            IrLiteral::Float(f) => format!("{:.2}", f),
+            IrLiteral::String(s) => format!("\"{}\"", s),
+            IrLiteral::Boolean(b) => b.to_string(),
+            IrLiteral::ColumnRef(col_ref) => {
                 if query_object.has_join {
                     let table = col_ref.table.as_ref().unwrap();
                     let tuple_access = query_object.table_to_tuple_access

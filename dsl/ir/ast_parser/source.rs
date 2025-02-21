@@ -1,12 +1,12 @@
 use super::ir_ast_structure::*;
-use super::error::AquaParseError;
-use crate::dsl::ir::aqua::ast_parser::Rule;
+use super::error::IrParseError;
+use crate::dsl::ir::ast_parser::Rule;
 use pest::iterators::Pair;
 
 pub struct SourceParser;
 
 impl SourceParser {
-    pub fn parse(pair: Pair<Rule>) -> Result<FromClause, AquaParseError> {
+    pub fn parse(pair: Pair<Rule>) -> Result<FromClause, IrParseError> {
         let mut inner = pair.into_inner();
 
         // Skip 'from' if present
@@ -16,7 +16,7 @@ impl SourceParser {
 
         let scan_expr = inner
             .next()
-            .ok_or_else(|| AquaParseError::InvalidInput("Missing source expression".to_string()))?;
+            .ok_or_else(|| IrParseError::InvalidInput("Missing source expression".to_string()))?;
         let scan = Self::parse_scan(scan_expr)?;
 
         let mut joins = Vec::new();
@@ -25,20 +25,20 @@ impl SourceParser {
             if token.as_str() == "join" {
                 // Parse the join scan
                 let join_scan_expr = inner.next().ok_or_else(|| {
-                    AquaParseError::InvalidInput("Missing join stream".to_string())
+                    IrParseError::InvalidInput("Missing join stream".to_string())
                 })?;
                 let join_scan = Self::parse_scan(join_scan_expr)?;
 
                 // Expect and skip 'on' keyword
                 if inner.next().map_or(true, |p| p.as_str() != "on") {
-                    return Err(AquaParseError::InvalidInput(
+                    return Err(IrParseError::InvalidInput(
                         "Missing ON in join clause".to_string(),
                     ));
                 }
 
                 // Parse join condition
                 let condition_pair = inner.next().ok_or_else(|| {
-                    AquaParseError::InvalidInput("Missing join condition".to_string())
+                    IrParseError::InvalidInput("Missing join condition".to_string())
                 })?;
                 let condition = JoinCondition::parse(condition_pair)?;
 
@@ -58,7 +58,7 @@ impl SourceParser {
         }
     }
 
-    fn parse_scan(pair: Pair<Rule>) -> Result<ScanClause, AquaParseError> {
+    fn parse_scan(pair: Pair<Rule>) -> Result<ScanClause, IrParseError> {
         let mut inner = pair.into_inner();
         let mut stream_name = None;
         let mut alias = None;
@@ -82,16 +82,16 @@ impl SourceParser {
 
         Ok(ScanClause {
             stream_name: stream_name
-                .ok_or_else(|| AquaParseError::InvalidInput("Missing stream name".to_string()))?,
+                .ok_or_else(|| IrParseError::InvalidInput("Missing stream name".to_string()))?,
             alias,
             input_source: input_source
-                .ok_or_else(|| AquaParseError::InvalidInput("Missing input source".to_string()))?,
+                .ok_or_else(|| IrParseError::InvalidInput("Missing input source".to_string()))?,
         })
     }
 
-    fn parse_qualified_column(pair: Pair<Rule>) -> Result<ColumnRef, AquaParseError> {
+    fn parse_qualified_column(pair: Pair<Rule>) -> Result<ColumnRef, IrParseError> {
         if pair.as_rule() != Rule::qualified_column {
-            return Err(AquaParseError::InvalidInput(
+            return Err(IrParseError::InvalidInput(
                 "Join condition must use qualified column references".to_string(),
             ));
         }
@@ -99,12 +99,12 @@ impl SourceParser {
         let mut inner = pair.into_inner();
         let stream = inner
             .next()
-            .ok_or_else(|| AquaParseError::InvalidInput("Missing stream name".to_string()))?
+            .ok_or_else(|| IrParseError::InvalidInput("Missing stream name".to_string()))?
             .as_str()
             .to_string();
         let field = inner
             .next()
-            .ok_or_else(|| AquaParseError::InvalidInput("Missing field name".to_string()))?
+            .ok_or_else(|| IrParseError::InvalidInput("Missing field name".to_string()))?
             .as_str()
             .to_string();
 
@@ -116,13 +116,13 @@ impl SourceParser {
 }
 
 impl JoinCondition {
-    fn parse(pair: Pair<Rule>) -> Result<Self, AquaParseError> {
+    fn parse(pair: Pair<Rule>) -> Result<Self, IrParseError> {
         let mut conditions = Vec::new();
         let mut pairs = pair.into_inner().peekable();
         
         while let Some(left_pair) = pairs.next() {
             let right_pair = pairs.next()
-                .ok_or_else(|| AquaParseError::InvalidInput("Missing right side of join condition".to_string()))?;
+                .ok_or_else(|| IrParseError::InvalidInput("Missing right side of join condition".to_string()))?;
 
             conditions.push(JoinPair {
                 left_col: SourceParser::parse_qualified_column(left_pair)?,

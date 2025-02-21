@@ -1,4 +1,4 @@
-use crate::dsl::ir::aqua::QueryObject;
+use crate::dsl::ir::QueryObject;
 
 pub fn process_limit(query_object: &QueryObject) -> String {
     let csv_path = query_object.output_path.replace("\\", "/");

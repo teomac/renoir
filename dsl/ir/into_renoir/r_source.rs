@@ -1,6 +1,6 @@
-use crate::dsl::ir::aqua::r_utils::check_alias;
-use crate::dsl::ir::aqua::FromClause;
-use crate::dsl::ir::aqua::QueryObject;
+use crate::dsl::ir::r_utils::check_alias;
+use crate::dsl::ir::FromClause;
+use crate::dsl::ir::QueryObject;
 use indexmap::IndexMap;
 
 pub fn process_from_clause(from_clause: &FromClause, query_object: &mut QueryObject) -> String {

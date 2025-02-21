@@ -11,9 +11,9 @@ use crate::dsl::languages::sql::ast_parser::sql_ast_structure::NullOp;
 use crate::dsl::languages::sql::ast_parser::sql_ast_structure::ComplexField;
 use crate::dsl::languages::sql::ast_parser::sql_ast_structure::ArithmeticExpr;
 
-pub struct SqlToAqua;
+pub struct SqlToIr;
 
-impl SqlToAqua {
+impl SqlToIr {
     pub fn convert(sql_ast: &SqlAST) -> String {
         let mut parts = Vec::new();
 

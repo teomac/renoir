@@ -1,10 +1,10 @@
-use crate::dsl::ir::aqua::ir_ast_structure::{WhereConditionType, NullCondition, NullOp, AquaLiteral, ColumnRef};
-use crate::dsl::ir::aqua::BinaryOp;
-use crate::dsl::ir::aqua::WhereClause;
-use crate::dsl::ir::aqua::QueryObject;
-use crate::dsl::ir::aqua::{ComparisonOp, Condition};
-use crate::dsl::ir::aqua::ir_ast_structure::ComplexField;
-use crate::dsl::ir::aqua::r_utils::*;
+use crate::dsl::ir::ir_ast_structure::{WhereConditionType, NullCondition, NullOp, IrLiteral, ColumnRef};
+use crate::dsl::ir::BinaryOp;
+use crate::dsl::ir::WhereClause;
+use crate::dsl::ir::QueryObject;
+use crate::dsl::ir::{ComparisonOp, Condition};
+use crate::dsl::ir::ir_ast_structure::ComplexField;
+use crate::dsl::ir::r_utils::*;
 
 /// Processes a `WhereClause` and generates a string representation of the conditions.
 ///
@@ -98,7 +98,7 @@ fn process_arithmetic_expression(field: &ComplexField, query_object: &QueryObjec
                 
                 // Add as f64 to integer literals when needed
                 let processed_left = if let Some(ref lit) = left.literal {
-                    if let AquaLiteral::Integer(_) = lit {
+                    if let IrLiteral::Integer(_) = lit {
                         format!("{} as f64", left_expr)
                     } else {
                         left_expr
@@ -108,7 +108,7 @@ fn process_arithmetic_expression(field: &ComplexField, query_object: &QueryObjec
                 };
                 
                 let processed_right = if let Some(ref lit) = right.literal {
-                    if let AquaLiteral::Integer(_) = lit {
+                    if let IrLiteral::Integer(_) = lit {
                         format!("{} as f64", right_expr)
                     } else {
                         right_expr
@@ -207,11 +207,11 @@ fn process_arithmetic_expression(field: &ComplexField, query_object: &QueryObjec
         }
     } else if let Some(ref lit) = field.literal {
         match lit {
-            AquaLiteral::Integer(i) => i.to_string(),
-            AquaLiteral::Float(f) => format!("{:.2}", f),
-            AquaLiteral::String(s) => format!("\"{}\"", s),
-            AquaLiteral::Boolean(b) => b.to_string(),
-            AquaLiteral::ColumnRef(col_ref) => {
+            IrLiteral::Integer(i) => i.to_string(),
+            IrLiteral::Float(f) => format!("{:.2}", f),
+            IrLiteral::String(s) => format!("\"{}\"", s),
+            IrLiteral::Boolean(b) => b.to_string(),
+            IrLiteral::ColumnRef(col_ref) => {
                 query_object.check_column_validity(col_ref, &table_name.to_string());
                 let c_type = query_object.get_type(&col_ref);
                 if query_object.has_join {
@@ -434,7 +434,7 @@ fn has_column_reference(field: &ComplexField) -> bool {
         return has_column_reference(left) || has_column_reference(right);
     }
     if let Some(ref lit) = field.literal {
-        if let AquaLiteral::ColumnRef(_) = lit {
+        if let IrLiteral::ColumnRef(_) = lit {
             return true;
         }
     }
@@ -457,7 +457,7 @@ fn collect_columns(field: &ComplexField) -> Vec<ColumnRef> {
         columns.extend(collect_columns(right));
     }
     if let Some(ref lit) = field.literal {
-        if let AquaLiteral::ColumnRef(col) = lit {
+        if let IrLiteral::ColumnRef(col) = lit {
             columns.push(col.clone());
         }
     }
@@ -488,7 +488,7 @@ fn collect_column_null_checks(field: &ComplexField, query_object: &QueryObject, 
         collect_column_null_checks(right, query_object, table_name, checks);
     }
     if let Some(ref lit) = field.literal {
-        if let AquaLiteral::ColumnRef(col) = lit {
+        if let IrLiteral::ColumnRef(col) = lit {
             query_object.check_column_validity(col, &table_name.to_string());
             if query_object.has_join {
                 let table = check_alias(&col.table.clone().unwrap(), query_object);

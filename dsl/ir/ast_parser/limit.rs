@@ -1,17 +1,17 @@
 use pest::iterators::Pair;
 use super::ir_ast_structure::*;
-use super::error::AquaParseError;
-use crate::dsl::ir::aqua::ast_parser::Rule;
+use super::error::IrParseError;
+use crate::dsl::ir::ast_parser::Rule;
 
 pub struct LimitParser;
 
 impl LimitParser {
-    pub fn parse(pair: Pair<Rule>) -> Result<LimitClause, AquaParseError> {
+    pub fn parse(pair: Pair<Rule>) -> Result<LimitClause, IrParseError> {
         let mut inner = pair.into_inner();
         
         // Parse LIMIT clause
         let limit_clause = inner.next()
-            .ok_or_else(|| AquaParseError::InvalidInput("Missing LIMIT clause".to_string()))?;
+            .ok_or_else(|| IrParseError::InvalidInput("Missing LIMIT clause".to_string()))?;
         let limit = Self::parse_limit(limit_clause)?;
 
         // Parse optional OFFSET clause
@@ -27,23 +27,23 @@ impl LimitParser {
         })
     }
 
-    fn parse_limit(pair: Pair<Rule>) -> Result<i64, AquaParseError> {
+    fn parse_limit(pair: Pair<Rule>) -> Result<i64, IrParseError> {
         let mut inner = pair.into_inner();
         inner.next(); // Skip limit keyword
         let number = inner.next()
-            .ok_or_else(|| AquaParseError::InvalidInput("Missing limit value".to_string()))?;
+            .ok_or_else(|| IrParseError::InvalidInput("Missing limit value".to_string()))?;
         
         number.as_str().parse::<i64>()
-            .map_err(|_| AquaParseError::InvalidInput("Invalid limit value".to_string()))
+            .map_err(|_| IrParseError::InvalidInput("Invalid limit value".to_string()))
     }
 
-    fn parse_offset(pair: Pair<Rule>) -> Result<i64, AquaParseError> {
+    fn parse_offset(pair: Pair<Rule>) -> Result<i64, IrParseError> {
         let mut inner = pair.into_inner();
         inner.next(); // Skip offset keyword
         let number = inner.next()
-            .ok_or_else(|| AquaParseError::InvalidInput("Missing offset value".to_string()))?;
+            .ok_or_else(|| IrParseError::InvalidInput("Missing offset value".to_string()))?;
         
         number.as_str().parse::<i64>()
-            .map_err(|_| AquaParseError::InvalidInput("Invalid offset value".to_string()))
+            .map_err(|_| IrParseError::InvalidInput("Invalid offset value".to_string()))
     }
 }

@@ -3,10 +3,10 @@ use indexmap::IndexMap;
 use crate::dsl::csv_utils::csv_parsers::*;
 use crate::dsl::binary_generation::execution::*;
 use crate::dsl::binary_generation::creation::*;
-use crate::dsl::ir::aqua::*;
+use crate::dsl::ir::*;
 use std::io;
 use super::binary_generation::creation;
-use crate::dsl::languages::sql::sql_parser::sql_to_aqua;
+use crate::dsl::languages::sql::sql_parser::sql_to_ir;
 use crate::dsl::struct_object::object::*;
 
 /// Executes a query on CSV files and generates a Rust binary to process the query.
@@ -40,8 +40,8 @@ use crate::dsl::struct_object::object::*;
 /// 0. Safety check on inputs to ensure the number of CSV files matches the number of user-defined types strings.
 /// 1. Create an empty Rust project.
 /// 2. Open CSV input, read column names and data types, and create the struct for each CSV file.
-/// 3. Parse the query and convert it to an intermediate representation (Aqua).
-/// 4. Convert the Aqua AST to a valid Renoir query.
+/// 3. Parse the query and convert it to an intermediate representation.
+/// 4. Convert the Ir AST to a valid Renoir query.
 /// 5. Generate the main.rs file and update it in the Rust project.
 /// 6. Compile the binary and save it to the specified output path.
 
@@ -90,12 +90,12 @@ pub fn query_csv(query_str: &String, output_path: &str, csv_path: &Vec<String>, 
     println!("{:?}", hash_maps);
     
     // step 3: parse the query
-    let aqua_query = sql_to_aqua(query_str);
-    let aqua_ast = query_aqua_to_ast(&aqua_query);
-    query_object = query_object.populate(&aqua_ast, &csv_path, &hash_maps);
+    let ir_query = sql_to_ir(query_str);
+    let ir_ast = query_ir_to_ast(&ir_query);
+    query_object = query_object.populate(&ir_ast, &csv_path, &hash_maps);
     
-    // step 4: convert aqua AST to renoir string
-    let renoir_string = aqua_ast_to_renoir(&aqua_ast, &mut query_object);
+    // step 4: convert Ir AST to renoir string
+    let renoir_string = ir_ast_to_renoir(&ir_ast, &mut query_object);
     query_object.set_renoir_string(&renoir_string);
 
 
