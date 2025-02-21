@@ -39,7 +39,7 @@ impl AquaParser {
         
         let ast = AquaASTBuilder::build_ast_from_pairs(pairs)?;
         AquaASTBuilder::validate_ast(&ast)?;
-        
+        println!("Aqua AST: {:#?}", ast);
         Ok(ast)
     }
 }

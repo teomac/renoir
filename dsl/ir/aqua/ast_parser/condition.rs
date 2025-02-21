@@ -23,43 +23,61 @@ impl ConditionParser {
     pub fn parse_conditions(conditions_pair: Pair<Rule>) -> Result<WhereClause, AquaParseError> {
         let mut pairs = conditions_pair.into_inner().peekable();
         
-        let first_condition = pairs.next()
-            .ok_or_else(|| AquaParseError::InvalidInput("Missing condition".to_string()))?;
-        let mut current = WhereClause {
-            condition: Self::parse_single_condition(first_condition)?,
-            binary_op: None,
-            next: None
+        let first = pairs.next()
+            .ok_or_else(|| AquaParseError::InvalidInput("Expected condition".to_string()))?;
+        
+        let mut left = match first.as_rule() {
+            Rule::where_term => Self::parse_term(first)?,
+            Rule::condition => Self::parse_single_condition(first)?,
+            _ => return Err(AquaParseError::InvalidInput(format!("Unexpected rule: {:?}", first.as_rule())))
         };
-        
-        let mut last = &mut current;
-        
-        while let Some(op_pair) = pairs.next() {
-            if let Some(condition_pair) = pairs.next() {
-                let op = match op_pair.as_str().to_uppercase().as_str() {
-                    "AND" => BinaryOp::And,
-                    "OR" => BinaryOp::Or,
-                    _ => return Err(AquaParseError::InvalidInput(
-                        format!("Invalid binary operator: {}", op_pair.as_str())
-                    )),
-                };
-                
-                last.binary_op = Some(op);
-                last.next = Some(Box::new(WhereClause {
-                    condition: Self::parse_single_condition(condition_pair)?,
-                    binary_op: None,
-                    next: None,
-                }));
-                
-                if let Some(ref mut next) = last.next {
-                    last = next;
-                }
-            }
+
+        // Process any binary operations - Now uses && and || instead of AND/OR
+        while let Some(op) = pairs.next() {
+            let op = match op.as_str() {
+                "&&" => BinaryOp::And,
+                "||" => BinaryOp::Or,
+                _ => return Err(AquaParseError::InvalidInput(format!("Invalid binary operator: {}", op.as_str())))
+            };
+
+            let right_term = pairs.next()
+                .ok_or_else(|| AquaParseError::InvalidInput("Expected right term after operator".to_string()))?;
+
+            let right = match right_term.as_rule() {
+                Rule::where_term => Self::parse_term(right_term)?,
+                Rule::condition => Self::parse_single_condition(right_term)?,
+                _ => return Err(AquaParseError::InvalidInput(format!("Unexpected rule: {:?}", right_term.as_rule())))
+            };
+
+            left = WhereClause::Expression {
+                left: Box::new(left),
+                binary_op: op,
+                right: Box::new(right)
+            };
         }
-        
-        Ok(current)
+
+        Ok(left)
     }
 
-    fn parse_single_condition(condition_pair: Pair<Rule>) -> Result<WhereConditionType, AquaParseError> {
+    fn parse_term(pair: Pair<Rule>) -> Result<WhereClause, AquaParseError> {
+        let mut inner = pair.into_inner();
+        
+        let first = inner.next()
+            .ok_or_else(|| AquaParseError::InvalidInput("Empty term".to_string()))?;
+        
+        match first.as_rule() {
+            Rule::left_parenthesis => {
+                // After left_parenthesis we expect where_conditions
+                let conditions = inner.next()
+                    .ok_or_else(|| AquaParseError::InvalidInput("Empty parentheses".to_string()))?;
+                Self::parse_conditions(conditions)
+            },
+            Rule::condition => Self::parse_single_condition(first),
+            _ => Err(AquaParseError::InvalidInput(format!("Invalid term: {:?}", first.as_rule())))
+        }
+    }
+
+    fn parse_single_condition(condition_pair: Pair<Rule>) -> Result<WhereClause, AquaParseError> {
         let mut inner = condition_pair.into_inner();
         
         // Get the first field
@@ -79,16 +97,16 @@ impl ConditionParser {
                     "<" => ComparisonOp::LessThan,
                     ">=" => ComparisonOp::GreaterThanEquals,
                     "<=" => ComparisonOp::LessThanEquals,
-                    "==" | "=" => ComparisonOp::Equal,
+                    "==" => ComparisonOp::Equal,  // Changed from = to ==
                     "!=" => ComparisonOp::NotEqual,
                     op => return Err(AquaParseError::InvalidInput(format!("Invalid operator: {}", op))),
                 };
 
-                Ok(WhereConditionType::Comparison(Condition {
+                Ok(WhereClause::Base(WhereConditionType::Comparison(Condition {
                     left_field: Self::parse_arithmetic_expr(first)?,
                     operator,
                     right_field: Self::parse_arithmetic_expr(right_expr)?,
-                }))
+                })))
             },
             Rule::qualified_column | Rule::identifier => {
                 // Check if this is a NULL check
@@ -104,10 +122,10 @@ impl ConditionParser {
                         )),
                     };
 
-                    Ok(WhereConditionType::NullCheck(NullCondition {
+                    Ok(WhereClause::Base(WhereConditionType::NullCheck(NullCondition {
                         field: Self::parse_field_reference(first)?,
                         operator,
-                    }))
+                    })))
                 } else {
                     Err(AquaParseError::InvalidInput("Expected null operator".to_string()))
                 }
@@ -117,6 +135,7 @@ impl ConditionParser {
             )),
         }
     }
+
 
     fn parse_arithmetic_expr(pair: Pair<Rule>) -> Result<ComplexField, AquaParseError> {
         let mut inner = pair.into_inner();

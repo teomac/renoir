@@ -74,10 +74,13 @@ pub enum AggregateType {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct WhereClause {
-    pub condition: WhereConditionType,
-    pub binary_op: Option<BinaryOp>,
-    pub next: Option<Box<WhereClause>>,
+pub enum WhereClause {
+   Base(WhereConditionType),
+   Expression{
+        left: Box<WhereClause>,
+        binary_op: BinaryOp,
+        right: Box<WhereClause>,
+   }
 }
 
 #[derive(Debug, PartialEq, Clone)]

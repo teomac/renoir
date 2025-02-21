@@ -84,7 +84,11 @@ condition = {
 }
 
 comparison_op = @{ ">=" | "<=" | "!=" | ">" | "<" | "==" | "="}
-where_conditions = { condition ~ (binary_op ~ condition)* }
+where_term = {
+    left_parenthesis ~ where_conditions ~ right_parenthesis |
+    condition
+}
+where_conditions = { where_term ~ (binary_op ~ where_term)* }
 where_clause = { "where" ~ where_conditions }
 
 // Select clause expressions
@@ -114,8 +118,8 @@ select_clause = { "select" ~ (asterisk | column_list) }
 
 // Binary logical operators
 binary_op = { 
-    ^"AND" | 
-    ^"OR"
+    ^"&&" | 
+    ^"||"
 }
 
 // Group by clause

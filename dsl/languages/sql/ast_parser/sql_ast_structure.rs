@@ -75,17 +75,18 @@ pub struct JoinCondition {
     pub right_var: String,
 }
 
-
-
 #[derive(Debug, PartialEq, Clone)]
-pub struct  WhereClause {
-    pub condition: WhereConditionType,
-    pub binary_op: Option<BinaryOp>,
-    pub next: Option<Box<WhereClause>>,
+pub enum WhereClause {
+    Base(WhereBaseCondition),
+    Expression {
+        left: Box<WhereClause>,
+        op: BinaryOp,
+        right: Box<WhereClause>
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum WhereConditionType {
+pub enum WhereBaseCondition {
     Comparison(WhereCondition),
     NullCheck(WhereNullCondition)
 }

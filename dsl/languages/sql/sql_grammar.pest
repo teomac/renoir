@@ -64,7 +64,11 @@ condition = {
     (table_column | variable) ~ null_operator 
 }
 
-where_conditions = { condition ~ (binary_op ~ condition)* }
+where_conditions = { where_term ~ (binary_op ~ where_term)* }
+where_term = { 
+    l_paren ~ where_conditions ~ r_paren |
+    condition
+}
 where_expr = { where_keyword ~ where_conditions }
 
 //Projections

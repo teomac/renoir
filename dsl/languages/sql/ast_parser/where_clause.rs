@@ -9,50 +9,122 @@ impl ConditionParser {
     pub fn parse(pair: Pair<Rule>) -> Result<WhereClause, SqlParseError> {
         let mut inner = pair.into_inner();
         inner.next(); // Skip WHERE keyword
-
-        let conditions = inner
-            .next()
+        
+        let conditions = inner.next()
             .ok_or_else(|| SqlParseError::InvalidInput("Missing where conditions".to_string()))?;
-
-        Self::parse_conditions(conditions)
+            
+        Self::parse_where_conditions(conditions)
     }
 
-    pub fn parse_conditions(conditions_pair: Pair<Rule>) -> Result<WhereClause, SqlParseError> {
-        let mut pairs = conditions_pair.into_inner().peekable();
+    fn parse_where_conditions(pair: Pair<Rule>) -> Result<WhereClause, SqlParseError> {
+        let mut pairs = pair.into_inner().peekable();
         
-        // Parse first condition
-        let first_condition = pairs.next()
-            .ok_or_else(|| SqlParseError::InvalidInput("Missing condition".to_string()))?;
-    
-        // Parse the first condition using parse_single_condition
-        let mut current = Self::parse_single_condition(first_condition)?;
+        // Get the first condition or term
+        let first = pairs.next()
+            .ok_or_else(|| SqlParseError::InvalidInput("Expected condition".to_string()))?;
         
-        let mut last = &mut current;
+        let mut left = match first.as_rule() {
+            Rule::where_term => Self::parse_where_term(first)?,
+            Rule::condition => Self::parse_condition(first)?,
+            _ => return Err(SqlParseError::InvalidInput(format!("Unexpected rule: {:?}", first.as_rule())))
+        };
+
+        // If there are more terms, they must be binary operations
+        while let Some(op) = pairs.next() {
+            let op = match op.as_str().to_uppercase().as_str() {
+                "AND" => BinaryOp::And,
+                "OR" => BinaryOp::Or,
+                _ => return Err(SqlParseError::InvalidInput(format!("Invalid binary operator: {}", op.as_str())))
+            };
+
+            let right_term = pairs.next()
+                .ok_or_else(|| SqlParseError::InvalidInput("Expected right term after operator".to_string()))?;
+
+            let right = match right_term.as_rule() {
+                Rule::where_term => Self::parse_where_term(right_term)?,
+                Rule::condition => Self::parse_condition(right_term)?,
+                _ => return Err(SqlParseError::InvalidInput(format!("Unexpected rule: {:?}", right_term.as_rule())))
+            };
+
+            left = WhereClause::Expression {
+                left: Box::new(left),
+                op,
+                right: Box::new(right)
+            };
+        }
+
+        Ok(left)
+    }
+
+    fn parse_where_term(pair: Pair<Rule>) -> Result<WhereClause, SqlParseError> {
+        let mut inner = pair.into_inner();
         
-        while let Some(op_pair) = pairs.next() {
-            if let Some(condition_pair) = pairs.next() {
-                let op = match op_pair.as_str().to_uppercase().as_str() {
-                    "AND" => BinaryOp::And,
-                    "OR" => BinaryOp::Or,
-                    _ => return Err(SqlParseError::InvalidInput(
-                        format!("Invalid binary operator: {}", op_pair.as_str())
-                    )),
+        // Get first element
+        let first = inner.next()
+            .ok_or_else(|| SqlParseError::InvalidInput("Empty where term".to_string()))?;
+        
+        match first.as_rule() {
+            Rule::l_paren => {
+                // After l_paren we expect where_conditions
+                let conditions = inner.next()
+                    .ok_or_else(|| SqlParseError::InvalidInput("Empty parentheses".to_string()))?;
+                Self::parse_where_conditions(conditions)
+            },
+            Rule::condition => Self::parse_condition(first),
+            _ => Err(SqlParseError::InvalidInput(format!("Invalid where term: {:?}", first.as_rule())))
+        }
+    }
+
+    fn parse_condition(pair: Pair<Rule>) -> Result<WhereClause, SqlParseError> {
+        let mut inner = pair.into_inner();
+        
+        let left = inner.next()
+            .ok_or_else(|| SqlParseError::InvalidInput("Missing left side of condition".to_string()))?;
+            
+        let operator = inner.next()
+            .ok_or_else(|| SqlParseError::InvalidInput("Missing operator".to_string()))?;
+
+        match operator.as_rule() {
+            Rule::null_operator => {
+                let op = match operator.as_str().to_uppercase().as_str() {
+                    "IS NULL" => NullOp::IsNull,
+                    "IS NOT NULL" => NullOp::IsNotNull,
+                    _ => return Err(SqlParseError::InvalidInput(format!("Invalid null operator: {}", operator.as_str())))
                 };
                 
-                // Parse the next condition and create a new WhereClause
-                let next_condition = Self::parse_single_condition(condition_pair)?;
-                
-                last.binary_op = Some(op);
-                last.next = Some(Box::new(next_condition));
-                
-                if let Some(ref mut next) = last.next {
-                    last = next;
-                }
-            }
+                Ok(WhereClause::Base(WhereBaseCondition::NullCheck(
+                    WhereNullCondition {
+                        field: Self::parse_where_field(left)?,
+                        operator: op
+                    }
+                )))
+            },
+            Rule::operator => {
+                let right = inner.next()
+                    .ok_or_else(|| SqlParseError::InvalidInput("Missing right side of condition".to_string()))?;
+
+                let op = match operator.as_str() {
+                    ">" => ComparisonOp::GreaterThan,
+                    "<" => ComparisonOp::LessThan,
+                    ">=" => ComparisonOp::GreaterOrEqualThan,
+                    "<=" => ComparisonOp::LessOrEqualThan,
+                    "=" => ComparisonOp::Equal,
+                    "!=" | "<>" => ComparisonOp::NotEqual,
+                    _ => return Err(SqlParseError::InvalidInput(format!("Invalid operator: {}", operator.as_str())))
+                };
+
+                Ok(WhereClause::Base(WhereBaseCondition::Comparison(
+                    WhereCondition {
+                        left_field: Self::parse_where_field(left)?,
+                        operator: op,
+                        right_field: Self::parse_where_field(right)?
+                    }
+                )))
+            },
+            _ => Err(SqlParseError::InvalidInput("Expected operator".to_string()))
         }
-        
-        Ok(current)
     }
+
 
     fn parse_arithmetic_expr(pair: Pair<Rule>) -> Result<ArithmeticExpr, SqlParseError> {
         match pair.as_rule() {
@@ -205,89 +277,14 @@ impl ConditionParser {
         }
     }
 
-    fn parse_single_condition(condition_pair: Pair<Rule>) -> Result<WhereClause, SqlParseError> {
-        let mut inner = condition_pair.into_inner();
-
-        let left = inner.next()
-            .ok_or_else(|| SqlParseError::InvalidInput("Missing left side of condition".to_string()))?;
-
-        let next_token = inner.next()
-            .ok_or_else(|| SqlParseError::InvalidInput("Missing operator".to_string()))?;
-
-        match next_token.as_rule() {
-            Rule::null_operator => {
-                // Handle IS NULL / IS NOT NULL
-                let operator = match next_token.as_str().to_uppercase().as_str() {
-                    "IS NULL" => NullOp::IsNull,
-                    "IS NOT NULL" => NullOp::IsNotNull,
-                    _ => {
-                        return Err(SqlParseError::InvalidInput(format!(
-                            "Invalid null operator: {}",
-                            next_token.as_str()
-                        )))
-                    }
-                };
-
-                let left_field = Self::parse_where_field(left)?;
-
-                Ok(WhereClause {
-                    condition: WhereConditionType::NullCheck(WhereNullCondition {
-                        field: left_field,
-                        operator,
-                    }),
-                    binary_op: None,
-                    next: None,
-                })
-            }
-            Rule::operator => {
-                let operator = match next_token.as_str() {
-                    ">" => ComparisonOp::GreaterThan,
-                    "<" => ComparisonOp::LessThan,
-                    ">=" => ComparisonOp::GreaterOrEqualThan,
-                    "<=" => ComparisonOp::LessOrEqualThan,
-                    "=" => ComparisonOp::Equal,
-                    "!=" | "<>" => ComparisonOp::NotEqual,
-                    op => return Err(SqlParseError::InvalidInput(format!("Invalid operator: {}", op))),
-                };
-
-                let right = inner.next()
-                    .ok_or_else(|| SqlParseError::InvalidInput("Missing right side of condition".to_string()))?;
-
-                // Parse arithmetic expressions for both sides
-                let left_expr = Self::parse_arithmetic_expr(left)?;
-                let right_expr = Self::parse_arithmetic_expr(right)?;
-
-                Ok(WhereClause {
-                    condition: WhereConditionType::Comparison(WhereCondition {
-                        left_field: WhereField {
-                            column: None,
-                            value: None,
-                            arithmetic: Some(left_expr),
-                        },
-                        operator,
-                        right_field: WhereField {
-                            column: None,
-                            value: None,
-                            arithmetic: Some(right_expr),
-                        },
-                    }),
-                    binary_op: None,
-                    next: None,
-                })
-            }
-            _ => Err(SqlParseError::InvalidInput("Expected operator".to_string())),
-        }
-    }
 
     fn parse_where_field(pair: Pair<Rule>) -> Result<WhereField, SqlParseError> {
         match pair.as_rule() {
             Rule::arithmetic_expr => {
-                // Parse arithmetic expression and wrap it in WhereField
-                let expr = Self::parse_arithmetic_expr(pair)?;
                 Ok(WhereField {
                     column: None,
                     value: None,
-                    arithmetic: Some(expr),
+                    arithmetic: Some(Self::parse_arithmetic_expr(pair)?),
                 })
             }
             Rule::string_literal => {
