@@ -2,6 +2,7 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 
+use crate::dsl::ir::aqua::r_limit::process_limit;
 use crate::dsl::ir::aqua::r_order::process_order_by;
 use crate::dsl::struct_object::object::QueryObject;
 
@@ -80,48 +81,6 @@ pub fn create_template(query_object: &QueryObject) -> String {
 
     let mut stream_declarations = Vec::new();
 
-    let csv_path = query_object.output_path.replace("\\", "/");
-
-    // Generate limit/offset handling code if needed
-    let limit_offset_code = if let Some(limit_clause) = &query_object.ir_ast.as_ref().unwrap().limit {
-        let start_index = limit_clause.offset.unwrap_or(0);
-        format!(
-            r#"
-            // Process limit and offset after CSV is written
-            let mut rdr = csv::Reader::from_path(format!("{}.csv")).unwrap();
-            let mut wtr = csv::Writer::from_path(format!("{}_final.csv")).unwrap();
-            
-            // Copy the header
-            let headers = rdr.headers().unwrap().clone();
-            wtr.write_record(&headers).unwrap();
-
-            // Process records with limit and offset
-            for (i, result) in rdr.records().enumerate() {{
-                if i >= {} && i < {} {{
-                    if let Ok(record) = result {{
-                        wtr.write_record(&record).unwrap();
-                    }}
-                }}
-                if i >= {} {{
-                    break;
-                }}
-            }}
-            wtr.flush().unwrap();
-            drop(wtr);
-            drop(rdr);
-
-            "#,
-            csv_path,
-            csv_path,
-            start_index,
-            start_index + limit_clause.limit,
-            start_index + limit_clause.limit,
-
-        )
-    } else {
-        String::new()
-    };
-
     // case 1: no join inside the query
     if !query_object.has_join {
         let table_name = table_names.first().unwrap();
@@ -139,7 +98,9 @@ pub fn create_template(query_object: &QueryObject) -> String {
             stream.push_str(&process_order_by(order_by, query_object));
         }
 
-        stream.push_str(&limit_offset_code);
+        if let Some(_limit) = &query_object.ir_ast.as_ref().unwrap().limit {
+            stream.push_str(&process_limit(query_object));
+        }
         
         stream_declarations.push(stream);
     }
@@ -162,7 +123,9 @@ pub fn create_template(query_object: &QueryObject) -> String {
                     stream.push_str(&process_order_by(order_by, query_object));
                 }
 
-                stream.push_str(&limit_offset_code);
+                if let Some(_limit) = &query_object.ir_ast.as_ref().unwrap().limit {
+                    stream.push_str(&process_limit(query_object));
+                }
 
                 stream_declarations.push(stream);
             } else {
