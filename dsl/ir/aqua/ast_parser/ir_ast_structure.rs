@@ -4,6 +4,7 @@ pub struct AquaAST {
     pub select: Vec<SelectClause>,
     pub filter: Option<WhereClause>,
     pub group_by: Option<GroupByClause>,
+    pub order_by: Option<OrderByClause>,
     pub limit: Option<LimitClause>,
 }
 
@@ -156,6 +157,23 @@ pub enum AquaLiteral {
 pub struct LimitClause {
     pub limit: i64,
     pub offset: Option<i64>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct OrderByClause {
+    pub items: Vec<OrderByItem>
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct OrderByItem {
+    pub column: ColumnRef,
+    pub direction: OrderDirection
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum OrderDirection {
+    Asc,
+    Desc
 }
 
 impl ColumnRef {

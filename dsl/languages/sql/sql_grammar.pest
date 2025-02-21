@@ -9,6 +9,7 @@ on = { "ON" }
 asterisk = { "*" }
 group_by_keyword = { "GROUP BY" }
 having_keyword = { "HAVING" }
+order_by_keyword = { "ORDER BY" }
 limit_keyword = { "LIMIT" }
 offset_keyword = { "OFFSET" }
 
@@ -100,6 +101,11 @@ join_expr = { join_kind? ~ join ~ scan_expr ~ on ~ join_condition }
 join_kind = _{ ( InnerJoinKind | LeftJoinKind ) }
                 InnerJoinKind = { ^"inner" }
                 LeftJoinKind = { ^"left" ~ (^"outer")? }
+
+order_direction = { ^"ASC" | ^"DESC" }
+order_item = { (table_column | variable) ~ order_direction? }
+order_by_list = { order_item ~ ("," ~ order_item)* }
+order_by_expr = { order_by_keyword ~ order_by_list }
             
 limit_expr = { 
     limit_clause ~ offset_clause? 
@@ -114,6 +120,7 @@ query = {
     from_expr ~
     where_expr? ~
     group_by_expr? ~
+    order_by_expr? ~
     limit_expr? ~
     EOI
 }

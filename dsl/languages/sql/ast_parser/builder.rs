@@ -1,4 +1,5 @@
 use super::limit::LimitParser;
+use super::order::OrderParser;
 use super::sql_ast_structure::*;
 use super::error::SqlParseError;
 use super::{
@@ -74,12 +75,15 @@ impl SqlASTBuilder {
 
                     let mut group_by_part = None;
 
-                    let mut limit_part = None; 
+                    let mut limit_part = None;
+
+                    let mut order_by_part = None;
 
                     while let Some(next_part) = inner.next() {
                         match next_part.as_rule() {
                             Rule::where_expr => where_part = Some(next_part),
                             Rule::group_by_expr => group_by_part = Some(next_part),
+                            Rule::order_by_expr => order_by_part = Some(next_part),
                             Rule::limit_expr => {
                                 limit_part = Some(next_part);
                             }
@@ -97,6 +101,11 @@ impl SqlASTBuilder {
                         },
                         group_by: if let Some(group_expr) = group_by_part {
                             Some(GroupByParser::parse(group_expr)?)
+                        } else {
+                            None
+                        },
+                        order_by: if let Some(order_expr) = order_by_part {
+                            Some(OrderParser::parse(order_expr)?)
                         } else {
                             None
                         },

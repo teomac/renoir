@@ -4,6 +4,7 @@ pub struct SqlAST {
     pub from: FromClause,
     pub filter: Option<WhereClause>,
     pub group_by: Option<GroupByClause>,
+    pub order_by: Option<OrderByClause>,
     pub limit: Option<LimitClause>,
 }
 
@@ -192,6 +193,23 @@ pub struct HavingField {
 pub enum BinaryOp {
     And,
     Or,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct OrderByClause {
+    pub items: Vec<OrderByItem>
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct OrderByItem {
+    pub column: ColumnRef,
+    pub direction: OrderDirection
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum OrderDirection {
+    Asc,
+    Desc
 }
 
 #[derive(Debug, PartialEq, Clone)]

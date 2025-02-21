@@ -1,14 +1,11 @@
-use crate::dsl::{ir::aqua::{ast_parser::ir_ast_structure::AquaAST, into_renoir::{
-    r_condition::process_where_clause, 
-    r_source::*}, 
-r_sink::process_select_clauses
+use crate::dsl::{ir::aqua::{ast_parser::ir_ast_structure::AquaAST, into_renoir::{r_condition::process_where_clause, r_source::*}, r_sink::process_select_clauses
 }, struct_object::object::QueryObject};
 
 use super::r_group::process_group_by;
 
-pub struct AquaToRenoir;
+pub struct IrToRenoir;
 
-impl AquaToRenoir {
+impl IrToRenoir {
     pub fn convert(ast: &AquaAST, query_object: &mut QueryObject) -> String {
 
         println!("Aqua AST: {:#?}", ast);

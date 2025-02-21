@@ -1,8 +1,9 @@
-pub mod aqua_to_renoir;
+pub mod ir_to_renoir;
 pub mod r_utils;
 pub mod r_condition;
 pub mod r_source;
 pub mod r_sink;
 pub mod r_group;
+pub mod r_order;
 
-pub use aqua_to_renoir::AquaToRenoir;
+pub use ir_to_renoir::IrToRenoir;

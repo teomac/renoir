@@ -2,6 +2,7 @@ use crate::dsl::languages::sql::ast_parser::sql_ast_structure::GroupByClause;
 use crate::dsl::languages::sql::ast_parser::sql_ast_structure::WhereField;
 use crate::dsl::languages::sql::ast_parser::sql_ast_structure::WhereBaseCondition;
 use crate::dsl::languages::sql::ast_parser::sql_ast_structure::HavingConditionType;
+use crate::dsl::languages::sql::ast_parser::sql_ast_structure::{OrderByClause, OrderDirection};
 use crate::dsl::languages::sql::ast_parser::*;
 use crate::dsl::languages::sql::ast_parser::sql_ast_structure::SqlLiteral;
 use crate::dsl::languages::sql::ast_parser::sql_ast_structure::BinaryOp;
@@ -96,6 +97,13 @@ impl SqlToAqua {
             .collect();
 
         parts.push(format!("select {}", select_strs.join(", ")));
+
+        if let Some(order_by_clause) = &sql_ast.order_by {
+            parts.push(format!(
+                "order {}",
+                Self::order_by_clause_to_string(order_by_clause)
+            ));
+        }
 
         // Add LIMIT clause (if present)
         if let Some(limit_clause) = &sql_ast.limit {
@@ -392,6 +400,24 @@ fn arithmetic_expr_to_string(expr: &ArithmeticExpr) -> String {
                 }
             }
         }
+    }
+
+    fn order_by_clause_to_string(clause: &OrderByClause) -> String {
+        let items: Vec<String> = clause.items.iter()
+            .map(|item| {
+                let col_str = match &item.column.table {
+                    Some(table) => format!("{}.{}", table, item.column.column),
+                    None => item.column.column.clone(),
+                };
+                
+                match item.direction {
+                    OrderDirection::Asc => col_str,
+                    OrderDirection::Desc => format!("{} desc", col_str),
+                }
+            })
+            .collect();
+
+        items.join(", ")
     }
 
     //function used to convert complex field to string

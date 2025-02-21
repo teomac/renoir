@@ -7,6 +7,7 @@ pub mod literal;
 pub mod ir_ast_structure;
 pub mod group;
 pub mod limit;
+pub mod order;
 
 pub use ir_ast_structure::{
     AquaAST, 

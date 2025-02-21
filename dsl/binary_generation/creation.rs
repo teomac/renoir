@@ -2,6 +2,7 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 
+use crate::dsl::ir::aqua::r_order::process_order_by;
 use crate::dsl::struct_object::object::QueryObject;
 
 pub struct RustProject {
@@ -124,33 +125,45 @@ pub fn create_template(query_object: &QueryObject) -> String {
     // case 1: no join inside the query
     if !query_object.has_join {
         let table_name = table_names.first().unwrap();
-        let stream = format!(
+        let mut stream = format!(
             r#"let stream0 = ctx.stream_csv::<{}>("{}"){}.write_csv(move |_| r"{}.csv".into(), true);
             ctx.execute_blocking();
-            {}"#,
+            "#,
             query_object.get_struct_name(table_name).unwrap(),
             query_object.get_csv(table_name).unwrap(),
             query_object.renoir_string,
             query_object.output_path,
-            limit_offset_code
         );
+
+        if let Some(order_by) = &query_object.ir_ast.as_ref().unwrap().order_by {
+            stream.push_str(&process_order_by(order_by, query_object));
+        }
+
+        stream.push_str(&limit_offset_code);
+        
         stream_declarations.push(stream);
     }
     // case 2: join inside the query
     else {
         for (i, table_name) in table_names.iter().enumerate() {
             if i == 0 {
-                let stream = format!(
+                let mut stream = format!(
                     r#"let stream{} = ctx.stream_csv::<{}>("{}"){}.write_csv(move |_| r"{}.csv".into(), true);
                     ctx.execute_blocking();
-                    {}"#,
+                    "#,
                     i,
                     query_object.get_struct_name(table_name).unwrap(),
                     query_object.get_csv(table_name).unwrap(),
                     query_object.renoir_string,
                     query_object.output_path,
-                    limit_offset_code
                 );
+
+                if let Some(order_by) = &query_object.ir_ast.as_ref().unwrap().order_by {
+                    stream.push_str(&process_order_by(order_by, query_object));
+                }
+
+                stream.push_str(&limit_offset_code);
+
                 stream_declarations.push(stream);
             } else {
                 let stream = format!(
