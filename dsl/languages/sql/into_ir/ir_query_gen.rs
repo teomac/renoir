@@ -1,8 +1,8 @@
 use crate::dsl::languages::sql::ast_parser::sql_ast_structure::GroupByClause;
 use crate::dsl::languages::sql::ast_parser::sql_ast_structure::WhereField;
 use crate::dsl::languages::sql::ast_parser::sql_ast_structure::WhereBaseCondition;
-use crate::dsl::languages::sql::ast_parser::sql_ast_structure::HavingConditionType;
-use crate::dsl::languages::sql::ast_parser::sql_ast_structure::{OrderByClause, OrderDirection};
+use crate::dsl::languages::sql::ast_parser::sql_ast_structure::HavingBaseCondition;
+use crate::dsl::languages::sql::ast_parser::sql_ast_structure::{OrderByClause, OrderDirection, HavingField, HavingClause};
 use crate::dsl::languages::sql::ast_parser::*;
 use crate::dsl::languages::sql::ast_parser::sql_ast_structure::SqlLiteral;
 use crate::dsl::languages::sql::ast_parser::sql_ast_structure::BinaryOp;
@@ -277,130 +277,167 @@ fn arithmetic_expr_to_string(expr: &ArithmeticExpr) -> String {
 }
 
 
-    //function used to parse the group by clause
-    fn group_by_clause_to_string(clause: &GroupByClause) -> String {
-        let current = clause;
-
+     // Updated group_by_clause_to_string to handle new having structure
+     fn group_by_clause_to_string(clause: &GroupByClause) -> String {
         let mut group_by_str = String::new();
-        let group_by_columns = current.columns.clone();
-
-        // append to group by string all the columns in the group by clause
-        for i in 0..group_by_columns.len() {
-            group_by_str.push_str(&group_by_columns[i].to_string());
+        
+        // Handle group by columns
+        let group_by_columns = clause.columns.clone();
+        for (i, col) in group_by_columns.iter().enumerate() {
+            group_by_str.push_str(&col.to_string());
             if i < group_by_columns.len() - 1 {
                 group_by_str.push_str(", ");
             }
         }
 
-        //if there is no having clause, return the group by string
-        if current.having.is_none() {
-            group_by_str
-        } else {
-            //parse having conditions
-            let mut new_current = current.having.clone().unwrap();
-
-            let mut conditions = Vec::new();
-
-            // Process first condition
-            conditions.push(Self::having_condition_to_string(&new_current.condition));
-
-            // Process remaining conditions
-            while let (Some(op), Some(next)) = (new_current.binary_op, new_current.next) {
-                let op_str = match op {
-                    BinaryOp::And => "AND",
-                    BinaryOp::Or => "OR",
-                };
-                conditions.push(op_str.to_string());
-                conditions.push(Self::having_condition_to_string(&next.condition));
-                new_current = *next;
-            }
-
-            conditions.join(" ");
-
-            group_by_str.push_str(&format!(" {{{}}}", conditions.join(" ")));
-
-            group_by_str
+        // Add having clause if present
+        if let Some(having) = &clause.having {
+            group_by_str.push_str(" {");
+            group_by_str.push_str(&Self::having_clause_to_string(having));
+            group_by_str.push('}');
         }
+
+        group_by_str
     }
 
-    fn having_condition_to_string(condition: &HavingConditionType) -> String {
-        match condition {
-            HavingConditionType::Comparison(cond) => {
-                let left = if cond.left_field.column.is_some() {
-                    cond.left_field.column.as_ref().unwrap().to_string()
-                } else if cond.left_field.aggregate.is_some() {
-                    let aggregate = match cond.left_field.aggregate.as_ref().unwrap().0 {
-                        AggregateFunction::Max => "max",
-                        AggregateFunction::Min => "min",
-                        AggregateFunction::Sum => "sum",
-                        AggregateFunction::Avg => "avg",
-                        AggregateFunction::Count => "count",
+    // New method to handle the recursive having clause structure
+    fn having_clause_to_string(clause: &HavingClause) -> String {
+        match clause {
+            HavingClause::Base(base_condition) => match base_condition {
+                HavingBaseCondition::Comparison(cond) => {
+                    let left = if let Some(ref arithmetic) = cond.left_field.arithmetic {
+                        Self::arithmetic_expr_to_string(arithmetic)
+                    } else if cond.left_field.column.is_some() {
+                        cond.left_field.column.as_ref().unwrap().to_string()
+                    } else if cond.left_field.aggregate.is_some() {
+                        let aggregate = match cond.left_field.aggregate.as_ref().unwrap().0 {
+                            AggregateFunction::Max => "max",
+                            AggregateFunction::Min => "min",
+                            AggregateFunction::Sum => "sum",
+                            AggregateFunction::Avg => "avg",
+                            AggregateFunction::Count => "count",
+                        };
+                        format!(
+                            "{}({})",
+                            aggregate,
+                            cond.left_field.aggregate.as_ref().unwrap().1.to_string()
+                        )
+                    } else {
+                        match &cond.left_field.value {
+                            Some(SqlLiteral::Float(val)) => format!("{:.2}", val),
+                            Some(SqlLiteral::Integer(val)) => val.to_string(),
+                            Some(SqlLiteral::String(val)) => format!("'{}'", val),
+                            Some(SqlLiteral::Boolean(val)) => val.to_string(),
+                            None => String::new(),
+                        }
                     };
-                    format!(
-                        "{}({})",
-                        aggregate,
-                        cond.left_field.aggregate.as_ref().unwrap().1.to_string()
-                    )
-                } else {
-                    match &cond.left_field.value {
-                        Some(SqlLiteral::Float(val)) => format!("{:.2}", val),
-                        Some(SqlLiteral::Integer(val)) => val.to_string(),
-                        Some(SqlLiteral::String(val)) => format!("'{}'", val),
-                        Some(SqlLiteral::Boolean(val)) => val.to_string(),
-                        None => String::new(),
-                    }
-                };
 
-                let operator_str = match cond.operator {
-                    ComparisonOp::GreaterThan => ">",
-                    ComparisonOp::LessThan => "<",
-                    ComparisonOp::GreaterOrEqualThan => ">=",
-                    ComparisonOp::LessOrEqualThan => "<=",
-                    ComparisonOp::Equal => "==",
-                    ComparisonOp::NotEqual => "!=",
-                };
-
-                let right = if cond.right_field.column.is_some() {
-                    cond.right_field.column.as_ref().unwrap().to_string()
-                } else if cond.right_field.aggregate.is_some() {
-                    let aggregate = match cond.right_field.aggregate.as_ref().unwrap().0 {
-                        AggregateFunction::Max => "max",
-                        AggregateFunction::Min => "min",
-                        AggregateFunction::Sum => "sum",
-                        AggregateFunction::Avg => "avg",
-                        AggregateFunction::Count => "count",
+                    let operator_str = match cond.operator {
+                        ComparisonOp::GreaterThan => ">",
+                        ComparisonOp::LessThan => "<",
+                        ComparisonOp::GreaterOrEqualThan => ">=",
+                        ComparisonOp::LessOrEqualThan => "<=",
+                        ComparisonOp::Equal => "==",
+                        ComparisonOp::NotEqual => "!=",
                     };
-                    format!(
-                        "{}({})",
-                        aggregate,
-                        cond.right_field.aggregate.as_ref().unwrap().1.to_string()
-                    )
-                } else {
-                    match &cond.right_field.value {
-                        Some(SqlLiteral::Float(val)) => format!("{:.2}", val),
-                        Some(SqlLiteral::Integer(val)) => val.to_string(),
-                        Some(SqlLiteral::String(val)) => format!("'{}'", val),
-                        Some(SqlLiteral::Boolean(val)) => val.to_string(),
-                        None => String::new(),
+
+                    let right = if let Some(ref arithmetic) = cond.right_field.arithmetic {
+                        Self::arithmetic_expr_to_string(arithmetic)
+                    } else if cond.right_field.column.is_some() {
+                        cond.right_field.column.as_ref().unwrap().to_string()
+                    } else if cond.right_field.aggregate.is_some() {
+                        let aggregate = match cond.right_field.aggregate.as_ref().unwrap().0 {
+                            AggregateFunction::Max => "max",
+                            AggregateFunction::Min => "min",
+                            AggregateFunction::Sum => "sum",
+                            AggregateFunction::Avg => "avg",
+                            AggregateFunction::Count => "count",
+                        };
+                        format!(
+                            "{}({})",
+                            aggregate,
+                            cond.right_field.aggregate.as_ref().unwrap().1.to_string()
+                        )
+                    } else {
+                        match &cond.right_field.value {
+                            Some(SqlLiteral::Float(val)) => format!("{:.2}", val),
+                            Some(SqlLiteral::Integer(val)) => val.to_string(),
+                            Some(SqlLiteral::String(val)) => format!("'{}'", val),
+                            Some(SqlLiteral::Boolean(val)) => val.to_string(),
+                            None => String::new(),
+                        }
+                    };
+
+                    format!("{} {} {}", left, operator_str, right)
+                },
+                HavingBaseCondition::NullCheck(null_cond) => {
+                    let field = if let Some(ref arithmetic) = null_cond.field.arithmetic {
+                        Self::arithmetic_expr_to_string(arithmetic)
+                    } else {
+                        null_cond.field.column.as_ref().unwrap().to_string()
+                    };
+
+                    match null_cond.operator {
+                        NullOp::IsNull => format!("{} is null", field),
+                        NullOp::IsNotNull => format!("{} is not null", field),
                     }
-                };
-
-                format!("{} {} {}", left, operator_str, right)
-            }
-            HavingConditionType::NullCheck(null_cond) => {
-                let field = if null_cond.field.column.is_some() {
-                    null_cond.field.column.as_ref().unwrap().to_string()
-                } else {
-                    String::new()
-                };
-
-                match null_cond.operator {
-                    NullOp::IsNull => format!("{} is null", field),
-                    NullOp::IsNotNull => format!("{} is not null", field),
                 }
+            },
+            HavingClause::Expression { left, op, right } => {
+                let op_str = match op {
+                    BinaryOp::And => "&&",
+                    BinaryOp::Or => "||",
+                };
+
+                // Handle parentheses for nested expressions
+                let left_needs_parens = matches!(**left, HavingClause::Expression { op: BinaryOp::Or, .. });
+                let right_needs_parens = matches!(**right, HavingClause::Expression { op: BinaryOp::Or, .. });
+
+                let left_str = if left_needs_parens {
+                    format!("({})", Self::having_clause_to_string(left))
+                } else {
+                    Self::having_clause_to_string(left)
+                };
+
+                let right_str = if right_needs_parens {
+                    format!("({})", Self::having_clause_to_string(right))
+                } else {
+                    Self::having_clause_to_string(right)
+                };
+                
+                format!("{} {} {}", left_str, op_str, right_str)
             }
         }
     }
+
+     // Helper method to convert having fields to strings
+     fn having_field_to_string(field: &HavingField) -> String {
+        if let Some((agg_func, col_ref)) = &field.aggregate {
+            // Handle aggregate functions
+            let agg = match agg_func {
+                AggregateFunction::Max => "max",
+                AggregateFunction::Min => "min",
+                AggregateFunction::Sum => "sum",
+                AggregateFunction::Avg => "avg",
+                AggregateFunction::Count => "count",
+            };
+            format!("{}({})", agg, col_ref.to_string())
+        } else if let Some(col) = &field.column {
+            // Handle column references
+            col.to_string()
+        } else if let Some(val) = &field.value {
+            // Handle literal values
+            match val {
+                SqlLiteral::Float(f) => format!("{:.2}", f),
+                SqlLiteral::Integer(i) => i.to_string(),
+                SqlLiteral::String(s) => format!("'{}'", s),
+                SqlLiteral::Boolean(b) => b.to_string(),
+            }
+        } else {
+            String::new()
+        }
+    }
+
 
     fn order_by_clause_to_string(clause: &OrderByClause) -> String {
         let items: Vec<String> = clause.items.iter()

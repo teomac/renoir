@@ -99,10 +99,20 @@ pub struct  GroupByClause {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct  HavingClause {
-    pub condition: HavingConditionType,
-    pub binary_op: Option<BinaryOp>,
-    pub next: Option<Box<HavingClause>>,
+pub enum HavingClause {
+    Base(HavingBaseCondition),
+    Expression {
+        left: Box<HavingClause>,
+        op: BinaryOp,
+        right: Box<HavingClause>
+    }
+}
+
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum HavingBaseCondition {
+    Comparison(HavingCondition),
+    NullCheck(HavingNullCondition)
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -110,12 +120,6 @@ pub struct WhereCondition {
     pub left_field: WhereField,
     pub operator: ComparisonOp,
     pub right_field: WhereField,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum HavingConditionType {
-    Comparison(HavingCondition),
-    NullCheck(HavingNullCondition)
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -187,6 +191,7 @@ pub struct HavingField {
     pub column: Option<ColumnRef>,
     pub value: Option<SqlLiteral>,
     pub aggregate: Option<(AggregateFunction, ColumnRef)>,
+    pub arithmetic: Option<ArithmeticExpr>,
 }
 
 #[derive(Debug, PartialEq, Clone)]

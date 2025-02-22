@@ -195,6 +195,14 @@ impl ConditionParser {
                 };
                 Ok(ArithmeticExpr::Literal(value))
             },
+            Rule::boolean => {
+                let value = match factor.as_str() {
+                    "true" => SqlLiteral::Boolean(true),
+                    "false" => SqlLiteral::Boolean(false),
+                    _ => return Err(SqlParseError::InvalidInput("Invalid boolean value".to_string())),
+                };
+                Ok(ArithmeticExpr::Literal(value))
+            },
             Rule::string_literal => {
                 let inner_str = factor.as_str();
                 let clean_str = inner_str[1..inner_str.len()-1].to_string();
@@ -285,6 +293,18 @@ impl ConditionParser {
                     column: None,
                     value: None,
                     arithmetic: Some(Self::parse_arithmetic_expr(pair)?),
+                })
+            }
+            Rule::boolean =>{
+                let value = match pair.as_str() {
+                    "true" => SqlLiteral::Boolean(true),
+                    "false" => SqlLiteral::Boolean(false),
+                    _ => return Err(SqlParseError::InvalidInput("Invalid boolean value".to_string())),
+                };
+                Ok(WhereField {
+                    column: None,
+                    value: Some(value),
+                    arithmetic: None,
                 })
             }
             Rule::string_literal => {

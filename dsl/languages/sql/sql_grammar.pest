@@ -16,6 +16,8 @@ offset_keyword = { "OFFSET" }
 l_paren = { "(" }
 r_paren = { ")" }
 
+boolean = { "true" | "false"}
+
 variable = @{ ('a'..'z' | "_") ~ ('a'..'z' | '0'..'9' | "_")* }
 number = @{ 
     ('0'..'9')+ // Integer part
@@ -54,6 +56,7 @@ arithmetic_term = {
 arithmetic_factor = {
     number |
     string_literal |
+    boolean |
     table_column |
     variable |
     aggregate_expr
@@ -85,12 +88,15 @@ column_operand = { aggregate_expr | table_column | variable | number }
 parenthesized_expr = { l_paren ~ select_expr ~ r_paren }
 
 // Having clause
-having_condition = { ((table_column | variable | number | string_literal | aggregate_expr) ~ operator ~ (table_column | variable | number | string_literal | aggregate_expr) | ((table_column | variable) ~ null_operator)) }
-having_clause = { having_condition ~ (binary_op ~ having_condition)* }
+having_term = { 
+    l_paren ~ having_expr ~ r_paren |
+    condition
+}
+having_expr = { having_term ~ (binary_op ~ having_term)* }
 
 // Group by 
 group_by_list = { (table_column | variable) ~ ("," ~ (table_column | variable))* }
-group_by_expr = { group_by_keyword ~ group_by_list ~ ( having_keyword ~ having_clause )? }
+group_by_expr = { group_by_keyword ~ group_by_list ~ ( having_keyword ~ having_expr )? }
 
 
 join_condition = { table_column ~ "=" ~ table_column ~ ("AND" ~ table_column ~ "=" ~ table_column)* }
