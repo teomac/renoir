@@ -30,6 +30,7 @@ use crate::dsl::ir::ast_parser::builder::IrASTBuilder;
 
 
 #[derive(Parser)]
+
 #[grammar = "dsl/ir/ir_grammar.pest"] 
 pub struct IrParser;
 
@@ -40,7 +41,7 @@ impl IrParser {
         
         let ast = IrASTBuilder::build_ast_from_pairs(pairs)?;
         IrASTBuilder::validate_ast(&ast)?;
-        println!("Ir AST: {:#?}", ast);
+        //println!("Ir AST: {:#?}", ast);
         Ok(ast)
     }
 }

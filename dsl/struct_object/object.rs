@@ -258,20 +258,51 @@ impl QueryObject {
             for select_clause in &ir_ast.select {
                 match select_clause {
                     SelectClause::Column(col_ref, alias) => {
-                        // Handle SELECT * case
-                        if col_ref.column == "*" {
-                            // Iterate through all tables and their columns
-                            for table_name in &self.table_names_list {
-                                if let Some(struct_map) = self.table_to_struct.get(table_name) {
-                                    // Get the suffix (alias or table name)
-                                    let suffix = self.table_to_alias
-                                        .get(table_name)
-                                        .unwrap_or(table_name);
+                           // Handle SELECT * case
+                           if col_ref.column == "*" {
+                            // Check if there's a GROUP BY clause
+                            if let Some(ref group_by) = ir_ast.group_by {
+                                // If GROUP BY is present, only include the columns from the GROUP BY clause
+                                for group_col in &group_by.columns {
+                                    let table = if let Some(table_ref) = &group_col.table {
+                                        // Use check_alias to properly retrieve the table name
+                                        if self.has_join {
+                                            // Import the check_alias function
+                                            use crate::dsl::ir::r_utils::check_alias;
+                                            check_alias(table_ref, &self)
+                                        } else {
+                                            self.table_names_list[0].clone()
+                                        }
+                                    } else {
+                                        // If table is not specified, use the first table
+                                        self.table_names_list[0].clone()
+                                    };
                                     
-                                    // Add each column with the appropriate suffix
-                                    for (col_name, col_type) in struct_map {
-                                        let full_col_name = format!("{}_{}", col_name, suffix);
-                                        self.result_column_types.insert(full_col_name, col_type.clone());
+                                    if let Some(struct_map) = self.table_to_struct.get(&table) {
+                                        if let Some(col_type) = struct_map.get(&group_col.column) {
+                                            let suffix = self.table_to_alias
+                                                .get(&table)
+                                                .unwrap_or(&table);
+                                            
+                                            let full_col_name = format!("{}_{}", group_col.column, suffix);
+                                            self.result_column_types.insert(full_col_name, col_type.clone());
+                                        }
+                                    }
+                                }
+                            } else {
+                                // If no GROUP BY, include all columns from all tables (existing behavior)
+                                for table_name in &self.table_names_list {
+                                    if let Some(struct_map) = self.table_to_struct.get(table_name) {
+                                        // Get the suffix (alias or table name)
+                                        let suffix = self.table_to_alias
+                                            .get(table_name)
+                                            .unwrap_or(table_name);
+                                        
+                                        // Add each column with the appropriate suffix
+                                        for (col_name, col_type) in struct_map {
+                                            let full_col_name = format!("{}_{}", col_name, suffix);
+                                            self.result_column_types.insert(full_col_name, col_type.clone());
+                                        }
                                     }
                                 }
                             }

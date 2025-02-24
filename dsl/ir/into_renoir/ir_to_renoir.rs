@@ -1,5 +1,11 @@
-use crate::dsl::{ir::{ast_parser::ir_ast_structure::IrAST, into_renoir::{r_condition::process_where_clause, r_source::*}, r_sink::process_select_clauses
-}, struct_object::object::QueryObject};
+use crate::dsl::{
+    ir::{
+        ast_parser::ir_ast_structure::IrAST,
+        into_renoir::{r_condition::process_where_clause, r_source::*},
+        r_sink::process_select_clauses,
+    },
+    struct_object::object::QueryObject,
+};
 
 use super::r_group::process_group_by;
 
@@ -7,13 +13,11 @@ pub struct IrToRenoir;
 
 impl IrToRenoir {
     pub fn convert(ast: &IrAST, query_object: &mut QueryObject) -> String {
-
-        println!("Ir AST: {:#?}", ast);
-
+        //println!("Ir AST: {:#?}", ast);
 
         let mut final_string = String::new();
 
-        let from_clause = &ast.from; 
+        let from_clause = &ast.from;
         final_string.push_str(&format!(
             "{}",
             process_from_clause(&from_clause, query_object)
@@ -27,20 +31,15 @@ impl IrToRenoir {
         }
 
         if let Some(ref group_by) = ast.group_by {
-            final_string.push_str(&format!(
-                "{}",
-                process_group_by(&group_by, query_object)
-            ));
+            //process group by and conditions. Inside this function, there will also be processing of select clauses
+            final_string.push_str(&process_group_by(&group_by, query_object));
+
+        } else {
+            // Process all select clauses together
+            final_string.push_str(&process_select_clauses(&ast.select, query_object));
         }
 
-        // Process all select clauses together
-        final_string.push_str(&process_select_clauses(&ast.select, query_object));
-        
-        
-    
         //println!("Final string: {}", final_string);
         final_string
     }
-
-    
-} 
+}

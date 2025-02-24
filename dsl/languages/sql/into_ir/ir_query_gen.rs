@@ -2,7 +2,7 @@ use crate::dsl::languages::sql::ast_parser::sql_ast_structure::GroupByClause;
 use crate::dsl::languages::sql::ast_parser::sql_ast_structure::WhereField;
 use crate::dsl::languages::sql::ast_parser::sql_ast_structure::WhereBaseCondition;
 use crate::dsl::languages::sql::ast_parser::sql_ast_structure::HavingBaseCondition;
-use crate::dsl::languages::sql::ast_parser::sql_ast_structure::{OrderByClause, OrderDirection, HavingField, HavingClause};
+use crate::dsl::languages::sql::ast_parser::sql_ast_structure::{OrderByClause, OrderDirection, HavingClause};
 use crate::dsl::languages::sql::ast_parser::*;
 use crate::dsl::languages::sql::ast_parser::sql_ast_structure::SqlLiteral;
 use crate::dsl::languages::sql::ast_parser::sql_ast_structure::BinaryOp;
@@ -407,34 +407,6 @@ fn arithmetic_expr_to_string(expr: &ArithmeticExpr) -> String {
                 
                 format!("{} {} {}", left_str, op_str, right_str)
             }
-        }
-    }
-
-     // Helper method to convert having fields to strings
-     fn having_field_to_string(field: &HavingField) -> String {
-        if let Some((agg_func, col_ref)) = &field.aggregate {
-            // Handle aggregate functions
-            let agg = match agg_func {
-                AggregateFunction::Max => "max",
-                AggregateFunction::Min => "min",
-                AggregateFunction::Sum => "sum",
-                AggregateFunction::Avg => "avg",
-                AggregateFunction::Count => "count",
-            };
-            format!("{}({})", agg, col_ref.to_string())
-        } else if let Some(col) = &field.column {
-            // Handle column references
-            col.to_string()
-        } else if let Some(val) = &field.value {
-            // Handle literal values
-            match val {
-                SqlLiteral::Float(f) => format!("{:.2}", f),
-                SqlLiteral::Integer(i) => i.to_string(),
-                SqlLiteral::String(s) => format!("'{}'", s),
-                SqlLiteral::Boolean(b) => b.to_string(),
-            }
-        } else {
-            String::new()
         }
     }
 

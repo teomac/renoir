@@ -3,7 +3,7 @@ pub struct IrAST {
     pub from: FromClause,
     pub select: Vec<SelectClause>,
     pub filter: Option<WhereClause>,
-    pub group_by: Option<GroupByClause>,
+    pub group_by: Option<Group>,
     pub order_by: Option<OrderByClause>,
     pub limit: Option<LimitClause>,
 }
@@ -91,20 +91,23 @@ pub enum WhereConditionType {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct GroupByClause {
+pub struct Group {
     pub columns: Vec<ColumnRef>,
-    pub group_condition: Option<GroupCondition>,
+    pub group_condition: Option<GroupClause>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct GroupCondition {
-    pub condition: GroupConditionType,
-    pub binary_op: Option<BinaryOp>,
-    pub next: Option<Box<GroupCondition>>,
+pub enum GroupClause {
+    Base(GroupBaseCondition),
+    Expression {
+        left: Box<GroupClause>,
+        op: BinaryOp,
+        right: Box<GroupClause>
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum GroupConditionType {
+pub enum GroupBaseCondition {
     Comparison(Condition),
     NullCheck(NullCondition)
 }

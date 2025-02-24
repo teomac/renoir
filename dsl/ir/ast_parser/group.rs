@@ -6,7 +6,7 @@ use crate::dsl::ir::ast_parser::Rule;
 pub struct GroupParser;
 
 impl GroupParser {
-    pub fn parse(pair: Pair<Rule>) -> Result<GroupByClause, IrParseError> {
+    pub fn parse(pair: Pair<Rule>) -> Result<Group, IrParseError> {
         let mut inner = pair.into_inner();
 
         inner.next()
@@ -15,12 +15,11 @@ impl GroupParser {
         // Get the group by list
         let group_list = inner.next()
             .ok_or_else(|| IrParseError::InvalidInput("Missing group columns".to_string()))?;
-        //println!("grouplist: {:?}", group_list);
 
         let mut columns = Vec::new();
-        let mut group_condition= None;
+        let mut group_condition = None;
 
-        //process group columns first
+        // Process group columns first
         for item in group_list.into_inner() {
             columns.push(Self::parse_column_ref(item)?);
         }
@@ -29,243 +28,346 @@ impl GroupParser {
             return Err(IrParseError::InvalidInput("Empty group clause".to_string()));
         }
 
-        // Check for condition
+        // Check for having condition (inside curly braces)
         if let Some(condition) = inner.next() {
             group_condition = Some(Self::parse_group_conditions(condition)?);
         }
         
-        Ok(GroupByClause { 
+        Ok(Group { 
             columns,
             group_condition,
         })
     }
 
 
-
-    //function to parse column ref
-    fn parse_column_ref(pair: Pair<Rule>) -> Result<ColumnRef, IrParseError> {
-        match pair.as_rule() {
-            Rule::qualified_column => {
-                let mut inner = pair.into_inner();
-                let table = inner.next()
-                    .ok_or_else(|| IrParseError::InvalidInput("Missing table name".to_string()))?
-                    .as_str()
-                    .to_string();
-                let column = inner.next()
-                    .ok_or_else(|| IrParseError::InvalidInput("Missing column name".to_string()))?
-                    .as_str()
-                    .to_string();
-                Ok(ColumnRef {
-                    table: Some(table),
-                    column,
-                })
-            }
-            Rule::identifier => {
-                Ok(ColumnRef {
-                    table: None,
-                    column: pair.as_str().to_string(),
-                })
-            }
-            _ => Err(IrParseError::InvalidInput(
-                format!("Expected column reference, got {:?}", pair.as_rule())
-            )),
-        }
-    }
-
-
      //////////////////////////////////////////////////////////////////////////////////
 
     //function to parse having conditions
-    fn parse_group_conditions(pair: Pair<Rule>) -> Result<GroupCondition, IrParseError> {
-        let mut pairs = pair.into_inner().peekable();
-        
-        let first_condition = pairs.next()
-            .ok_or_else(|| IrParseError::InvalidInput("Missing condition".to_string()))?;
-        let mut current = GroupCondition {
-            condition: Self::parse_single_condition(first_condition)?,
-            binary_op: None,
-            next: None
-        };
-        
-        let mut last = &mut current;
-        
-        while let Some(op_pair) = pairs.next() {
-            if let Some(condition_pair) = pairs.next() {
-                let op = match op_pair.as_str().to_uppercase().as_str() {
-                    "AND" => BinaryOp::And,
-                    "OR" => BinaryOp::Or,
-                    _ => return Err(IrParseError::InvalidInput("Invalid binary operator".to_string())),
-                };
-                
-                last.binary_op = Some(op);
-                last.next = Some(Box::new(GroupCondition{
-                    condition: Self::parse_single_condition(condition_pair)?,
-                    binary_op: None,
-                    next: None,
-                }));
-                
-                if let Some(ref mut next) = last.next {
-                    last = next;
-                }
-            }
-        }
-        
-        Ok(current)
+    fn parse_group_conditions(pair: Pair<Rule>) -> Result<GroupClause, IrParseError> {
+        // Get the content between curly braces
+        let mut inner = pair.into_inner();
+        let group_expr = inner.next()
+            .ok_or_else(|| IrParseError::InvalidInput("Empty group condition".to_string()))?;
+            
+        Self::parse_group_expr(group_expr)
     }
 
-    fn parse_single_condition(condition_pair: Pair<Rule>) -> Result<GroupConditionType, IrParseError> {
+    fn parse_group_expr(pair: Pair<Rule>) -> Result<GroupClause, IrParseError> {
+        let mut pairs = pair.into_inner().peekable();
+        
+        let first = pairs.next()
+            .ok_or_else(|| IrParseError::InvalidInput("Expected group term".to_string()))?;
+        
+        let mut left = Self::parse_group_term(first)?;
+
+        // Process any binary operations
+        while let Some(op) = pairs.next() {
+            let op = match op.as_str() {
+                "&&" => BinaryOp::And,
+                "||" => BinaryOp::Or,
+                _ => return Err(IrParseError::InvalidInput(format!("Invalid binary operator: {}", op.as_str())))
+            };
+
+            let right_term = pairs.next()
+                .ok_or_else(|| IrParseError::InvalidInput("Expected right term after operator".to_string()))?;
+
+            let right = Self::parse_group_term(right_term)?;
+
+            left = GroupClause::Expression {
+                left: Box::new(left),
+                op,
+                right: Box::new(right)
+            };
+        }
+
+        Ok(left)
+    }
+
+    fn parse_group_term(pair: Pair<Rule>) -> Result<GroupClause, IrParseError> {
+        match pair.as_rule() {
+            Rule::having_term => {
+                let mut inner = pair.into_inner();
+                let first = inner.next()
+                    .ok_or_else(|| IrParseError::InvalidInput("Empty term".to_string()))?;
+                
+                match first.as_rule() {
+                    Rule::left_parenthesis => {
+                        // Get group_expr between parentheses
+                        let expr = inner.next()
+                            .ok_or_else(|| IrParseError::InvalidInput("Empty parentheses".to_string()))?;
+                        Self::parse_group_expr(expr)
+                    },
+                    Rule::condition => Self::parse_single_condition(first),
+                    _ => Err(IrParseError::InvalidInput(format!("Invalid term type: {:?}", first.as_rule())))
+                }
+            },
+            _ => Err(IrParseError::InvalidInput(format!("Expected having_term, got {:?}", pair.as_rule())))
+        }
+    }
+
+    fn parse_single_condition(condition_pair: Pair<Rule>) -> Result<GroupClause, IrParseError> {
         let mut inner = condition_pair.into_inner();
     
         // Get the first field
-        let left_field_pair = inner.next()
-            .ok_or_else(|| IrParseError::InvalidInput("Missing variable in condition".to_string()))?;
-    
-        let left_field = Self::parse_field(left_field_pair)?;
-        
-        // Get the operator - could be comparison or null
-        let operator_pair = inner.next()
-            .ok_or_else(|| IrParseError::InvalidInput("Missing operator".to_string()))?;
-    
-        match operator_pair.as_rule() {
-            Rule::null_op => {
-                // Handle IS NULL / IS NOT NULL
-                let operator = match operator_pair.as_str().to_uppercase().as_str() {
-                    "IS NULL" => NullOp::IsNull,
-                    "IS NOT NULL" => NullOp::IsNotNull,
-                    _ => return Err(IrParseError::InvalidInput(
-                        format!("Invalid null operator: {}", operator_pair.as_str())
-                    )),
-                };
-    
-                Ok(GroupConditionType::NullCheck(NullCondition {
-                    field: left_field,
-                    operator,
-                }))
-            },
-            Rule::comparison_op => {
-                // Handle regular comparison operators
+        let first = inner.next()
+            .ok_or_else(|| IrParseError::InvalidInput("Missing first part of condition".to_string()))?;
+
+        match first.as_rule() {
+            Rule::arithmetic_expr => {
+                // Handle comparison condition
+                let operator_pair = inner.next()
+                    .ok_or_else(|| IrParseError::InvalidInput("Missing operator".to_string()))?;
+                let right_expr = inner.next()
+                    .ok_or_else(|| IrParseError::InvalidInput("Missing right expression".to_string()))?;
+
                 let operator = match operator_pair.as_str() {
                     ">" => ComparisonOp::GreaterThan,
                     "<" => ComparisonOp::LessThan,
                     ">=" => ComparisonOp::GreaterThanEquals,
                     "<=" => ComparisonOp::LessThanEquals,
-                    "==" | "=" => ComparisonOp::Equal,
-                    "!=" | "<>" => ComparisonOp::NotEqual,
+                    "==" => ComparisonOp::Equal,
+                    "!=" => ComparisonOp::NotEqual,
                     op => return Err(IrParseError::InvalidInput(format!("Invalid operator: {}", op))),
                 };
-    
-                let right_field_pair = inner.next()
-                    .ok_or_else(|| IrParseError::InvalidInput("Missing value in condition".to_string()))?;
-    
-                let right_field = Self::parse_field(right_field_pair)?;
-    
-                Ok(GroupConditionType::Comparison(Condition {
-                    left_field,
+
+                Ok(GroupClause::Base(GroupBaseCondition::Comparison(Condition {
+                    left_field: Self::parse_arithmetic_expr(first)?,
                     operator,
-                    right_field,
-                }))
+                    right_field: Self::parse_arithmetic_expr(right_expr)?,
+                })))
             },
-            _ => Err(IrParseError::InvalidInput("Expected operator".to_string())),
+            Rule::qualified_column | Rule::identifier => {
+                // Check if this is a NULL check
+                let operator_pair = inner.next()
+                    .ok_or_else(|| IrParseError::InvalidInput("Missing operator".to_string()))?;
+
+                if operator_pair.as_rule() == Rule::null_op {
+                    let operator = match operator_pair.as_str() {
+                        "is null" => NullOp::IsNull,
+                        "is not null" => NullOp::IsNotNull,
+                        _ => return Err(IrParseError::InvalidInput(
+                            format!("Invalid null operator: {}", operator_pair.as_str())
+                        )),
+                    };
+
+                    Ok(GroupClause::Base(GroupBaseCondition::NullCheck(NullCondition {
+                        field: Self::parse_field_reference(first)?,
+                        operator,
+                    })))
+                } else {
+                    Err(IrParseError::InvalidInput("Expected null operator".to_string()))
+                }
+            },
+            _ => Err(IrParseError::InvalidInput(
+                format!("Unexpected token in condition: {:?}", first.as_rule())
+            )),
         }
     }
 
-     // New helper function to parse column references
-     fn parse_field(pair: Pair<Rule>) -> Result<ComplexField, IrParseError> {
-        match pair.as_rule() {
-            Rule::value => {
-                let inner = pair.into_inner().next()
-                    .ok_or_else(|| IrParseError::InvalidInput("Empty value".to_string()))?;
 
-                let value = match inner.as_rule() {
-                    Rule::string => {
-                        // Remove the single quotes and store the inner content
-                        let inner_str = inner.as_str();
-                        let clean_str = inner_str[1..inner_str.len()-1].to_string();
-                        IrLiteral::String(clean_str)
-                    },
-                    Rule::number => {
-                        //we try to parse it as a number
-                        inner.as_str().parse::<i64>()
-                            .map(IrLiteral::Integer)
-                            .unwrap_or_else(|_| {
-                                //if it fails, we try to parse as float
-                                inner.as_str().parse::<f64>()
-                                    .map(IrLiteral::Float)
-                                    .expect("Failed to parse number")
-                            })
-                    },
-                    Rule::boolean_keyword => {
-                        match inner.as_str() {
-                            "true" => IrLiteral::Boolean(true),
-                            "false" => IrLiteral::Boolean(false),
-                            _ => unreachable!("Invalid boolean value")
-                        }
-                    },
-                    _ => return Err(IrParseError::InvalidInput(format!("Invalid value type: {:?}", inner.as_rule())))
-                };
-
-                Ok(ComplexField{
+    fn parse_arithmetic_expr(pair: Pair<Rule>) -> Result<ComplexField, IrParseError> {
+        let mut inner = pair.into_inner();
+        let first_term = inner.next()
+            .ok_or_else(|| IrParseError::InvalidInput("Empty arithmetic expression".to_string()))?;
+        
+        let mut result = Self::parse_arithmetic_term(first_term)?;
+        
+        while let Some(op) = inner.next() {
+            if let Some(term) = inner.next() {
+                let next_field = Self::parse_arithmetic_term(term)?;
+                result = ComplexField {
                     column_ref: None,
-                    literal: Some(value),
+                    literal: None,
                     aggregate: None,
-                    nested_expr: None,
-                })
+                    nested_expr: Some(Box::new((result, op.as_str().to_string(), next_field))),
+                };
             }
+        }
+        
+        Ok(result)
+    }
 
+    fn parse_arithmetic_term(pair: Pair<Rule>) -> Result<ComplexField, IrParseError> {
+        let inner = pair.clone().into_inner().next()
+            .ok_or_else(|| IrParseError::InvalidInput("Empty arithmetic term".to_string()))?;
+                
+        match inner.as_rule() {
+            Rule::left_parenthesis => {
+                let expr = pair.into_inner().nth(1)
+                    .ok_or_else(|| IrParseError::InvalidInput("Empty parenthesized expression".to_string()))?;
+                Self::parse_arithmetic_expr(expr)
+            },
+            Rule::arithmetic_factor => Self::parse_arithmetic_factor(inner),
+            _ => Err(IrParseError::InvalidInput(
+                format!("Unexpected token in arithmetic term: {:?}", inner.as_rule())
+            )),
+        }
+    }
+
+    fn parse_arithmetic_factor(pair: Pair<Rule>) -> Result<ComplexField, IrParseError> {
+        let operand = pair.into_inner().next()
+            .ok_or_else(|| IrParseError::InvalidInput("Empty operand".to_string()))?;
+
+        match operand.as_rule() {
+            Rule::value => Ok(ComplexField {
+                column_ref: None,
+                literal: Some(Self::parse_literal(operand)?),
+                aggregate: None,
+                nested_expr: None,
+            }),
+            Rule::qualified_column => Ok(ComplexField {
+                column_ref: Some(Self::parse_column_ref(operand)?),
+                literal: None,
+                aggregate: None,
+                nested_expr: None,
+            }),
+            Rule::identifier => Ok(ComplexField {
+                column_ref: Some(ColumnRef {
+                    table: None,
+                    column: operand.as_str().to_string(),
+                }),
+                literal: None,
+                aggregate: None,
+                nested_expr: None,
+            }),
             Rule::aggregate_expr => {
-                let mut inner = pair.into_inner();
-                let function = match inner.next().unwrap().as_str() {
-                    "sum" => AggregateType::Sum,
-                    "avg" => AggregateType::Avg,
-                    "count" => AggregateType::Count,
-                    "min" => AggregateType::Min,
-                    "max" => AggregateType::Max,
-                    _ => return Err(IrParseError::InvalidInput("Invalid aggregate function".to_string())),
-                };
-                let column = Self::parse_column_ref(inner.next().unwrap())?;
-                Ok(ComplexField{
+                let agg_func = Self::parse_aggregate_function(operand)?;
+                Ok(ComplexField {
                     column_ref: None,
                     literal: None,
-                    aggregate: Some(AggregateFunction{
-                        function,
-                        column
-                    }),
+                    aggregate: Some(agg_func),
                     nested_expr: None,
                 })
-            }
-
-            Rule::qualified_column => {
-                let mut inner = pair.into_inner();
-                let table = inner.next()
-                    .ok_or_else(|| IrParseError::InvalidInput("Missing table name".to_string()))?
-                    .as_str()
-                    .to_string();
-                let column = inner.next()
-                    .ok_or_else(|| IrParseError::InvalidInput("Missing column name".to_string()))?
-                    .as_str()
-                    .to_string();
-                Ok(ComplexField{
-                    column_ref: Some(ColumnRef {
-                        table: Some(table),
-                        column,
-                    }),
-                    literal: None,
-                    aggregate: None,
-                    nested_expr: None,
-                })
-            }
-            Rule::identifier => {
-                Ok(ComplexField{
-                    column_ref: Some(ColumnRef {
-                        table: None,
-                        column: pair.as_str().to_string(),
-                    }),
-                    literal: None,
-                    aggregate: None,
-                    nested_expr: None,
-                })
-            }
-            _ => Err(IrParseError::InvalidInput(format!("Expected column reference, got {:?}", pair.as_rule()))),
+            },
+            _ => Err(IrParseError::InvalidInput(format!(
+                "Invalid operand type: {:?}", operand.as_rule()
+            ))),
         }
     }
+// Helper methods for parsing basic elements
+fn parse_column_ref(pair: Pair<Rule>) -> Result<ColumnRef, IrParseError> {
+    match pair.as_rule() {
+        Rule::qualified_column => {
+            let mut inner = pair.into_inner();
+            let table = inner.next()
+                .ok_or_else(|| IrParseError::InvalidInput("Missing table name".to_string()))?
+                .as_str()
+                .to_string();
+            let column = inner.next()
+                .ok_or_else(|| IrParseError::InvalidInput("Missing column name".to_string()))?
+                .as_str()
+                .to_string();
+            Ok(ColumnRef {
+                table: Some(table),
+                column,
+            })
+        }
+        Rule::identifier => {
+            Ok(ColumnRef {
+                table: None,
+                column: pair.as_str().to_string(),
+            })
+        }
+        _ => Err(IrParseError::InvalidInput(format!(
+            "Expected column reference, got {:?}", pair.as_rule()
+        ))),
+    }
+}
+
+fn parse_aggregate_function(pair: Pair<Rule>) -> Result<AggregateFunction, IrParseError> {
+    let mut inner = pair.into_inner();
+    
+    let func_type = inner.next()
+        .ok_or_else(|| IrParseError::InvalidInput("Missing aggregate function type".to_string()))?;
+    
+    let function = match func_type.as_str() {
+        "max" => AggregateType::Max,
+        "min" => AggregateType::Min,
+        "avg" => AggregateType::Avg,
+        "sum" => AggregateType::Sum,
+        "count" => AggregateType::Count,
+        _ => return Err(IrParseError::InvalidInput(
+            format!("Invalid aggregate function: {}", func_type.as_str())
+        )),
+    };
+
+    let column_ref = inner.next()
+        .ok_or_else(|| IrParseError::InvalidInput("Missing column in aggregate function".to_string()))?;
+
+    let column = if column_ref.as_str() == "*" {
+        ColumnRef {
+            table: None,
+            column: "*".to_string(),
+        }
+    } else {
+        match column_ref.as_rule() {
+            Rule::qualified_column => Self::parse_column_ref(column_ref)?,
+            Rule::identifier => ColumnRef {
+                table: None,
+                column: column_ref.as_str().to_string(),
+            },
+            _ => return Err(IrParseError::InvalidInput(
+                format!("Invalid column reference in aggregate: {:?}", column_ref.as_rule())
+            )),
+        }
+    };
+
+    Ok(AggregateFunction { function, column })
+}
+
+fn parse_literal(pair: Pair<Rule>) -> Result<IrLiteral, IrParseError> {
+    let inner = pair.into_inner().next()
+        .ok_or_else(|| IrParseError::InvalidInput("Empty value".to_string()))?;
+    
+    match inner.as_rule() {
+        Rule::string => {
+            let inner_str = inner.as_str();
+            let clean_str = inner_str[1..inner_str.len()-1].to_string();
+            Ok(IrLiteral::String(clean_str))
+        },
+        Rule::number => {
+            inner.as_str().parse::<i64>()
+                .map(IrLiteral::Integer)
+                .or_else(|_| inner.as_str().parse::<f64>()
+                    .map(IrLiteral::Float))
+                .map_err(|_| IrParseError::InvalidInput("Invalid number".to_string()))
+        },
+        Rule::boolean_keyword => {
+            match inner.as_str() {
+                "true" => Ok(IrLiteral::Boolean(true)),
+                "false" => Ok(IrLiteral::Boolean(false)),
+                _ => Err(IrParseError::InvalidInput("Invalid boolean value".to_string()))
+            }
+        },
+        _ => Err(IrParseError::InvalidInput(format!("Invalid literal type: {:?}", inner.as_rule())))
+    }
+}
+
+fn parse_field_reference(pair: Pair<Rule>) -> Result<ComplexField, IrParseError> {
+    match pair.as_rule() {
+        Rule::qualified_column => {
+            let col_ref = Self::parse_column_ref(pair)?;
+            Ok(ComplexField {
+                column_ref: Some(col_ref),
+                literal: None,
+                aggregate: None,
+                nested_expr: None,
+            })
+        },
+        Rule::identifier => {
+            Ok(ComplexField {
+                column_ref: Some(ColumnRef {
+                    table: None,
+                    column: pair.as_str().to_string(),
+                }),
+                literal: None,
+                aggregate: None,
+                nested_expr: None,
+            })
+        },
+        _ => Err(IrParseError::InvalidInput(format!(
+            "Expected field reference, got {:?}", pair.as_rule()
+        ))),
+    }
+}
 }

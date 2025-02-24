@@ -68,15 +68,17 @@ arithmetic_expr = {
 }
 
 arithmetic_term = {
-    left_parenthesis ~ arithmetic_expr ~ right_parenthesis |
-    arithmetic_operand
+    arithmetic_factor |
+    left_parenthesis ~ arithmetic_expr ~ right_parenthesis 
+   
 }
 
-arithmetic_operand = {
+arithmetic_factor = {
+    aggregate_expr|
     value |
     qualified_column |
-    identifier |
-    aggregate_expr
+    identifier 
+    
 }
 
 // Conditions for WHERE clause
@@ -87,11 +89,11 @@ condition = {
 
 comparison_op = @{ ">=" | "<=" | "!=" | ">" | "<" | "==" | "="}
 where_term = {
-    left_parenthesis ~ where_conditions ~ right_parenthesis |
+    left_parenthesis ~ where_condition ~ right_parenthesis |
     condition
 }
-where_conditions = { where_term ~ (binary_op ~ where_term)* }
-where_clause = { "where" ~ where_conditions }
+where_condition = { where_term ~ (binary_op ~ where_term)* }
+where_clause = { "where" ~ where_condition }
 
 // Select clause expressions
 select_expr = { complex_op | aggregate_expr | qualified_column | identifier }
@@ -125,12 +127,15 @@ binary_op = {
 }
 
 // Group by clause
-having_condition = { (aggregate_expr | value | qualified_column | identifier) ~ ((comparison_op ~ (aggregate_expr | value | qualified_column | identifier)
-                    ) | null_op) }
-having_clause = {"{"  ~ having_condition ~ (binary_op ~ having_condition)* ~ "}"}
+having_term = {
+    left_parenthesis ~ having_expr ~ right_parenthesis |
+    condition
+}
+having_expr = { having_term ~ (binary_op ~ having_term)* }
+having_condition = {"{"  ~ having_expr ~ "}"}
 
 group_columns = { (qualified_column | identifier)  ~ ("," ~ (qualified_column | identifier))* }
-group_clause = { group_keyword  ~  group_columns ~ ( having_clause )? }
+group_clause = { group_keyword  ~  group_columns ~ ( having_condition )? }
 
 
 order_direction = { "asc" | "desc" }

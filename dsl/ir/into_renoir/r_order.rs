@@ -54,14 +54,11 @@ pub fn process_order_by(order_by: &OrderByClause, query_object: &QueryObject) ->
         records.sort_by(|a, b| {
             "#);
 
-    println!("result_column_types: {:?}", query_object.result_column_types);
-
     let length = &order_by_items.len();
 
     // Generate comparison chain for each column
     for i in 0..*length {
         let column_name = order_by_items[i].column.column.clone();
-        println!("column_name: {}", column_name);
         let column_type = query_object.result_column_types.get(&column_name).unwrap();
         let comparison = match (column_type.as_str(), &order_by_items[i].direction) {
             ("f64", OrderDirection::Asc) => format!(

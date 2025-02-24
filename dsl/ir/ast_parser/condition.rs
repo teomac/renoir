@@ -171,7 +171,7 @@ impl ConditionParser {
                     .ok_or_else(|| IrParseError::InvalidInput("Empty parenthesized expression".to_string()))?;
                 Self::parse_arithmetic_expr(expr)
             },
-            Rule::arithmetic_operand => Self::parse_arithmetic_operand(inner),
+            Rule::arithmetic_factor => Self::parse_arithmetic_operand(inner),
             _ => Err(IrParseError::InvalidInput(
                 format!("Unexpected token in arithmetic term: {:?}", inner.as_rule())
             )),

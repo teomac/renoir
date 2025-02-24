@@ -37,11 +37,6 @@ pub fn process_from_clause(from_clause: &FromClause, query_object: &mut QueryObj
             query_object.check_column_validity(&left_col, &left_table_name);
             query_object.check_column_validity(&right_col, &right_table_name);
 
-            
-
-            println!("left_col: {:?}", left_col);
-            println!("right_col: {:?}", right_col);
-
             // check if left and right col need to be swapped
             if left_table_name == *joined_table {
                 let temp = left_col.clone();
@@ -52,9 +47,6 @@ pub fn process_from_clause(from_clause: &FromClause, query_object: &mut QueryObj
                 left_table_name = right_table_name.clone();
                 right_table_name = temp2.clone();
             }
-
-            println!("left_col: {:?}", left_col);
-            println!("right_col: {:?}", right_col);
 
             // Get the correct tuple access for the left table
             let left_access = if i == 0 {

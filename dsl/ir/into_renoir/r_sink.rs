@@ -4,7 +4,10 @@ use crate::dsl::ir::r_utils::check_alias;
 use crate::dsl::ir::{
     AggregateType, IrLiteral, ColumnRef, SelectClause,
 };
+use crate::dsl::ir::AggregateFunction;
 use crate::dsl::struct_object::object::QueryObject;
+use crate::dsl::ir::r_group::{GroupAccumulatorInfo, GroupAccumulatorValue};
+
 
 
 // struct to store the accumulator value
@@ -142,6 +145,8 @@ fn create_aggregate_map(select_clauses: &Vec<SelectClause>, query_object: &Query
              "f64" => tuple_inits.push("0.0".to_string()),
              "i64" => tuple_inits.push("0".to_string()),
              "usize" => tuple_inits.push("0".to_string()),
+             "bool" => tuple_inits.push("false".to_string()),
+             "String" => tuple_inits.push("String::new()".to_string()),
              _ => panic!("Unsupported type: {}", val_type)
          }
      }
@@ -169,8 +174,8 @@ fn create_aggregate_map(select_clauses: &Vec<SelectClause>, query_object: &Query
          }
      }
  
-     let tuple_type = format!("({},)", tuple_types.join(", "));
-     let tuple_init = format!("({},)", tuple_inits.join(", "));
+     let tuple_type = format!("({})", tuple_types.join(", "));
+     let tuple_init = format!("({})", tuple_inits.join(", "));
  
      // Start fold operation
      result.push_str(&format!(".fold({}, |acc: &mut {}, x| {{\n", tuple_init, tuple_type));
@@ -179,6 +184,11 @@ fn create_aggregate_map(select_clauses: &Vec<SelectClause>, query_object: &Query
      let mut update_code = String::new();
 
    for (value, (pos, _)) in acc_info.value_positions.iter() {
+       let mut index_acc = format!(".{}", pos);
+
+       if acc_info.value_positions.len() == 1{
+           index_acc = String::new(); 
+       }
        match value {
            AccumulatorValue::Aggregate(agg_type, col) => {
                let col_access = if query_object.has_join {
@@ -194,30 +204,30 @@ fn create_aggregate_map(select_clauses: &Vec<SelectClause>, query_object: &Query
                match agg_type {
                    AggregateType::Count => {
                        if col.column == "*" {
-                           update_code.push_str(&format!("    acc.{} += 1;\n", pos));
+                           update_code.push_str(&format!("    acc{} += 1;\n", pos));
                        } else {
                            update_code.push_str(&format!(
-                               "    if {}.is_some() {{ acc.{} += 1.0; }}\n",
-                               col_access, pos
+                               "    if {}.is_some() {{ acc{} += 1.0; }}\n",
+                               col_access, index_acc
                            ));
                        }
                    },
                    AggregateType::Sum => {
                        update_code.push_str(&format!(
-                           "    if let Some(val) = {} {{ acc.{} += val; }}\n",
-                           col_access, pos
+                           "    if let Some(val) = {} {{ acc{} += val; }}\n",
+                           col_access, index_acc
                        ));
                    },
                    AggregateType::Max => {
                        update_code.push_str(&format!(
-                           "    if let Some(val) = {} {{ acc.{} = acc.{}.max(val); }}\n",
-                           col_access, pos, pos
+                           "    if let Some(val) = {} {{ acc{} = acc{}.max(val); }}\n",
+                           col_access, index_acc, index_acc
                        ));
                    },
                    AggregateType::Min => {
                        update_code.push_str(&format!(
-                           "    if let Some(val) = {} {{ acc.{} = acc.{}.min(val); }}\n",
-                           col_access, pos, pos
+                           "    if let Some(val) = {} {{ acc{} = acc{}.min(val); }}\n",
+                           col_access, index_acc, index_acc
                        ));
                    },
                    AggregateType::Avg => {} // Handled through Sum and Count
@@ -235,8 +245,8 @@ fn create_aggregate_map(select_clauses: &Vec<SelectClause>, query_object: &Query
                };
 
                update_code.push_str(&format!(
-                   "    if let Some(val) = {} {{ acc.{} = val; }}\n",
-                   col_access, pos
+                   "    if let Some(val) = {} {{ acc{} = val; }}\n",
+                   col_access, index_acc
                ));
            }
        }
@@ -265,7 +275,13 @@ fn create_aggregate_map(select_clauses: &Vec<SelectClause>, query_object: &Query
                    _ => {
                        let pos = acc_info.value_positions.get(&AccumulatorValue::Aggregate(
                            agg.function.clone(), agg.column.clone())).unwrap().0;
-                       format!("Some(acc.{})", pos)
+                        //if there is only one acc, do not use .0
+                          if acc_info.value_positions.len() == 1{
+                            format!("Some(acc)")}
+                            else{
+                                format!("Some(acc.{})", pos)
+                            }
+                       
                    }
                }
            },
@@ -469,22 +485,26 @@ fn process_complex_field_for_accumulator(
 fn create_select_star_map(query_object: &QueryObject) -> String {
     let mut result = String::from(".map(|x| OutputStruct { ");
 
-
     if query_object.has_join {
         // Handle joined case - need to use tuple access
         let tables = query_object.get_all_table_names();
         let empty_string = "".to_string();
 
         //for table in tables, build all the columns mapping in the .map
+        let mut offset: usize=0;
 
         for table_index in 0..tables.len() {
             let table = &tables[table_index];
             let tuple_access = query_object.table_to_tuple_access.get(table).unwrap_or_else(|| &empty_string);
             let table_struct = query_object.table_to_struct.get(table).unwrap();
 
+        
             for (column_index, field_name) in table_struct.iter().enumerate() {
-                result.push_str(&format!("{}: x{}.{}, ", query_object.result_column_types.get_index(table_index + column_index).unwrap().0, tuple_access, field_name.0));
+                result.push_str(&format!("{}: x{}.{}, ", query_object.result_column_types.get_index(offset + column_index).unwrap().0, tuple_access, field_name.0));
             }
+
+            offset += table_struct.len();
+
         }
     } else {
         // Simple case - direct access
@@ -730,4 +750,383 @@ fn has_aggregate_in_complex_field(field: &ComplexField) -> bool {
     }
 
     false
+}
+
+pub fn collect_sink_aggregates(query_object: &QueryObject) -> Vec<AggregateFunction> {
+    let mut aggregates = Vec::new();
+
+    for clause in query_object.ir_ast.clone().unwrap().select{
+        match clause {
+            SelectClause::Aggregate(agg, _) => {
+                aggregates.push(AggregateFunction {
+                    function: agg.function.clone(),
+                    column: agg.column.clone(),
+                });
+            },
+            SelectClause::ComplexValue(field, _) => {
+                collect_aggregates_in_complex_field(&field, &mut aggregates);
+            },
+            _ => {}
+        }
+    }
+
+    aggregates
+}
+
+fn collect_aggregates_in_complex_field(field: &ComplexField, aggregates: &mut Vec<AggregateFunction>) {
+    if let Some(ref nested) = field.nested_expr {
+        let (left, _, right) = &**nested;
+        collect_aggregates_in_complex_field(left, aggregates);
+        collect_aggregates_in_complex_field(right, aggregates);
+    } else if let Some(ref agg) = field.aggregate {
+        aggregates.push(AggregateFunction {
+            function: agg.function.clone(),
+            column: agg.column.clone(),
+        });
+    }
+}
+
+
+///////////////////////////////////////////////////////////////////
+/// Logic to process the select in the case of group by
+
+pub fn process_grouping_projections(query_object: &QueryObject, acc_info: &GroupAccumulatorInfo) -> String {
+    let mut result = String::new();
+    
+    // Start the map operation
+    result.push_str(".map(|x| OutputStruct {\n");
+    
+    // Process each select clause
+    for (i, clause) in query_object.ir_ast.as_ref().unwrap().select.iter().enumerate() {
+        let field_name = query_object.result_column_types.get_index(i).unwrap().0;
+        
+        match clause {
+            SelectClause::Column(col_ref, _) => {
+                //case select *, we call the create_select_star_group function
+                if col_ref.column == "*" {
+                    return create_select_star_group(query_object);
+                }
+
+
+                // For columns, check if they are part of the GROUP BY key
+                if let Some(group_by) = &query_object.ir_ast.as_ref().unwrap().group_by {
+                    let key_position = group_by.columns.iter()
+                        .position(|c| c.column == col_ref.column && c.table == col_ref.table);
+                    
+                    if let Some(pos) = key_position {
+                        // Column is in the GROUP BY key
+                        let value = if group_by.columns.len() == 1 {
+                            format!("x.0.clone()")
+                        } else {
+                            format!("x.0.{}.clone()", pos)
+                        };
+                        result.push_str(&format!("    {}: {},\n", field_name, value));
+                    } else {
+                        // Column not in GROUP BY - this is an error
+                        panic!("Column {} not in GROUP BY clause", col_ref.column);
+                    }
+                } else {
+                    panic!("GROUP BY clause missing but process_grouping_projections was called");
+                }
+            },
+            SelectClause::Aggregate(agg, _) => {
+                // For aggregates, access them from the accumulator
+                let value = match agg.function {
+                    AggregateType::Avg => {
+                        // For AVG, we need both sum and count positions
+                        let sum_key = GroupAccumulatorValue::Aggregate(AggregateType::Sum, agg.column.clone());
+                        let count_key = GroupAccumulatorValue::Aggregate(AggregateType::Count, agg.column.clone());
+                        
+                        let sum_pos = acc_info.agg_positions.get(&sum_key)
+                            .expect("SUM for AVG not found in accumulator").0;
+                        let count_pos = acc_info.agg_positions.get(&count_key)
+                            .expect("COUNT for AVG not found in accumulator").0;
+                        
+                        format!("Some(x.1.{} as f64 / x.1.{} as f64)", sum_pos, count_pos)
+                    },
+                    _ => {
+                        let agg_key = GroupAccumulatorValue::Aggregate(agg.function.clone(), agg.column.clone());
+                        if let Some((pos, _)) = acc_info.agg_positions.get(&agg_key) {
+                            format!("Some(x.1.{})", pos)
+                        } else {
+                            panic!("Aggregate {:?} not found in accumulator", agg);
+                        }
+                    }
+                };
+                result.push_str(&format!("    {}: {},\n", field_name, value));
+            },
+            SelectClause::ComplexValue(field, _) => {
+                // For complex expressions, recursively process them
+                let value = format!("Some({})", process_complex_field_for_group(field, query_object, acc_info));
+                result.push_str(&format!("    {}: {},\n", field_name, value));
+            }
+        }
+    }
+    
+    // Close the map operation
+    result.push_str("})");
+    
+    result
+}
+
+// Helper function to process complex fields in the context of GROUP BY
+fn process_complex_field_for_group(
+    field: &ComplexField, 
+    query_object: &QueryObject,
+    acc_info: &GroupAccumulatorInfo
+) -> String {
+    if let Some(ref nested) = field.nested_expr {
+        // Handle nested expression (left_field OP right_field)
+        let (left, op, right) = &**nested;
+        
+        let left_type = query_object.get_complex_field_type(left);
+        let right_type = query_object.get_complex_field_type(right);
+
+        // Different types case
+        if left_type != right_type {
+            if (left_type == "f64" || left_type == "i64") && (right_type == "f64" || right_type == "i64") {
+                // Division always results in f64
+                if op == "/" {
+                    return format!("({} as f64) {} ({} as f64)",
+                        process_complex_field_for_group(left, query_object, acc_info),
+                        op,
+                        process_complex_field_for_group(right, query_object, acc_info)
+                    );
+                }
+
+                // Special handling for power operation (^)
+                if op == "^" {
+                    let left_expr = process_complex_field_for_group(left, query_object, acc_info);
+                    let right_expr = process_complex_field_for_group(right, query_object, acc_info);
+                    
+                    // If either operand is f64, use powf
+                    if left_type == "f64" || right_type == "f64" {
+                        return format!("({}).powf({} as f64)", 
+                            if left_type == "i64" { format!("({} as f64)", left_expr) } else { left_expr },
+                            right_expr
+                        );
+                    } else {
+                        // Both are integers, use pow
+                        return format!("({}).pow({} as u32)", 
+                            left_expr,
+                            right_expr
+                        );
+                    }
+                }
+
+                let left_expr = process_complex_field_for_group(left, query_object, acc_info);
+                let right_expr = process_complex_field_for_group(right, query_object, acc_info);
+                
+                // Add as f64 to integer literals when needed
+                let processed_left = if let Some(ref lit) = left.literal {
+                    if let IrLiteral::Integer(_) = lit {
+                        format!("{} as f64", left_expr)
+                    } else {
+                        left_expr
+                    }
+                } else {
+                    left_expr
+                };
+                
+                let processed_right = if let Some(ref lit) = right.literal {
+                    if let IrLiteral::Integer(_) = lit {
+                        format!("{} as f64", right_expr)
+                    } else {
+                        right_expr
+                    }
+                } else {
+                    right_expr
+                };
+
+                //if left is i64 and right is float or vice versa, convert the i64 to f64
+                if left_type == "i64" && right_type == "f64" {
+                    return format!("({} as f64 {} {})", 
+                        processed_left,
+                        op,
+                        processed_right
+                    );
+                }
+                else if left_type == "f64" && right_type == "i64" {
+                    return format!("({} {} {} as f64)", 
+                        processed_left,
+                        op,
+                        processed_right
+                    );
+                }
+
+                return format!("({} {} {})", 
+                    processed_left,
+                    op,
+                    processed_right
+                );
+            } else {
+                panic!("Invalid arithmetic expression - incompatible types: {} and {}", left_type, right_type);
+            }
+        } else {
+            //case same type
+            //if operation is plus, minus, multiply, division, or power and types are not numeric, panic
+            if op == "+" || op == "-" || op == "*" || op == "/" || op == "^" {
+                if left_type != "f64" && left_type != "i64" {
+                    panic!("Invalid arithmetic expression - non-numeric types: {} and {}", left_type, right_type);
+                }
+            }
+
+            // Division always results in f64
+            if op == "/" {
+                return format!("({} as f64) {} ({} as f64)",
+                    process_complex_field_for_group(left, query_object, acc_info),
+                    op,
+                    process_complex_field_for_group(right, query_object, acc_info)
+                );
+            }
+
+            // Special handling for power operation (^)
+            if op == "^" {
+                let left_expr = process_complex_field_for_group(left, query_object, acc_info);
+                let right_expr = process_complex_field_for_group(right, query_object, acc_info);
+                
+                // If both are f64, use powf
+                if left_type == "f64" {
+                    return format!("({}).powf({})", 
+                        left_expr,
+                        right_expr
+                    );
+                } else {
+                    // Both are integers, use pow
+                    return format!("({}).pow({} as u32)", 
+                        left_expr,
+                        right_expr
+                    );
+                }
+            }
+
+            // Regular arithmetic with same types
+            format!("({} {} {})", 
+                process_complex_field_for_group(left, query_object, acc_info),
+                op,
+                process_complex_field_for_group(right, query_object, acc_info)
+            )
+        }
+    } else if let Some(ref col) = field.column_ref {
+        // Handle column reference - must be in GROUP BY key
+        if let Some(group_by) = &query_object.ir_ast.as_ref().unwrap().group_by {
+            let key_position = group_by.columns.iter()
+                .position(|c| c.column == col.column && c.table == col.table);
+            
+            if let Some(pos) = key_position {
+                // Column is in the GROUP BY key
+                if group_by.columns.len() == 1 {
+                    format!("x.0.unwrap()")
+                } else {
+                    format!("x.0.{}.unwrap()", pos)
+                }
+            } else {
+                panic!("Column {} not in GROUP BY clause", col.column);
+            }
+        } else {
+            panic!("GROUP BY clause missing but process_complex_field_for_group was called");
+        }
+    } else if let Some(ref lit) = field.literal {
+        // Handle literal values
+        match lit {
+            IrLiteral::Integer(i) => i.to_string(),
+            IrLiteral::Float(f) => format!("{:.2}", f),
+            IrLiteral::String(s) => format!("\"{}\"", s),
+            IrLiteral::Boolean(b) => b.to_string(),
+            IrLiteral::ColumnRef(col) => {
+                // This is a column reference - handle like above
+                if let Some(group_by) = &query_object.ir_ast.as_ref().unwrap().group_by {
+                    let key_position = group_by.columns.iter()
+                        .position(|c| c.column == col.column && c.table == col.table);
+                    
+                    if let Some(pos) = key_position {
+                        // Column is in the GROUP BY key
+                        if group_by.columns.len() == 1 {
+                            format!("x.0.unwrap()")
+                        } else {
+                            format!("x.0.{}.unwrap()", pos)
+                        }
+                    } else {
+                        panic!("Column {} not in GROUP BY clause", col.column);
+                    }
+                } else {
+                    panic!("GROUP BY clause missing but process_complex_field_for_group was called");
+                }
+            }
+        }
+    } else if let Some(ref agg) = field.aggregate {
+        // Handle aggregate functions
+        match agg.function {
+            AggregateType::Avg => {
+                // For AVG, we need both sum and count positions
+                let sum_key = GroupAccumulatorValue::Aggregate(AggregateType::Sum, agg.column.clone());
+                let count_key = GroupAccumulatorValue::Aggregate(AggregateType::Count, agg.column.clone());
+                
+                let sum_pos = acc_info.agg_positions.get(&sum_key)
+                    .expect("SUM for AVG not found in accumulator").0;
+                let count_pos = acc_info.agg_positions.get(&count_key)
+                    .expect("COUNT for AVG not found in accumulator").0;
+                
+                format!("(x.1.{} as f64 / x.1.{} as f64)", sum_pos, count_pos)
+            },
+            _ => {
+                let agg_key = GroupAccumulatorValue::Aggregate(agg.function.clone(), agg.column.clone());
+                if let Some((pos, _)) = acc_info.agg_positions.get(&agg_key) {
+                    format!("x.1.{}", pos)
+                } else {
+                    panic!("Aggregate {:?} not found in accumulator", agg);
+                }
+            }
+        }
+    } else {
+        panic!("Invalid ComplexField - no valid content");
+    }
+}
+
+fn create_select_star_group(query_object: &QueryObject) -> String {
+    let mut result = String::new();
+    let group_by = query_object.ir_ast.as_ref().unwrap().group_by.as_ref().unwrap();
+    
+    if !group_by.columns.is_empty() {
+        // Handle different cases based on number of group keys
+        if group_by.columns.len() == 1 {
+            result.push_str(".map(|x| OutputStruct { ");
+            
+            // For single column, x.0 directly contains the key value
+            let key_col = &group_by.columns[0];
+            
+            // Find the corresponding result column name
+            for (key, _) in &query_object.result_column_types {
+                if key.contains(&key_col.column) {
+                    result.push_str(&format!("{}: x.0.clone()", key));
+                    break;
+                }
+            }
+            
+            result.push_str(" })");
+        } else {
+            // For multiple columns, x.0 is a tuple of key values
+            result.push_str(".map(|x| OutputStruct { ");
+            
+            let mut field_assignments = Vec::new();
+            
+            // Process each key column and find matching result column names
+            for (i, key_col) in group_by.columns.iter().enumerate() {
+                for (key, _) in &query_object.result_column_types {
+                    if key.contains(&key_col.column) {
+                        field_assignments.push(format!("{}: x.0.{}.clone()", key, i));
+                        break;
+                    }
+                }
+            }
+            
+            result.push_str(&field_assignments.join(", "));
+            result.push_str(" })");
+        }
+    } else {
+        // Fallback for empty group by (should not happen, but just in case)
+        result.push_str(".map(|_| OutputStruct { })");
+    }
+    
+    result
 }
