@@ -97,14 +97,12 @@ impl SinkParser {
                     .ok_or_else(|| IrParseError::InvalidInput("Missing field name".to_string()))?
                     .as_str()
                     .to_string();
-                println!("table: {}, column: {}", table, column);
                 Ok(ColumnRef {
                     table: Some(table),
                     column,
                 })
             }
             Rule::identifier | Rule::asterisk => {
-                println!("identifier column: {}", pair.as_str());
                 Ok(ColumnRef {
                     table: None,
                     column: pair.as_str().to_string(),

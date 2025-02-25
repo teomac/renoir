@@ -792,6 +792,8 @@ fn collect_aggregates_in_complex_field(field: &ComplexField, aggregates: &mut Ve
 
 pub fn process_grouping_projections(query_object: &QueryObject, acc_info: &GroupAccumulatorInfo) -> String {
     let mut result = String::new();
+    let is_single_agg: bool = acc_info.agg_positions.len() == 1;
+
     
     // Start the map operation
     result.push_str(".map(|x| OutputStruct {\n");
@@ -847,7 +849,9 @@ pub fn process_grouping_projections(query_object: &QueryObject, acc_info: &Group
                     _ => {
                         let agg_key = GroupAccumulatorValue::Aggregate(agg.function.clone(), agg.column.clone());
                         if let Some((pos, _)) = acc_info.agg_positions.get(&agg_key) {
-                            format!("Some(x.1.{})", pos)
+                            format!("Some(x.1{})", 
+                            if !is_single_agg { format!(".{}", pos) } else { String::new() })
+                            
                         } else {
                             panic!("Aggregate {:?} not found in accumulator", agg);
                         }
@@ -875,6 +879,7 @@ fn process_complex_field_for_group(
     query_object: &QueryObject,
     acc_info: &GroupAccumulatorInfo
 ) -> String {
+    let is_single_agg: bool = acc_info.agg_positions.len() == 1;
     if let Some(ref nested) = field.nested_expr {
         // Handle nested expression (left_field OP right_field)
         let (left, op, right) = &**nested;
@@ -1072,7 +1077,9 @@ fn process_complex_field_for_group(
             _ => {
                 let agg_key = GroupAccumulatorValue::Aggregate(agg.function.clone(), agg.column.clone());
                 if let Some((pos, _)) = acc_info.agg_positions.get(&agg_key) {
-                    format!("x.1.{}", pos)
+                    format!("x.1{}", 
+                    if !is_single_agg {format!(".{}", pos)}
+                    else {"".to_string()})
                 } else {
                     panic!("Aggregate {:?} not found in accumulator", agg);
                 }

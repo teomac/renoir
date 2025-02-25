@@ -334,7 +334,8 @@ impl QueryObject {
                     
                     SelectClause::Aggregate(agg_func, alias) => {
                         //check if the column is valid
-                        self.check_column_validity(&agg_func.column, &String::new());
+                        if agg_func.column.column != "*" {
+                        self.check_column_validity(&agg_func.column, &String::new());}
 
                         let col_name = if let Some(alias_name) = alias {
                             self.get_unique_name(alias_name, &mut used_names)
