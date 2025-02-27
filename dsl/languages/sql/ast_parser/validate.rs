@@ -19,7 +19,7 @@ fn validate_order_by(ast: &SqlAST) -> Result<(), SqlParseError> {
         let mut select_columns = Vec::new();
         
         // Extract column references and also collect any referenceable columns from complex expressions
-        for select_clause in &ast.select {
+        for select_clause in &ast.select.select {
             match &select_clause.selection {
                 SelectType::Simple(col_ref) => {
                     select_columns.push(col_ref.clone());
@@ -36,12 +36,12 @@ fn validate_order_by(ast: &SqlAST) -> Result<(), SqlParseError> {
         }
 
         // Also get column aliases from SELECT clause for matching
-        let select_aliases: Vec<String> = ast.select.iter()
+        let select_aliases: Vec<String> = ast.select.select.iter()
             .filter_map(|s| s.alias.clone())
             .collect();
 
         // Check if SELECT contains asterisk (SELECT *) - in that case any column is valid for ORDER BY
-        let has_asterisk = ast.select.iter().any(|s| {
+        let has_asterisk = ast.select.select.iter().any(|s| {
             match &s.selection {
                 SelectType::Simple(col_ref) => col_ref.column == "*",
                 _ => false

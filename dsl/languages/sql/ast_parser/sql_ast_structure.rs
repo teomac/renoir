@@ -1,6 +1,6 @@
 #[derive(Debug, PartialEq, Clone)]
 pub struct SqlAST {
-    pub select: Vec<SelectClause>,
+    pub select: SelectClause,
     pub from: FromClause,
     pub filter: Option<WhereClause>,
     pub group_by: Option<GroupByClause>,
@@ -10,6 +10,12 @@ pub struct SqlAST {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct SelectClause {
+    pub distinct: bool,
+    pub select: Vec<SelectColumn>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct SelectColumn {
     pub selection: SelectType,
     pub alias: Option<String>,
 }

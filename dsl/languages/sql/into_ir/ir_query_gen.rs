@@ -62,8 +62,14 @@ impl SqlToIr {
         }
 
         // SELECT clause - handle multiple columns
+        let select_keyword = if sql_ast.select.distinct {
+            "select_distinct"
+        } else {
+            "select"
+        };
+
         let select_strs: Vec<String> = sql_ast
-            .select
+            .select.select
             .iter()
             .map(|select_clause| {
                 let selection_str = match &select_clause.selection {
@@ -97,7 +103,7 @@ impl SqlToIr {
             })
             .collect();
 
-        parts.push(format!("select {}", select_strs.join(", ")));
+        parts.push(format!("{} {}", select_keyword, select_strs.join(", ")));
 
         if let Some(order_by_clause) = &sql_ast.order_by {
             parts.push(format!(

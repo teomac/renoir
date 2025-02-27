@@ -13,7 +13,7 @@ pub use sql_ast_structure::{
     SqlAST, 
     WhereCondition, 
     FromClause, 
-    SelectClause, 
+    SelectColumn, 
     WhereClause, 
     ComparisonOp as SqlOperator,
     SelectType,

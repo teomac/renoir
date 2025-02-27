@@ -1,6 +1,7 @@
 WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 
 select = { "SELECT" }
+distinct_keyword = { "DISTINCT" }
 from = { "FROM" }
 where_keyword = { "WHERE" }
 as_keyword = { "AS" }
@@ -120,7 +121,7 @@ offset_clause = { offset_keyword ~ number }
 
 query = {
     SOI ~
-    select ~ (asterisk| column_list) ~
+    select ~ distinct_keyword? ~ (asterisk| column_list) ~
     from_expr ~
     where_expr? ~
     group_by_expr? ~

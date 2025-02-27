@@ -1,10 +1,10 @@
+use super::error::SqlParseError;
 use super::limit::LimitParser;
 use super::order::OrderParser;
+use super::sql_ast_structure::*;
 use super::validate::validate_ast;
-use super::{sql_ast_structure::*, validate};
-use super::error::SqlParseError;
 use super::{
-    where_clause::ConditionParser, from::FromParser, group_by::GroupByParser, select::SelectParser,
+    from::FromParser, group_by::GroupByParser, select::SelectParser, where_clause::ConditionParser,
 };
 use crate::dsl::languages::sql::ast_parser::Rule;
 use pest::iterators::Pairs;
@@ -19,14 +19,18 @@ impl SqlASTBuilder {
                     let mut inner = pair.into_inner();
                     inner.next(); // Skip SELECT keyword
 
+                    let distinct = inner
+                        .next()
+                        .map_or(false, |token| token.as_rule() == Rule::distinct_keyword);
+
                     let select_part = inner.next().ok_or_else(|| {
                         SqlParseError::InvalidInput("Missing SELECT clause".to_string())
                     })?;
 
                     // Parse the select part differently based on if it's asterisk or column_list
-                    let select_clauses = match select_part.as_rule() {
+                    let select_columns = match select_part.as_rule() {
                         Rule::asterisk => {
-                            vec![SelectClause {
+                            vec![SelectColumn {
                                 selection: SelectParser::parse(select_part)?,
                                 alias: None,
                             }]
@@ -57,7 +61,7 @@ impl SqlASTBuilder {
                                             None
                                         };
 
-                                    Ok(SelectClause { selection, alias })
+                                    Ok(SelectColumn { selection, alias })
                                 })
                                 .collect::<Result<Vec<_>, _>>()?
                         }
@@ -66,6 +70,11 @@ impl SqlASTBuilder {
                                 "Invalid SELECT clause".to_string(),
                             ))
                         }
+                    };
+
+                    let select_clause = SelectClause {
+                        distinct,
+                        select: select_columns,
                     };
 
                     let from_part = inner.next().ok_or_else(|| {
@@ -93,7 +102,7 @@ impl SqlASTBuilder {
                     }
 
                     let ast = SqlAST {
-                        select: select_clauses,
+                        select: select_clause,
                         from: FromParser::parse(from_part)?,
                         filter: if let Some(where_expr) = where_part {
                             Some(ConditionParser::parse(where_expr)?)
