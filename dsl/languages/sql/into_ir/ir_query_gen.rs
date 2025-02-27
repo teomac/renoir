@@ -1,15 +1,4 @@
-use crate::dsl::languages::sql::ast_parser::sql_ast_structure::GroupByClause;
-use crate::dsl::languages::sql::ast_parser::sql_ast_structure::WhereField;
-use crate::dsl::languages::sql::ast_parser::sql_ast_structure::WhereBaseCondition;
-use crate::dsl::languages::sql::ast_parser::sql_ast_structure::HavingBaseCondition;
-use crate::dsl::languages::sql::ast_parser::sql_ast_structure::{OrderByClause, OrderDirection, HavingClause};
-use crate::dsl::languages::sql::ast_parser::*;
-use crate::dsl::languages::sql::ast_parser::sql_ast_structure::SqlLiteral;
-use crate::dsl::languages::sql::ast_parser::sql_ast_structure::BinaryOp;
-use crate::dsl::languages::sql::ast_parser::sql_ast_structure::ComparisonOp;
-use crate::dsl::languages::sql::ast_parser::sql_ast_structure::NullOp;
-use crate::dsl::languages::sql::ast_parser::sql_ast_structure::ComplexField;
-use crate::dsl::languages::sql::ast_parser::sql_ast_structure::ArithmeticExpr;
+use crate::dsl::languages::sql::ast_parser::sql_ast_structure::*;
 
 pub struct SqlToIr;
 
@@ -30,16 +19,26 @@ impl SqlToIr {
                 Some(alias) => format!("{} as {}", join.join_scan.variable, alias),
                 None => join.join_scan.variable.clone(),
             };
-        
+
             // Create all join conditions
-            let conditions: Vec<String> = join.join_expr.conditions.iter()
+            let conditions: Vec<String> = join
+                .join_expr
+                .conditions
+                .iter()
                 .map(|cond| format!("{} == {}", cond.left_var, cond.right_var))
                 .collect();
-        
+
+            let join_type_str = match join.join_type {
+                JoinType::Inner => "", // Default join is inner, so no prefix needed
+                JoinType::Left => "left ",
+                JoinType::Outer => "outer ",
+            };
+
             from_str.push_str(&format!(
-                " join {} in input{} on {}",
-                join_table, 
-                input_num, 
+                " {}join {} in input{} on {}",
+                join_type_str,
+                join_table,
+                input_num,
                 conditions.join(" && ")
             ));
         }
@@ -63,29 +62,31 @@ impl SqlToIr {
         }
 
         // SELECT clause - handle multiple columns
-        let select_strs: Vec<String> = sql_ast.select.iter().map(|select_clause| {
-            let selection_str = match &select_clause.selection {
-                SelectType::Simple(col_ref) => {
-                    col_ref.to_string()
-                },
-                SelectType::Aggregate(func, col_ref) => {
-                    let agg = match func {
-                        AggregateFunction::Max => "max",
-                        AggregateFunction::Min => "min",
-                        AggregateFunction::Sum => "sum",
-                        AggregateFunction::Avg => "avg",
-                        AggregateFunction::Count => "count",
-                    };
-                    format!("{}({})", agg, col_ref.to_string())
-                },
-                SelectType::ComplexValue(left, op, right) => {
-                    format!("{} {} {}", 
-                    Self::convert_complex_field(left),
-                    op,
-                    Self::convert_complex_field(right)
-                ).trim().to_string()
-                }
-            };
+        let select_strs: Vec<String> = sql_ast
+            .select
+            .iter()
+            .map(|select_clause| {
+                let selection_str = match &select_clause.selection {
+                    SelectType::Simple(col_ref) => col_ref.to_string(),
+                    SelectType::Aggregate(func, col_ref) => {
+                        let agg = match func {
+                            AggregateFunction::Max => "max",
+                            AggregateFunction::Min => "min",
+                            AggregateFunction::Sum => "sum",
+                            AggregateFunction::Avg => "avg",
+                            AggregateFunction::Count => "count",
+                        };
+                        format!("{}({})", agg, col_ref.to_string())
+                    }
+                    SelectType::ComplexValue(left, op, right) => format!(
+                        "{} {} {}",
+                        Self::convert_complex_field(left),
+                        op,
+                        Self::convert_complex_field(right)
+                    )
+                    .trim()
+                    .to_string(),
+                };
 
                 // Add alias if present
                 if let Some(alias) = &select_clause.alias {
@@ -117,170 +118,181 @@ impl SqlToIr {
         parts.join("\n")
     }
 
-// Converts a WHERE clause from the SQL AST to its equivalent IR string representation.
-/// This function handles nested expressions, comparison operations, and NULL checks
-/// while maintaining proper operator precedence.
-///
-/// # Arguments
-/// * `clause` - The WhereClause AST node to convert
-///
-/// # Returns
-/// A String containing the IR representation of the WHERE clause
-///
-/// # Examples
-/// ```text
-/// SQL Input: "WHERE (a > 10 OR b < 20) AND c = 30"
-/// IR Output: "a > 10 || b < 20 && c == 30"
-///
-/// SQL Input: "WHERE x IS NULL AND (y > 100 OR z <= 50)"
-/// IR Output: "x is null && (y > 100 || z <= 50)"
-/// ```
-fn where_clause_to_string(clause: &WhereClause) -> String {
-    match clause {
-        WhereClause::Base(base_condition) => match base_condition {
-            WhereBaseCondition::Comparison(cond) => {
-                let left = Self::convert_where_field(&cond.left_field);
-                let right = Self::convert_where_field(&cond.right_field);
-                
-                let op = match cond.operator {
-                    ComparisonOp::Equal => "==",
-                    ComparisonOp::NotEqual => "!=",
-                    ComparisonOp::GreaterThan => ">",
-                    ComparisonOp::LessThan => "<",
-                    ComparisonOp::GreaterOrEqualThan => ">=",
-                    ComparisonOp::LessOrEqualThan => "<=",
-                };
-                
-                format!("{} {} {}", left, op, right)
+    // Converts a WHERE clause from the SQL AST to its equivalent IR string representation.
+    /// This function handles nested expressions, comparison operations, and NULL checks
+    /// while maintaining proper operator precedence.
+    ///
+    /// # Arguments
+    /// * `clause` - The WhereClause AST node to convert
+    ///
+    /// # Returns
+    /// A String containing the IR representation of the WHERE clause
+    ///
+    /// # Examples
+    /// ```text
+    /// SQL Input: "WHERE (a > 10 OR b < 20) AND c = 30"
+    /// IR Output: "a > 10 || b < 20 && c == 30"
+    ///
+    /// SQL Input: "WHERE x IS NULL AND (y > 100 OR z <= 50)"
+    /// IR Output: "x is null && (y > 100 || z <= 50)"
+    /// ```
+    fn where_clause_to_string(clause: &WhereClause) -> String {
+        match clause {
+            WhereClause::Base(base_condition) => match base_condition {
+                WhereBaseCondition::Comparison(cond) => {
+                    let left = Self::convert_where_field(&cond.left_field);
+                    let right = Self::convert_where_field(&cond.right_field);
+
+                    let op = match cond.operator {
+                        ComparisonOp::Equal => "==",
+                        ComparisonOp::NotEqual => "!=",
+                        ComparisonOp::GreaterThan => ">",
+                        ComparisonOp::LessThan => "<",
+                        ComparisonOp::GreaterOrEqualThan => ">=",
+                        ComparisonOp::LessOrEqualThan => "<=",
+                    };
+
+                    format!("{} {} {}", left, op, right)
+                }
+                WhereBaseCondition::NullCheck(null_cond) => {
+                    let field = Self::convert_where_field(&null_cond.field);
+                    let op = match null_cond.operator {
+                        NullOp::IsNull => "is null",
+                        NullOp::IsNotNull => "is not null",
+                    };
+                    format!("{} {}", field, op)
+                }
             },
-            WhereBaseCondition::NullCheck(null_cond) => {
-                let field = Self::convert_where_field(&null_cond.field);
-                let op = match null_cond.operator {
-                    NullOp::IsNull => "is null",
-                    NullOp::IsNotNull => "is not null",
+            WhereClause::Expression { left, op, right } => {
+                let op_str = match op {
+                    BinaryOp::And => "&&",
+                    BinaryOp::Or => "||",
                 };
-                format!("{} {}", field, op)
+
+                // Look for the specific patterns that need parentheses
+                let left_needs_parens = matches!(
+                    **left,
+                    WhereClause::Expression {
+                        op: BinaryOp::Or,
+                        ..
+                    }
+                );
+                let right_needs_parens = matches!(
+                    **right,
+                    WhereClause::Expression {
+                        op: BinaryOp::Or,
+                        ..
+                    }
+                );
+
+                let left_str = if left_needs_parens {
+                    format!("({})", Self::where_clause_to_string(left))
+                } else {
+                    Self::where_clause_to_string(left)
+                };
+
+                let right_str = if right_needs_parens {
+                    format!("({})", Self::where_clause_to_string(right))
+                } else {
+                    Self::where_clause_to_string(right)
+                };
+
+                format!("{} {} {}", left_str, op_str, right_str)
             }
-        },
-        WhereClause::Expression { left, op, right } => {
-            let op_str = match op {
-                BinaryOp::And => "&&",
-                BinaryOp::Or => "||",
-            };
-
-            // Look for the specific patterns that need parentheses
-            let left_needs_parens = matches!(**left, WhereClause::Expression { op: BinaryOp::Or, .. });
-            let right_needs_parens = matches!(**right, WhereClause::Expression { op: BinaryOp::Or, .. });
-
-            let left_str = if left_needs_parens {
-                format!("({})", Self::where_clause_to_string(left))
-            } else {
-                Self::where_clause_to_string(left)
-            };
-
-            let right_str = if right_needs_parens {
-                format!("({})", Self::where_clause_to_string(right))
-            } else {
-                Self::where_clause_to_string(right)
-            };
-            
-            format!("{} {} {}", left_str, op_str, right_str)
         }
     }
-}
 
-/// Converts a WhereField to its string representation in IR format.
-/// This function handles fields that can contain column references,
-/// literal values, or arithmetic expressions.
-///
-/// # Arguments
-/// * `field` - The WhereField to convert
-///
-/// # Returns
-/// A String containing the IR representation of the field
-///
-/// # Examples
-/// ```text
-/// Column Reference: "table1.column1" -> "table1.column1"
-/// Literal Value: 42 -> "42"
-/// Arithmetic: "a + b" -> "a + b"
-/// ```
-fn convert_where_field(field: &WhereField) -> String {
-    if let Some(ref arithmetic) = field.arithmetic {
-        match arithmetic {
-            ArithmeticExpr::BinaryOp(_left, _op, _right) => {
-                // Add parentheses around binary operations
-                format!("({})", Self::arithmetic_expr_to_string(arithmetic))
+    /// Converts a WhereField to its string representation in IR format.
+    /// This function handles fields that can contain column references,
+    /// literal values, or arithmetic expressions.
+    ///
+    /// # Arguments
+    /// * `field` - The WhereField to convert
+    ///
+    /// # Returns
+    /// A String containing the IR representation of the field
+    ///
+    /// # Examples
+    /// ```text
+    /// Column Reference: "table1.column1" -> "table1.column1"
+    /// Literal Value: 42 -> "42"
+    /// Arithmetic: "a + b" -> "a + b"
+    /// ```
+    fn convert_where_field(field: &WhereField) -> String {
+        if let Some(ref arithmetic) = field.arithmetic {
+            match arithmetic {
+                ArithmeticExpr::BinaryOp(_left, _op, _right) => {
+                    // Add parentheses around binary operations
+                    format!("({})", Self::arithmetic_expr_to_string(arithmetic))
+                }
+                _ => Self::arithmetic_expr_to_string(arithmetic),
+            }
+        } else if let Some(ref column) = field.column {
+            column.to_string()
+        } else if let Some(ref value) = field.value {
+            match value {
+                SqlLiteral::Float(val) => format!("{:.2}", val),
+                SqlLiteral::Integer(val) => val.to_string(),
+                SqlLiteral::String(val) => format!("'{}'", val),
+                SqlLiteral::Boolean(val) => val.to_string(),
+            }
+        } else {
+            String::new()
+        }
+    }
+
+    /// Converts an arithmetic expression to its string representation in IR format.
+    /// Handles column references, literals, aggregate functions, and binary operations.
+    ///
+    /// # Arguments
+    /// * `expr` - The ArithmeticExpr to convert
+    ///
+    /// # Returns
+    /// A String containing the IR representation of the arithmetic expression
+    ///
+    /// # Examples
+    /// ```text
+    /// Column: "table1.column1" -> "table1.column1"
+    /// Binary Op: "a + b" -> "a + b"
+    /// Aggregate: "SUM(x)" -> "sum(x)"
+    /// Complex: "(a + b) * c" -> "(a + b) * c"
+    /// ```
+    ///
+    /// # Notes
+    /// - Maintains operator precedence using parentheses where necessary
+    /// - Converts aggregate function names to lowercase as required by IR
+    /// - Preserves spacing around operators for readability
+    fn arithmetic_expr_to_string(expr: &ArithmeticExpr) -> String {
+        match expr {
+            ArithmeticExpr::Column(col_ref) => col_ref.to_string(),
+            ArithmeticExpr::Literal(lit) => match lit {
+                SqlLiteral::Float(val) => format!("{:.2}", val),
+                SqlLiteral::Integer(val) => val.to_string(),
+                SqlLiteral::String(val) => format!("'{}'", val),
+                SqlLiteral::Boolean(val) => val.to_string(),
             },
-            _ => Self::arithmetic_expr_to_string(arithmetic)
-        }
-    } else if let Some(ref column) = field.column {
-        column.to_string()
-    } else if let Some(ref value) = field.value {
-        match value {
-            SqlLiteral::Float(val) => format!("{:.2}", val),
-            SqlLiteral::Integer(val) => val.to_string(),
-            SqlLiteral::String(val) => format!("'{}'", val),
-            SqlLiteral::Boolean(val) => val.to_string(),
-        }
-    } else {
-        String::new()
-    }
-}
-
-/// Converts an arithmetic expression to its string representation in IR format.
-/// Handles column references, literals, aggregate functions, and binary operations.
-///
-/// # Arguments
-/// * `expr` - The ArithmeticExpr to convert
-///
-/// # Returns
-/// A String containing the IR representation of the arithmetic expression
-///
-/// # Examples
-/// ```text
-/// Column: "table1.column1" -> "table1.column1"
-/// Binary Op: "a + b" -> "a + b"
-/// Aggregate: "SUM(x)" -> "sum(x)"
-/// Complex: "(a + b) * c" -> "(a + b) * c"
-/// ```
-///
-/// # Notes
-/// - Maintains operator precedence using parentheses where necessary
-/// - Converts aggregate function names to lowercase as required by IR
-/// - Preserves spacing around operators for readability
-fn arithmetic_expr_to_string(expr: &ArithmeticExpr) -> String {
-    match expr {
-        ArithmeticExpr::Column(col_ref) => col_ref.to_string(),
-        ArithmeticExpr::Literal(lit) => match lit {
-            SqlLiteral::Float(val) => format!("{:.2}", val),
-            SqlLiteral::Integer(val) => val.to_string(),
-            SqlLiteral::String(val) => format!("'{}'", val),
-            SqlLiteral::Boolean(val) => val.to_string(),
-        },
-        ArithmeticExpr::Aggregate(func, col_ref) => {
-            let agg = match func {
-                AggregateFunction::Max => "max",
-                AggregateFunction::Min => "min",
-                AggregateFunction::Sum => "sum",
-                AggregateFunction::Avg => "avg",
-                AggregateFunction::Count => "count",
-            };
-            format!("{}({})", agg, col_ref.to_string())
-        },
-        ArithmeticExpr::BinaryOp(left, op, right) => {
-            let left_str = Self::arithmetic_expr_to_string(left);
-            let right_str = Self::arithmetic_expr_to_string(right);
-            format!("{} {} {}", left_str, op, right_str)
+            ArithmeticExpr::Aggregate(func, col_ref) => {
+                let agg = match func {
+                    AggregateFunction::Max => "max",
+                    AggregateFunction::Min => "min",
+                    AggregateFunction::Sum => "sum",
+                    AggregateFunction::Avg => "avg",
+                    AggregateFunction::Count => "count",
+                };
+                format!("{}({})", agg, col_ref.to_string())
+            }
+            ArithmeticExpr::BinaryOp(left, op, right) => {
+                let left_str = Self::arithmetic_expr_to_string(left);
+                let right_str = Self::arithmetic_expr_to_string(right);
+                format!("{} {} {}", left_str, op, right_str)
+            }
         }
     }
-}
 
-
-     // Updated group_by_clause_to_string to handle new having structure
-     fn group_by_clause_to_string(clause: &GroupByClause) -> String {
+    // Updated group_by_clause_to_string to handle new having structure
+    fn group_by_clause_to_string(clause: &GroupByClause) -> String {
         let mut group_by_str = String::new();
-        
+
         // Handle group by columns
         let group_by_columns = clause.columns.clone();
         for (i, col) in group_by_columns.iter().enumerate() {
@@ -369,7 +381,7 @@ fn arithmetic_expr_to_string(expr: &ArithmeticExpr) -> String {
                     };
 
                     format!("{} {} {}", left, operator_str, right)
-                },
+                }
                 HavingBaseCondition::NullCheck(null_cond) => {
                     let field = if let Some(ref arithmetic) = null_cond.field.arithmetic {
                         Self::arithmetic_expr_to_string(arithmetic)
@@ -390,8 +402,20 @@ fn arithmetic_expr_to_string(expr: &ArithmeticExpr) -> String {
                 };
 
                 // Handle parentheses for nested expressions
-                let left_needs_parens = matches!(**left, HavingClause::Expression { op: BinaryOp::Or, .. });
-                let right_needs_parens = matches!(**right, HavingClause::Expression { op: BinaryOp::Or, .. });
+                let left_needs_parens = matches!(
+                    **left,
+                    HavingClause::Expression {
+                        op: BinaryOp::Or,
+                        ..
+                    }
+                );
+                let right_needs_parens = matches!(
+                    **right,
+                    HavingClause::Expression {
+                        op: BinaryOp::Or,
+                        ..
+                    }
+                );
 
                 let left_str = if left_needs_parens {
                     format!("({})", Self::having_clause_to_string(left))
@@ -404,21 +428,22 @@ fn arithmetic_expr_to_string(expr: &ArithmeticExpr) -> String {
                 } else {
                     Self::having_clause_to_string(right)
                 };
-                
+
                 format!("{} {} {}", left_str, op_str, right_str)
             }
         }
     }
 
-
     fn order_by_clause_to_string(clause: &OrderByClause) -> String {
-        let items: Vec<String> = clause.items.iter()
+        let items: Vec<String> = clause
+            .items
+            .iter()
             .map(|item| {
                 let col_str = match &item.column.table {
                     Some(table) => format!("{}.{}", table, item.column.column),
                     None => item.column.column.clone(),
                 };
-                
+
                 match item.direction {
                     OrderDirection::Asc => col_str,
                     OrderDirection::Desc => format!("{} desc", col_str),
@@ -434,7 +459,8 @@ fn arithmetic_expr_to_string(expr: &ArithmeticExpr) -> String {
         if let Some(ref nested) = field.nested_expr {
             // Handle nested expression
             let (left_field, op, right_field) = &**nested;
-            return format!("({} {} {})", 
+            return format!(
+                "({} {} {})",
                 Self::convert_complex_field(left_field),
                 op,
                 Self::convert_complex_field(right_field)

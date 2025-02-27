@@ -1,6 +1,7 @@
 use crate::dsl::ir::r_utils::check_alias;
 use crate::dsl::ir::FromClause;
 use crate::dsl::ir::QueryObject;
+use crate::dsl::ir::ir_ast_structure::*;
 use indexmap::IndexMap;
 
 pub fn process_from_clause(from_clause: &FromClause, query_object: &mut QueryObject) -> String {
@@ -15,7 +16,7 @@ pub fn process_from_clause(from_clause: &FromClause, query_object: &mut QueryObj
 
     // Process each join in order
     for (i, join) in from_clause.joins.clone().unwrap().iter().enumerate() {
-        let joined_table = &join.scan.stream_name;
+        let joined_table = &join.join_scan.stream_name;
 
         let mut left_tuple: Vec<String> = Vec::new();
         let mut right_tuple: Vec<String> = Vec::new();
@@ -101,10 +102,17 @@ pub fn process_from_clause(from_clause: &FromClause, query_object: &mut QueryObj
             right_tuple.push(format!("y.{}.clone()", right_field));
         }
 
+         // Determine the join method based on the join type
+         let join_type = match join.join_type {
+            JoinType::Inner => "join",
+            JoinType::Left => "left_join",
+            JoinType::Outer => "outer_join",
+        };
+
 
         join_string.push_str(&format!(
-            ".join(stream{}, |x| ({}), |y| ({})).drop_key()",
-            struct_index, left_tuple.join(", "), right_tuple.join(", ")
+            ".{}(stream{}, |x| ({}), |y| ({})).drop_key()",
+            join_type, struct_index, left_tuple.join(", "), right_tuple.join(", ")
         ));
 
         // Update IndexMap after this join

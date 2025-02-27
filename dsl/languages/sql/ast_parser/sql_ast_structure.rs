@@ -62,7 +62,7 @@ pub struct JoinClause {
 pub enum JoinType {
     Inner,
     Left,
-    LeftOuter,
+    Outer,
 }
 
 #[derive(Debug, PartialEq, Clone)]

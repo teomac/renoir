@@ -360,7 +360,18 @@ fn create_fold_operation(
 
     // First add types and initializers for regular columns and aggregates
     for (value, (pos, val_type)) in &acc_info.agg_positions {
-        tuple_types.push(val_type.clone());
+        let actual_type = match value {
+            GroupAccumulatorValue::Aggregate(agg_type, _) => {
+                if (*agg_type == AggregateType::Max || *agg_type == AggregateType::Min)
+                    && val_type == "i64"
+                {
+                    "f64".to_string() // Force f64 type for Max/Min operations
+                } else {
+                    val_type.clone()
+                }
+            }
+        };
+        tuple_types.push(actual_type);
 
         match value {
             GroupAccumulatorValue::Aggregate(agg_type, _) => {
@@ -372,12 +383,12 @@ fn create_fold_operation(
                     },
                     AggregateType::Max => match val_type.as_str() {
                         "f64" => "f64::MIN",
-                        "i64" => "i64::MIN",
+                        "i64" => "f64::MIN",
                         _ => panic!("Unsupported type for Max: {}", val_type),
                     },
                     AggregateType::Min => match val_type.as_str() {
                         "f64" => "f64::MAX",
-                        "i64" => "i64::MAX",
+                        "i64" => "f64::MAX",
                         _ => panic!("Unsupported type for Min: {}", val_type),
                     },
                     AggregateType::Avg => "0.0",
@@ -409,7 +420,6 @@ fn create_fold_operation(
                                             String::from("")
                                         } else {
                                             String::from("*")
-                                            
                                         },
                                         if single_agg {
                                             String::from("")
@@ -452,7 +462,7 @@ fn create_fold_operation(
                             }
                             AggregateType::Max => {
                                 update_code.push_str(&format!(
-                                    "    if let Some(val) = {} {{ {}acc{} = acc{}.max(val); }}\n",
+                                    "    if let Some(val) = {} {{ {}acc{} = acc{}.max(val as f64); }}\n",
                                     col_access,
                                     if !single_agg {
                                         String::from("")
@@ -473,7 +483,7 @@ fn create_fold_operation(
                             }
                             AggregateType::Min => {
                                 update_code.push_str(&format!(
-                                    "    if let Some(val) = {} {{ {}acc{} = acc{}.min(val); }}\n",
+                                    "    if let Some(val) = {} {{ {}acc{} = acc{}.min(val as f64); }}\n",
                                     col_access,
                                     if !single_agg {
                                         String::from("")
@@ -560,33 +570,89 @@ fn process_filter_condition(
                     let left_type = query_object.get_complex_field_type(&comp.left_field);
                     let right_type = query_object.get_complex_field_type(&comp.right_field);
 
-                    // Handle type conversions for comparison
-                    let (left_conversion, right_conversion) =
-                        if left_type == "f64" && right_type == "i64" {
-                            (" as f64", "")
-                        } else if left_type == "i64" && right_type == "f64" {
-                            ("", " as f64")
-                        } else {
-                            ("", "")
-                        };
-
                     // Process left and right expressions
                     let left_expr =
                         process_filter_field(&comp.left_field, group_by, query_object, acc_info);
                     let right_expr =
                         process_filter_field(&comp.right_field, group_by, query_object, acc_info);
 
-                    format!(
-                        "(({}{}) {} ({}{}))",
-                        left_expr, left_conversion, operator, right_expr, right_conversion
-                    )
+                    // Handle type conversions for comparison - improved handling for numeric types
+                    if left_type != right_type {
+                        if (left_type == "f64" || left_type == "i64")
+                            && (right_type == "f64" || right_type == "i64")
+                        {
+                            // Both are numeric types but different
+                            if left_type == "f64" {
+                                // Convert right to f64
+                                format!("({}) {} ({} as f64)", left_expr, operator, right_expr)
+                            } else {
+                                // Convert left to f64
+                                format!("({} as f64) {} ({})", left_expr, operator, right_expr)
+                            }
+                        } else {
+                            // Different non-numeric types - this should already be caught during validation
+                            format!("({}) {} ({})", left_expr, operator, right_expr)
+                        }
+                    } else {
+                        // Same types
+                        format!("({}) {} ({})", left_expr, operator, right_expr)
+                    }
                 }
                 GroupBaseCondition::NullCheck(null_check) => {
-                    let field_expr =
-                        process_filter_field(&null_check.field, group_by, query_object, acc_info);
+                    // Get the column reference that's being checked for null
+                    let col_ref = if let Some(ref col) = null_check.field.column_ref {
+                        col
+                    } else {
+                        panic!("NULL check must be on a column reference");
+                    };
+
+                    // Check if this column is part of the GROUP BY key
+                    let is_key_field = group_by.columns.iter().any(|c| {
+                        c.column == col_ref.column
+                            && (c.table.is_none()
+                                || col_ref.table.is_none()
+                                || c.table == col_ref.table)
+                    });
+
+                    // Get column access based on whether it's a key field
+                    let col_access = if is_key_field {
+                        // Get the position in the group by key tuple
+                        let key_position = group_by
+                            .columns
+                            .iter()
+                            .position(|c| {
+                                c.column == col_ref.column
+                                    && (c.table.is_none()
+                                        || col_ref.table.is_none()
+                                        || c.table == col_ref.table)
+                            })
+                            .unwrap();
+
+                        if group_by.columns.len() == 1 {
+                            // Single key column
+                            "x.0".to_string()
+                        } else {
+                            // Multiple key columns - access by position
+                            format!("x.0.{}", key_position)
+                        }
+                    } else {
+                        // Not a key column - must be in the accumulated values or aggregates
+                        if query_object.has_join {
+                            let table = check_alias(&col_ref.table.clone().unwrap(), query_object);
+                            format!(
+                                "x.1{}.{}",
+                                query_object.table_to_tuple_access.get(&table).unwrap(),
+                                col_ref.column
+                            )
+                        } else {
+                            format!("x.1.{}", col_ref.column)
+                        }
+                    };
+
+                    // Generate the appropriate null check
                     match null_check.operator {
-                        NullOp::IsNull => format!("{}.is_none()", field_expr),
-                        NullOp::IsNotNull => format!("{}.is_some()", field_expr),
+                        NullOp::IsNull => format!("{}.is_none()", col_access),
+                        NullOp::IsNotNull => format!("{}.is_some()", col_access),
                     }
                 }
             }
@@ -624,26 +690,56 @@ fn process_filter_field(
         let left_expr = process_filter_field(left, group_by, query_object, acc_info);
         let right_expr = process_filter_field(right, group_by, query_object, acc_info);
 
-        // Rest of nested expr handling remains the same...
-        if op == "/" {
-            format!("({} as f64) {} ({} as f64)", left_expr, op, right_expr)
-        } else if op == "^" {
-            if left_type == "f64" || right_type == "f64" {
-                format!(
-                    "({}).powf({} as f64)",
-                    if left_type == "i64" {
-                        format!("({} as f64)", left_expr)
+        // Improved type handling for arithmetic operations
+        if left_type != right_type {
+            if (left_type == "f64" || left_type == "i64")
+                && (right_type == "f64" || right_type == "i64")
+            {
+                // Division always results in f64
+                if op == "/" {
+                    return format!("({} as f64) {} ({} as f64)", left_expr, op, right_expr);
+                }
+
+                // Special handling for power operation (^)
+                if op == "^" {
+                    // If either operand is f64, use powf
+                    if left_type == "f64" || right_type == "f64" {
+                        return format!(
+                            "({}).powf({} as f64)",
+                            if left_type == "i64" {
+                                format!("({} as f64)", left_expr)
+                            } else {
+                                left_expr
+                            },
+                            right_expr
+                        );
                     } else {
-                        left_expr
-                    },
-                    right_expr
-                )
-            } else {
-                format!("({}).pow({} as u32)", left_expr, right_expr)
+                        // Both are integers, use pow
+                        return format!("({}).pow({} as u32)", left_expr, right_expr);
+                    }
+                }
+
+                // Add proper type conversion for other operations
+                if left_type == "i64" && right_type == "f64" {
+                    return format!("({} as f64) {} {}", left_expr, op, right_expr);
+                } else if left_type == "f64" && right_type == "i64" {
+                    return format!("{} {} ({} as f64)", left_expr, op, right_expr);
+                }
             }
         } else {
-            format!("({} {} {})", left_expr, op, right_expr)
+            // Same types
+            if op == "/" {
+                return format!("({} as f64) {} ({} as f64)", left_expr, op, right_expr);
+            } else if op == "^" {
+                if left_type == "f64" {
+                    return format!("({}).powf({})", left_expr, right_expr);
+                } else {
+                    return format!("({}).pow({} as u32)", left_expr, right_expr);
+                }
+            }
         }
+
+        format!("({} {} {})", left_expr, op, right_expr)
     } else if let Some(ref col) = field.column_ref {
         //get type
         let as_ref = if query_object.get_type(col) == "String" {

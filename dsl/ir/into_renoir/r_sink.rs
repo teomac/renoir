@@ -193,9 +193,9 @@ fn create_aggregate_map(select_clauses: &Vec<SelectClause>, query_object: &Query
            AccumulatorValue::Aggregate(agg_type, col) => {
                let col_access = if query_object.has_join {
                    let table = col.table.as_ref().unwrap();
-                   let table_name = query_object.get_alias(table).unwrap_or_else(|| table);
+                   let table_name = check_alias(table, query_object);
                    format!("x{}.{}", 
-                       query_object.table_to_tuple_access.get(table_name).unwrap(),
+                       query_object.table_to_tuple_access.get(&table_name).unwrap(),
                        col.column)
                } else {
                    format!("x.{}", col.column)
@@ -236,9 +236,9 @@ fn create_aggregate_map(select_clauses: &Vec<SelectClause>, query_object: &Query
            AccumulatorValue::Column(col) => {
                let col_access = if query_object.has_join {
                    let table = col.table.as_ref().unwrap();
-                   let table_name = query_object.get_alias(table).unwrap_or_else(|| table);
+                   let table_name = check_alias(table, query_object);
                    format!("x{}.{}", 
-                       query_object.table_to_tuple_access.get(table_name).unwrap(),
+                       query_object.table_to_tuple_access.get(&table_name).unwrap(),
                        col.column)
                } else {
                    format!("x.{}", col.column)
@@ -845,6 +845,23 @@ pub fn process_grouping_projections(query_object: &QueryObject, acc_info: &Group
                             .expect("COUNT for AVG not found in accumulator").0;
                         
                         format!("Some(x.1.{} as f64 / x.1.{} as f64)", sum_pos, count_pos)
+                    },
+                    AggregateType::Max | AggregateType::Min => {
+                        let agg_key = GroupAccumulatorValue::Aggregate(agg.function.clone(), agg.column.clone());
+                        let original_type = query_object.get_type(&agg.column);
+                        
+                        if let Some((pos, _)) = acc_info.agg_positions.get(&agg_key) {
+                            if original_type == "i64" {
+                                // Cast back to i64 if that was the original type
+                                format!("Some((x.1{} as i64))", 
+                                    if !is_single_agg { format!(".{}", pos) } else { String::new() })
+                            } else {
+                                format!("Some(x.1{})", 
+                                    if !is_single_agg { format!(".{}", pos) } else { String::new() })
+                            }
+                        } else {
+                            panic!("Aggregate {:?} not found in accumulator", agg);
+                        }
                     },
                     _ => {
                         let agg_key = GroupAccumulatorValue::Aggregate(agg.function.clone(), agg.column.clone());

@@ -21,8 +21,30 @@ impl SourceParser {
 
         let mut joins = Vec::new();
 
-        while let Some(token) = inner.next() {
-            if token.as_str() == "join" {
+        while inner.peek().is_some() {
+            // Check if the next token is a join_type or "join"
+            let mut join_type = JoinType::Inner; // Default join type
+            
+            // Look for join type first
+            if let Some(token) = inner.peek() {
+                if token.as_rule() == Rule::join_type {
+                    let join_type_token = inner.next().unwrap();
+                    join_type = match join_type_token.as_str() {
+                        "inner" => JoinType::Inner,
+                        "left" => JoinType::Left,
+                        "outer" => JoinType::Outer,
+                        _ => return Err(IrParseError::InvalidInput(
+                            format!("Invalid join type: {}", join_type_token.as_str())
+                        )),
+                    };
+                }
+            }
+            
+            // Now look for "join" keyword
+            if inner.peek().map_or(false, |p| p.as_str() == "join") {
+                // Consume 'join' token
+                inner.next();
+                
                 // Parse the join scan
                 let join_scan_expr = inner.next().ok_or_else(|| {
                     IrParseError::InvalidInput("Missing join stream".to_string())
@@ -43,7 +65,8 @@ impl SourceParser {
                 let condition = JoinCondition::parse(condition_pair)?;
 
                 joins.push(JoinClause {
-                    scan: join_scan,
+                    join_type,
+                    join_scan,
                     condition,
                 });
             }

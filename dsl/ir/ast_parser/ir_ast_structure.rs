@@ -23,8 +23,16 @@ pub struct ScanClause {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct JoinClause {
-    pub scan: ScanClause,
+    pub join_type: JoinType,
+    pub join_scan: ScanClause,
     pub condition: JoinCondition,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum JoinType {
+    Inner,
+    Left,
+    Outer,
 }
 
 #[derive(Debug, PartialEq, Clone)]

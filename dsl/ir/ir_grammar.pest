@@ -15,6 +15,7 @@ value = { boolean_keyword | number | string }
 as_keyword = { "as" }
 in_keyword = { "in" }
 join = { "join" }
+join_type = {"inner" | "left" | "outer"}
 on = { "on" }
 asterisk = { "*" }
 group_keyword = { "group" }
@@ -42,7 +43,7 @@ query = {
 from_clause = { 
     "from" ~ 
     scan_expr ~
-    (join ~ scan_expr ~ on ~ join_condition)*
+    (join_type? ~ join ~ scan_expr ~ on ~ join_condition)*
 }
 
 stream_input = @{ ('a'..'z' | "_") ~ ('a'..'z' | '0'..'9' | "_")* }

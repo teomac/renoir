@@ -179,7 +179,7 @@ impl QueryObject {
 
         // Add all joined tables
         for join in &joins_vec {
-            let join_table = join.scan.stream_name.clone();
+            let join_table = join.join_scan.stream_name.clone();
 
             //check if the table is already in the list
             if self.table_names_list.contains(&join_table) {
@@ -190,7 +190,7 @@ impl QueryObject {
             self.table_names_list.push(join_table.clone());
             self.joined_tables.push(join_table.clone());
             
-            if let Some(join_alias) = &join.scan.alias {
+            if let Some(join_alias) = &join.join_scan.alias {
                 //check if the alias is already in the list
                 for (_, alias) in &self.table_to_alias {
                     if alias == join_alias {
@@ -207,7 +207,7 @@ impl QueryObject {
         // Collect all table names in order
         let mut table_names: Vec<String> = vec![main_table.clone()];
         for join in &joins_vec {
-            table_names.push(join.scan.stream_name.clone());
+            table_names.push(join.join_scan.stream_name.clone());
         }
 
         // Process paths

@@ -155,15 +155,20 @@ impl GroupByParser {
             Rule::null_operator => {
                 let field = Self::parse_having_field(left)?;
                 
-                // Validate that the field contains an aggregate if it's a column reference
-                if let Some(col_ref) = &field.column {
-                    if field.aggregate.is_none() {
-                        return Err(SqlParseError::InvalidInput(
-                            format!("Column {} must be aggregated in HAVING clause", col_ref.to_string())
-                        ));
-                    }
+                // Check if the field is in the GROUP BY clause
+            if let Some(col_ref) = &field.column {
+                let is_in_group_by = group_by_cols.iter().any(|group_col| {
+                    group_col.column == col_ref.column && 
+                    (group_col.table == col_ref.table || col_ref.table.is_none())
+                });
+                
+                // Only enforce aggregation rule if it's not in the GROUP BY
+                if !is_in_group_by && field.aggregate.is_none() {
+                    return Err(SqlParseError::InvalidInput(
+                        format!("Column {} must be aggregated or in GROUP BY clause", col_ref.to_string())
+                    ));
                 }
-
+            }
                 let op = match operator.as_str().to_uppercase().as_str() {
                     "IS NULL" => NullOp::IsNull,
                     "IS NOT NULL" => NullOp::IsNotNull,

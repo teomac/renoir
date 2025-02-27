@@ -1,5 +1,5 @@
-use super::sql_ast_structure::*;
 use super::error::SqlParseError;
+use super::sql_ast_structure::*;
 use crate::dsl::languages::sql::ast_parser::Rule;
 use pest::iterators::Pair;
 
@@ -59,9 +59,49 @@ impl FromParser {
     fn parse_join(pair: Pair<Rule>) -> Result<JoinClause, SqlParseError> {
         let mut inner = pair.into_inner();
 
-        inner
+        // Default join type
+        let mut join_type = JoinType::Inner;
+
+        let first = inner
             .next()
-            .ok_or_else(|| SqlParseError::InvalidInput("Missing JOIN keyword".to_string()))?;
+            .ok_or_else(|| SqlParseError::InvalidInput("Missing JOIN data".to_string()))?;
+
+        // Check if the first token is a join_kind
+        if first.as_rule() == Rule::join_kind {
+            // Parse the join type from the join_kind rule
+            let kind_str = first.as_str().to_uppercase();
+
+            if kind_str.contains("INNER") {
+                join_type = JoinType::Inner;
+            } else if kind_str.contains("LEFT") {
+                join_type = JoinType::Left;
+            } else if kind_str == "OUTER" {
+                join_type = JoinType::Outer;
+            } else {
+                return Err(SqlParseError::InvalidInput(format!(
+                    "Unknown join type: {}",
+                    kind_str
+                )));
+            }
+
+            // Get the JOIN keyword
+            let join_keyword = inner
+                .next()
+                .ok_or_else(|| SqlParseError::InvalidInput("Missing JOIN keyword".to_string()))?;
+
+            if join_keyword.as_rule() != Rule::join {
+                return Err(SqlParseError::InvalidInput(format!(
+                    "Expected JOIN keyword, got {:?}",
+                    join_keyword.as_rule()
+                )));
+            }
+        } else if first.as_rule() != Rule::join {
+            // If it's not a join_kind or JOIN keyword, error
+            return Err(SqlParseError::InvalidInput(format!(
+                "Expected JOIN keyword or join type, got {:?}",
+                first.as_rule()
+            )));
+        }
 
         let scan_expr = inner
             .next()
@@ -81,33 +121,38 @@ impl FromParser {
 
         while let Some(left_col) = condition_pairs.next() {
             // Parse each condition pair
-            let right_col = condition_pairs.next()
-                .ok_or_else(|| SqlParseError::InvalidInput("Missing right part of join condition".to_string()))?;
-    
+            let right_col = condition_pairs.next().ok_or_else(|| {
+                SqlParseError::InvalidInput("Missing right part of join condition".to_string())
+            })?;
+
             let left_parts = left_col.into_inner().collect::<Vec<_>>();
             let right_parts = right_col.into_inner().collect::<Vec<_>>();
-    
+
             let left_var = format!("{}.{}", left_parts[0].as_str(), left_parts[1].as_str());
             let right_var = format!("{}.{}", right_parts[0].as_str(), right_parts[1].as_str());
-    
+
             conditions.push(JoinCondition {
                 left_var,
                 right_var,
             });
-    
+
             // Skip the AND operator if present
-            if condition_pairs.peek().map_or(false, |p| p.as_str().to_uppercase() == "AND") {
+            if condition_pairs
+                .peek()
+                .map_or(false, |p| p.as_str().to_uppercase() == "AND")
+            {
                 condition_pairs.next();
             }
         }
-    
+
         if conditions.is_empty() {
-            return Err(SqlParseError::InvalidInput("No valid join conditions found".to_string()));
+            return Err(SqlParseError::InvalidInput(
+                "No valid join conditions found".to_string(),
+            ));
         }
 
-    
         Ok(JoinClause {
-            join_type: JoinType::Inner,
+            join_type,
             join_scan,
             join_expr: JoinExpr { conditions },
         })
