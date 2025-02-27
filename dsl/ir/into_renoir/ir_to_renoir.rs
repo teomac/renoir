@@ -36,7 +36,7 @@ impl IrToRenoir {
 
         } else {
             // Process all select clauses together
-            final_string.push_str(&process_select_clauses(&ast.select, query_object));
+            final_string.push_str(&process_select_clauses(&ast.select.select, query_object));
         }
 
         //println!("Final string: {}", final_string);

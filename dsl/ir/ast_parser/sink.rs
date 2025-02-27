@@ -7,26 +7,36 @@ use pest::iterators::Pair;
 pub struct SinkParser;
 
 impl SinkParser {
-    pub fn parse(pair: Pair<Rule>) -> Result<Vec<SelectClause>, IrParseError> {
+    pub fn parse(pair: Pair<Rule>) -> Result<SelectClause, IrParseError> {
         let mut inner = pair.into_inner();
+        let mut distinct = false;
 
         // Skip the 'select' keyword if present
         if inner.peek().map_or(false, |p| p.as_str() == "select") {
             inner.next();
         }
 
+        // Check for 'distinct' keyword
+        if inner
+            .peek()
+            .map_or(false, |p| p.as_rule() == Rule::distinct_keyword)
+        {
+            inner.next();
+            distinct = true;
+        }
+
         let sink_expr = inner
             .next()
             .ok_or_else(|| IrParseError::InvalidInput("Missing sink expression".to_string()))?;
 
-        match sink_expr.as_rule() {
-            Rule::asterisk => Ok(vec![SelectClause::Column(
+        let select_columns = match sink_expr.as_rule() {
+            Rule::asterisk => vec![SelectColumn::Column(
                 ColumnRef {
                     table: None,
                     column: "*".to_string(),
                 },
                 None,
-            )]),
+            )],
             Rule::column_list => {
                 sink_expr
                     .into_inner()
@@ -54,14 +64,14 @@ impl SinkParser {
                         // Process the main expression based on its type
                         match expr.as_rule() {
                             Rule::complex_op => Self::parse_complex_operation(expr, alias),
-                            Rule::aggregate_expr => Ok(SelectClause::Aggregate(
+                            Rule::aggregate_expr => Ok(SelectColumn::Aggregate(
                                 Self::parse_aggregate_function(expr)?,
                                 alias,
                             )),
                             Rule::qualified_column => {
-                                Ok(SelectClause::Column(Self::parse_column_ref(expr)?, alias))
+                                Ok(SelectColumn::Column(Self::parse_column_ref(expr)?, alias))
                             }
-                            Rule::identifier => Ok(SelectClause::Column(
+                            Rule::identifier => Ok(SelectColumn::Column(
                                 ColumnRef {
                                     table: None,
                                     column: expr.as_str().to_string(),
@@ -74,13 +84,20 @@ impl SinkParser {
                             ))),
                         }
                     })
-                    .collect()
+                    .collect::<Result<Vec<_>, _>>()?
             }
-            _ => Err(IrParseError::InvalidInput(format!(
-                "Invalid sink expression: {:?}",
-                sink_expr.as_rule()
-            ))),
-        }
+            _ => {
+                return Err(IrParseError::InvalidInput(format!(
+                    "Invalid sink expression: {:?}",
+                    sink_expr.as_rule()
+                )))
+            }
+        };
+
+        Ok(SelectClause {
+            distinct,
+            select: select_columns,
+        })
     }
 
     fn parse_column_ref(pair: Pair<Rule>) -> Result<ColumnRef, IrParseError> {
@@ -102,12 +119,10 @@ impl SinkParser {
                     column,
                 })
             }
-            Rule::identifier | Rule::asterisk => {
-                Ok(ColumnRef {
-                    table: None,
-                    column: pair.as_str().to_string(),
-                })
-            }
+            Rule::identifier | Rule::asterisk => Ok(ColumnRef {
+                table: None,
+                column: pair.as_str().to_string(),
+            }),
             _ => Err(IrParseError::InvalidInput(format!(
                 "Expected field reference, got {:?}",
                 pair.as_rule()
@@ -154,38 +169,49 @@ impl SinkParser {
     fn parse_complex_operation(
         pair: Pair<Rule>,
         alias: Option<String>,
-    ) -> Result<SelectClause, IrParseError> {
+    ) -> Result<SelectColumn, IrParseError> {
         let mut pairs = pair.into_inner().peekable();
-        
+
         // Parse first operand
         let mut left_field = match pairs.next() {
             Some(first) => match first.as_rule() {
                 Rule::parenthesized_expr => Self::parse_parenthesized_expr(first)?,
                 Rule::column_operand => Self::parse_operand(first)?,
-                _ => return Err(IrParseError::InvalidInput(
-                    format!("Invalid first operand: {:?}", first.as_rule())
-                )),
+                _ => {
+                    return Err(IrParseError::InvalidInput(format!(
+                        "Invalid first operand: {:?}",
+                        first.as_rule()
+                    )))
+                }
             },
             None => return Err(IrParseError::InvalidInput("Missing operand".to_string())),
         };
-    
+
         // Process operators and operands in pairs
         while pairs.peek().is_some() {
-            let op = pairs.next()
+            let op = pairs
+                .next()
                 .map(|p| p.as_str().to_string())
                 .ok_or_else(|| IrParseError::InvalidInput("Expected operator".to_string()))?;
-            
+
             let right_field = match pairs.next() {
                 Some(right_pair) => match right_pair.as_rule() {
                     Rule::parenthesized_expr => Self::parse_parenthesized_expr(right_pair)?,
                     Rule::column_operand => Self::parse_operand(right_pair)?,
-                    _ => return Err(IrParseError::InvalidInput(
-                        format!("Invalid right operand: {:?}", right_pair.as_rule())
-                    )),
+                    _ => {
+                        return Err(IrParseError::InvalidInput(format!(
+                            "Invalid right operand: {:?}",
+                            right_pair.as_rule()
+                        )))
+                    }
                 },
-                None => return Err(IrParseError::InvalidInput("Missing right operand".to_string())),
+                None => {
+                    return Err(IrParseError::InvalidInput(
+                        "Missing right operand".to_string(),
+                    ))
+                }
             };
-    
+
             left_field = ComplexField {
                 column_ref: None,
                 literal: None,
@@ -193,37 +219,47 @@ impl SinkParser {
                 nested_expr: Some(Box::new((left_field, op, right_field))),
             };
         }
-    
-        Ok(SelectClause::ComplexValue(left_field, alias))
+
+        Ok(SelectColumn::ComplexValue(left_field, alias))
     }
-    
+
     fn parse_parenthesized_expr(pair: Pair<Rule>) -> Result<ComplexField, IrParseError> {
         let mut inner = pair.into_inner();
-        
+
         // Skip left parenthesis
         inner.next();
-    
-        let expr = inner.next()
+
+        let expr = inner
+            .next()
             .ok_or_else(|| IrParseError::InvalidInput("Empty parentheses".to_string()))?;
-    
+
         match expr.as_rule() {
             Rule::select_expr => {
-                let inner_expr = expr.into_inner().next()
+                let inner_expr = expr
+                    .into_inner()
+                    .next()
                     .ok_or_else(|| IrParseError::InvalidInput("Empty expression".to_string()))?;
-    
+
                 match inner_expr.as_rule() {
                     Rule::complex_op => {
-                        if let SelectClause::ComplexValue(left_field, _) = 
-                            Self::parse_complex_operation(inner_expr, None)? {
+                        if let SelectColumn::ComplexValue(left_field, _) =
+                            Self::parse_complex_operation(inner_expr, None)?
+                        {
                             Ok(left_field)
                         } else {
-                            Err(IrParseError::InvalidInput("Invalid complex operation".to_string()))
+                            Err(IrParseError::InvalidInput(
+                                "Invalid complex operation".to_string(),
+                            ))
                         }
-                    },
-                    _ => Err(IrParseError::InvalidInput("Invalid parenthesized expression".to_string())),
+                    }
+                    _ => Err(IrParseError::InvalidInput(
+                        "Invalid parenthesized expression".to_string(),
+                    )),
                 }
-            },
-            _ => Err(IrParseError::InvalidInput("Invalid parenthesized expression content".to_string())),
+            }
+            _ => Err(IrParseError::InvalidInput(
+                "Invalid parenthesized expression content".to_string(),
+            )),
         }
     }
 

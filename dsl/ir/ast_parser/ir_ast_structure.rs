@@ -1,7 +1,7 @@
 #[derive(Debug, PartialEq, Clone)]
 pub struct IrAST {
     pub from: FromClause,
-    pub select: Vec<SelectClause>,
+    pub select: SelectClause,
     pub filter: Option<WhereClause>,
     pub group_by: Option<Group>,
     pub order_by: Option<OrderByClause>,
@@ -47,7 +47,13 @@ pub struct JoinPair {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum SelectClause {
+pub struct SelectClause {
+    pub distinct: bool,
+    pub select: Vec<SelectColumn>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum SelectColumn {
     Column(ColumnRef, Option<String>),  // Added Option<String> for alias
     Aggregate(AggregateFunction, Option<String>),  // Added Option<String> for alias 
     ComplexValue(ComplexField, Option<String>),  // Added Option<String> for alias

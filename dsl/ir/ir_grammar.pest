@@ -22,6 +22,7 @@ group_keyword = { "group" }
 order_keyword = { "order" }
 limit_keyword = { "limit" }
 offset_keyword = { "offset" }
+distinct_keyword = { "_distinct" }
 
 left_parenthesis = { "(" }
 right_parenthesis = { ")" }
@@ -119,7 +120,7 @@ column_item = {
     (as_keyword ~ identifier)?
 }
 
-select_clause = { "select" ~ (asterisk | column_list) }
+select_clause = { "select" ~ distinct_keyword? ~ (asterisk | column_list) }
 
 // Binary logical operators
 binary_op = { 

@@ -1,5 +1,5 @@
 use crate::dsl::ir::{
-    ir_ast_structure::{AggregateType, JoinClause, SelectClause, ComplexField},
+    ir_ast_structure::{AggregateType, JoinClause, SelectColumn, ComplexField},
     IrAST, ColumnRef, IrLiteral,
 };
 use indexmap::IndexMap;
@@ -255,9 +255,9 @@ impl QueryObject {
         if let Some(ref ir_ast) = self.ir_ast {
             let mut used_names = std::collections::HashSet::new();
             
-            for select_clause in &ir_ast.select {
+            for select_clause in &ir_ast.select.select {
                 match select_clause {
-                    SelectClause::Column(col_ref, alias) => {
+                    SelectColumn::Column(col_ref, alias) => {
                            // Handle SELECT * case
                            if col_ref.column == "*" {
                             // Check if there's a GROUP BY clause
@@ -332,7 +332,7 @@ impl QueryObject {
                         }
                     },
                     
-                    SelectClause::Aggregate(agg_func, alias) => {
+                    SelectColumn::Aggregate(agg_func, alias) => {
                         //check if the column is valid
                         if agg_func.column.column != "*" {
                         self.check_column_validity(&agg_func.column, &String::new());}
@@ -389,7 +389,7 @@ impl QueryObject {
                         self.result_column_types.insert(col_name, col_type);
                     },
                     
-                    SelectClause::ComplexValue(col_ref, alias) => {
+                    SelectColumn::ComplexValue(col_ref, alias) => {
                         let result_type = self.get_complex_field_type(col_ref);
                         let col_name = if let Some(alias_name) = alias {
                             self.get_unique_name(alias_name, &mut used_names)

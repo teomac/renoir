@@ -1,8 +1,8 @@
 use indexmap::IndexMap;
-use crate::dsl::ir::ir_ast_structure::ComplexField;
+use crate::dsl::ir::ir_ast_structure::{ComplexField, SelectColumn};
 use crate::dsl::ir::r_utils::check_alias;
 use crate::dsl::ir::{
-    AggregateType, IrLiteral, ColumnRef, SelectClause,
+    AggregateType, IrLiteral, ColumnRef,
 };
 use crate::dsl::ir::AggregateFunction;
 use crate::dsl::struct_object::object::QueryObject;
@@ -47,7 +47,7 @@ impl AccumulatorInfo {
 }
 
 
-/// Processes a `SelectClause` and generates a corresponding string representation
+/// Processes a `SelectColumn` and generates a corresponding string representation
 /// of the query operation.
 ///
 /// # Arguments
@@ -56,7 +56,7 @@ impl AccumulatorInfo {
 ///
 /// # Returns
 ///
-/// A `String` that represents the query operation based on the provided `SelectClause`.
+/// A `String` that represents the query operation based on the provided `SelectColumn`.
 ///
 /// # Panics
 ///
@@ -70,14 +70,14 @@ impl AccumulatorInfo {
 /// 
 
 pub fn process_select_clauses(
-    select_clauses: &Vec<SelectClause>,
+    select_clauses: &Vec<SelectColumn>,
     query_object: &mut QueryObject,
 ) -> String {
 
     // Check for SELECT * case
     if select_clauses.len() == 1 {
         match &select_clauses[0] {
-            SelectClause::Column(col_ref, _) if col_ref.column == "*" => {
+            SelectColumn::Column(col_ref, _) if col_ref.column == "*" => {
                 return create_select_star_map(query_object);
             }
             _ => {}
@@ -86,8 +86,8 @@ pub fn process_select_clauses(
     // Check if any aggregations are present using recursive traversal
     let has_aggregates: bool = select_clauses.iter().any(|clause| {
         match clause {
-            SelectClause::Aggregate(_, _) => true,
-            SelectClause::ComplexValue(field, _) => has_aggregate_in_complex_field(field),
+            SelectColumn::Aggregate(_, _) => true,
+            SelectColumn::ComplexValue(field, _) => has_aggregate_in_complex_field(field),
             _ => false
         }
     });
@@ -100,7 +100,7 @@ pub fn process_select_clauses(
 }
    
 // function to create aggregate fold and map
-fn create_aggregate_map(select_clauses: &Vec<SelectClause>, query_object: &QueryObject) -> String {
+fn create_aggregate_map(select_clauses: &Vec<SelectColumn>, query_object: &QueryObject) -> String {
     let mut acc_info = AccumulatorInfo::new();
     let mut result = String::new();
 
@@ -108,7 +108,7 @@ fn create_aggregate_map(select_clauses: &Vec<SelectClause>, query_object: &Query
     for (i, clause) in select_clauses.iter().enumerate() {
         let result_type = query_object.result_column_types.get_index(i).unwrap().1;
         match clause {
-            SelectClause::Aggregate(agg, _) => {
+            SelectColumn::Aggregate(agg, _) => {
                 match agg.function {
                     AggregateType::Avg => {
                         acc_info.add_avg(agg.column.clone(), result_type.clone());
@@ -121,10 +121,10 @@ fn create_aggregate_map(select_clauses: &Vec<SelectClause>, query_object: &Query
                     }
                 }
             },
-            SelectClause::ComplexValue(field, _) => {
+            SelectColumn::ComplexValue(field, _) => {
                 process_complex_field_for_accumulator(field, &mut acc_info, query_object);
             },
-            SelectClause::Column(col, _) => {
+            SelectColumn::Column(col, _) => {
                 acc_info.add_value(
                     AccumulatorValue::Column(col.clone()),
                     result_type.clone()
@@ -261,7 +261,7 @@ fn create_aggregate_map(select_clauses: &Vec<SelectClause>, query_object: &Query
    for (i, clause) in select_clauses.iter().enumerate() {
        let field_name = query_object.result_column_types.get_index(i).unwrap().0;
        let value = match clause {
-           SelectClause::Aggregate(agg, _) => {
+           SelectColumn::Aggregate(agg, _) => {
                match agg.function {
                    AggregateType::Avg => {
                        let (sum_pos, count_pos) = (
@@ -285,10 +285,10 @@ fn create_aggregate_map(select_clauses: &Vec<SelectClause>, query_object: &Query
                    }
                }
            },
-           SelectClause::ComplexValue(field, _) => {
+           SelectColumn::ComplexValue(field, _) => {
                format!("Some({})", process_complex_field_for_accumulator(field, &mut acc_info, query_object))
            },
-           SelectClause::Column(col, _) => {
+           SelectColumn::Column(col, _) => {
                let pos = acc_info.value_positions.get(&AccumulatorValue::Column(col.clone())).unwrap().0;
                format!("Some(acc.{})", pos)
            }
@@ -526,7 +526,7 @@ fn create_select_star_map(query_object: &QueryObject) -> String {
     result
 }
 
-fn create_simple_map(select_clauses: &Vec<SelectClause>, query_object: &QueryObject) -> String {
+fn create_simple_map(select_clauses: &Vec<SelectColumn>, query_object: &QueryObject) -> String {
     let mut map_string = String::from(".map(|x| OutputStruct { ");
     let empty_string = "".to_string();
 
@@ -534,7 +534,7 @@ fn create_simple_map(select_clauses: &Vec<SelectClause>, query_object: &QueryObj
         .enumerate()  // Add enumerate to track position
         .map(|(i, clause)| {
             match clause {
-                SelectClause::Column(col_ref, _) => {
+                SelectColumn::Column(col_ref, _) => {
                     let field_name = query_object.result_column_types.get_index(i).unwrap_or_else(|| (&empty_string, &empty_string)).0;
                     let value = if query_object.has_join {
                         let table = check_alias(&col_ref.table.as_ref().unwrap(), query_object);
@@ -547,7 +547,7 @@ fn create_simple_map(select_clauses: &Vec<SelectClause>, query_object: &QueryObj
                     };
                     format!("{}: {}", field_name, value)
                 },
-                SelectClause::ComplexValue(complex_field, alias) => {
+                SelectColumn::ComplexValue(complex_field, alias) => {
                     let field_name = alias.as_ref()
                         .unwrap_or_else(|| {
                             query_object.result_column_types.iter()
@@ -755,15 +755,15 @@ fn has_aggregate_in_complex_field(field: &ComplexField) -> bool {
 pub fn collect_sink_aggregates(query_object: &QueryObject) -> Vec<AggregateFunction> {
     let mut aggregates = Vec::new();
 
-    for clause in query_object.ir_ast.clone().unwrap().select{
+    for clause in query_object.ir_ast.clone().unwrap().select.select{
         match clause {
-            SelectClause::Aggregate(agg, _) => {
+            SelectColumn::Aggregate(agg, _) => {
                 aggregates.push(AggregateFunction {
                     function: agg.function.clone(),
                     column: agg.column.clone(),
                 });
             },
-            SelectClause::ComplexValue(field, _) => {
+            SelectColumn::ComplexValue(field, _) => {
                 collect_aggregates_in_complex_field(&field, &mut aggregates);
             },
             _ => {}
@@ -799,11 +799,11 @@ pub fn process_grouping_projections(query_object: &QueryObject, acc_info: &Group
     result.push_str(".map(|x| OutputStruct {\n");
     
     // Process each select clause
-    for (i, clause) in query_object.ir_ast.as_ref().unwrap().select.iter().enumerate() {
+    for (i, clause) in query_object.ir_ast.as_ref().unwrap().select.select.iter().enumerate() {
         let field_name = query_object.result_column_types.get_index(i).unwrap().0;
         
         match clause {
-            SelectClause::Column(col_ref, _) => {
+            SelectColumn::Column(col_ref, _) => {
                 //case select *, we call the create_select_star_group function
                 if col_ref.column == "*" {
                     return create_select_star_group(query_object);
@@ -831,7 +831,7 @@ pub fn process_grouping_projections(query_object: &QueryObject, acc_info: &Group
                     panic!("GROUP BY clause missing but process_grouping_projections was called");
                 }
             },
-            SelectClause::Aggregate(agg, _) => {
+            SelectColumn::Aggregate(agg, _) => {
                 // For aggregates, access them from the accumulator
                 let value = match agg.function {
                     AggregateType::Avg => {
@@ -876,9 +876,9 @@ pub fn process_grouping_projections(query_object: &QueryObject, acc_info: &Group
                 };
                 result.push_str(&format!("    {}: {},\n", field_name, value));
             },
-            SelectClause::ComplexValue(field, _) => {
+            SelectColumn::ComplexValue(field, _) => {
                 // For complex expressions, recursively process them
-                let value = format!("Some({})", process_complex_field_for_group(field, query_object, acc_info));
+                let value = format!("Some({})", process_complex_field_for_group(&field, query_object, acc_info));
                 result.push_str(&format!("    {}: {},\n", field_name, value));
             }
         }

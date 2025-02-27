@@ -2,6 +2,7 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 
+use crate::dsl::ir::r_distinct::process_distinct;
 use crate::dsl::ir::r_limit::process_limit;
 use crate::dsl::ir::r_order::process_order_by;
 use crate::dsl::struct_object::object::QueryObject;
@@ -101,6 +102,10 @@ pub fn create_template(query_object: &QueryObject) -> String {
         if let Some(_limit) = &query_object.ir_ast.as_ref().unwrap().limit {
             stream.push_str(&process_limit(query_object));
         }
+
+        if query_object.ir_ast.as_ref().unwrap().select.distinct {
+            stream.push_str(&process_distinct(query_object));
+        }
         
         stream_declarations.push(stream);
     }
@@ -125,6 +130,10 @@ pub fn create_template(query_object: &QueryObject) -> String {
 
                 if let Some(_limit) = &query_object.ir_ast.as_ref().unwrap().limit {
                     stream.push_str(&process_limit(query_object));
+                }
+
+                if query_object.ir_ast.as_ref().unwrap().select.distinct {
+                    stream.push_str(&process_distinct(query_object));
                 }
 
                 stream_declarations.push(stream);

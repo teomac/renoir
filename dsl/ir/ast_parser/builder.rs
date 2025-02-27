@@ -1,6 +1,6 @@
-use super::ir_ast_structure::*;
 use super::error::IrParseError;
 use super::group::GroupParser;
+use super::ir_ast_structure::*;
 use super::limit::LimitParser;
 use super::order::OrderParser;
 use super::{condition::ConditionParser, sink::SinkParser, source::SourceParser};
@@ -12,7 +12,7 @@ pub struct IrASTBuilder;
 impl IrASTBuilder {
     pub fn build_ast_from_pairs(pairs: Pairs<Rule>) -> Result<IrAST, IrParseError> {
         let mut from = None;
-        let mut select = Vec::new();
+        let mut select = None;
         let mut filter = None;
         let mut group_by = None;
         let mut order_by = None;
@@ -28,7 +28,7 @@ impl IrASTBuilder {
                                 from = Some(SourceParser::parse(clause)?);
                             }
                             Rule::select_clause => {
-                                select = SinkParser::parse(clause)?;
+                                select = Some(SinkParser::parse(clause)?);
                             }
                             Rule::where_clause => {
                                 filter = Some(ConditionParser::parse(clause)?);
@@ -60,7 +60,8 @@ impl IrASTBuilder {
         let ast = IrAST {
             from: from
                 .ok_or_else(|| IrParseError::InvalidInput("Missing FROM clause".to_string()))?,
-            select,
+            select: select
+                .ok_or_else(|| IrParseError::InvalidInput("Missing SELECT clause".to_string()))?,
             filter,
             group_by,
             order_by,
@@ -71,7 +72,6 @@ impl IrASTBuilder {
     }
 
     pub fn validate_ast(_ast: &IrAST) -> Result<(), IrParseError> {
-
         //Validate the WHERE clause
         // column types must be coherent with the condition.
 
@@ -79,9 +79,9 @@ impl IrASTBuilder {
         // column types must be coherent with the condition.
 
         //validate the SELECT clause
-        // column types must be coherent with the operation. 
+        // column types must be coherent with the operation.
         //if we have a GROUP BY, the single columns in the SELECT clause must be in the GROUP BY clause.
-       
+
         Ok(())
     }
 }

@@ -6,5 +6,6 @@ pub mod r_sink;
 pub mod r_group;
 pub mod r_order;
 pub mod r_limit;
+pub mod r_distinct;
 
 pub use ir_to_renoir::IrToRenoir;
