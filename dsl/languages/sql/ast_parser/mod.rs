@@ -8,6 +8,7 @@ pub mod group_by;
 pub mod sql_ast_structure;
 pub mod order;
 pub mod limit;
+pub mod validate;
 pub use sql_ast_structure::{
     SqlAST, 
     WhereCondition, 

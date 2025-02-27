@@ -19,7 +19,7 @@ r_paren = { ")" }
 boolean = { "true" | "false"}
 
 variable = @{ ('a'..'z' | "_") ~ ('a'..'z' | '0'..'9' | "_")* }
-number = @{ 
+number = @{ ("-")? ~
     ('0'..'9')+ // Integer part
     ~ ("." ~ ('0'..'9')+)? // Optional decimal part
 }

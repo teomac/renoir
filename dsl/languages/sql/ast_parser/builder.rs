@@ -1,6 +1,7 @@
 use super::limit::LimitParser;
 use super::order::OrderParser;
-use super::sql_ast_structure::*;
+use super::validate::validate_ast;
+use super::{sql_ast_structure::*, validate};
 use super::error::SqlParseError;
 use super::{
     where_clause::ConditionParser, from::FromParser, group_by::GroupByParser, select::SelectParser,
@@ -115,6 +116,8 @@ impl SqlASTBuilder {
                             None
                         },
                     };
+
+                    validate_ast(&ast)?;
 
                     return Ok(ast);
                 }
