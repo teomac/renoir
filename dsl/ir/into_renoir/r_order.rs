@@ -1,6 +1,8 @@
 use crate::dsl::ir::ir_ast_structure::{OrderByClause, OrderDirection};
 use crate::dsl::ir::QueryObject;
 
+use super::r_utils::find_matching_result_column;
+
 /// Process the OrderByClause and generate sorting code for the output CSV.
 /// This function assumes the CSV has already been written and will sort it in place.
 ///
@@ -28,22 +30,20 @@ pub fn process_order_by(order_by: &OrderByClause, query_object: &QueryObject) ->
         csv_path
     ));
 
-    // save keys of result_column_types in a vector
-    let mut result_column_types_keys = Vec::new();
-    for key in query_object.result_column_types.keys() {
-        result_column_types_keys.push(key.clone());
-    }
-
     let mut order_by_items = order_by.items.clone();
 
     for item in &mut order_by_items {
-        if result_column_types_keys.iter().any(|x| x.contains(&item.column.column)) {
-            let x = result_column_types_keys.iter().find(|x| x.contains(&item.column.column)).unwrap();
-            item.column.column = x.clone();
+        // Find the matching result column that correctly corresponds to this ORDER BY item
+        let matching_column = find_matching_result_column(&item.column.column, 
+                                                         item.column.table.as_deref(),
+                                                         query_object);
+        
+        if let Some(matched_col) = matching_column {
+            item.column.column = matched_col.clone();
             
             order_string.push_str(&format!(
                 r#"let {}_idx = headers.iter().position(|h| h == "{}").unwrap();"#,
-                x, x
+                matched_col, matched_col
             ));
         }
     }

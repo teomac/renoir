@@ -106,3 +106,60 @@ pub fn check_alias(table: &str, query_object: &QueryObject) -> String {
         query_object.table_names_list.iter().find(|&x| x == table).unwrap().clone()
     }
 }
+
+// Helper function to find the exact matching result column for an ORDER BY column
+pub fn find_matching_result_column(
+    column_name: &str, 
+    table_name: Option<&str>,
+    query_object: &QueryObject
+) -> Option<String> {
+    let result_column_keys: Vec<&String> = query_object.result_column_types.keys().collect();
+    // If the column name is already an exact match in the result columns, return it
+    if result_column_keys.contains(&&column_name.to_string()) {
+        return Some(column_name.to_string());
+    }
+    
+    // Case 1: With table name specified
+    if let Some(table) = table_name {
+        // Check if table is an alias and get the actual table name if needed
+        let actual_table = if let Some(actual) = query_object.get_table_from_alias(table) {
+            actual
+        } else {
+            table
+        };
+        
+        // Try to find a result column that matches the format "column_table" or "column_alias"
+        let actual_table_string = actual_table.to_string();
+        let table_suffix = query_object.get_alias(actual_table).unwrap_or(&actual_table_string);
+        let expected_pattern = format!("{}_{}", column_name, table_suffix);
+        
+        // First check for exact match with the pattern
+        if let Some(key) = result_column_keys.iter().find(|k| ***k == expected_pattern) {
+            return Some(key.to_string());
+        }
+        
+        // If not found, check for any result column that starts with column name and matches the table
+        for key in result_column_keys {
+            // Split by underscore to check if the last part matches the table/alias
+            let parts: Vec<&str> = key.split('_').collect();
+            if parts.len() >= 2 {
+                let potential_col = parts[0];
+                let potential_table = parts.last().unwrap();
+                
+                if potential_col == column_name && (potential_table == &table || potential_table == table_suffix) {
+                    return Some(key.clone());
+                }
+            }
+        }
+    } 
+    // Case 2: No table specified - try to find any matching column
+    else {
+        for key in result_column_keys {
+            if key.starts_with(column_name) && 
+               (key.len() == column_name.len() || key.chars().nth(column_name.len()) == Some('_')) {
+                return Some(key.clone());
+            }
+        }
+    }
+    None
+}
