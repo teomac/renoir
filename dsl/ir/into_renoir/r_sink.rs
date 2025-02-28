@@ -132,7 +132,7 @@ fn create_aggregate_map(select_clauses: &Vec<SelectColumn>, query_object: &Query
     let mut tuple_inits = Vec::new();
 
     // Set appropriate initial values based on type and aggregation
-    for (value, (pos, val_type)) in acc_info.value_positions.iter() {
+    for (value, (_pos, val_type)) in acc_info.value_positions.iter() {
         match value {
             AccumulatorValue::Aggregate(agg_type, _) => {
                 match agg_type {
@@ -781,13 +781,14 @@ pub fn process_complex_field(field: &ComplexField, query_object: &QueryObject) -
         }
     } else if let Some(ref col) = field.column_ref {
         // Handle column reference
+        let empty_string = String::new();
         if query_object.has_join {
-            let mut table = col.table.clone().unwrap_or_else(String::new);
-            table = check_alias(&table, query_object);
+            let table = col.table.as_ref().unwrap_or_else(|| &empty_string);
+            let table = &check_alias(&table, query_object);
 
             let tuple_access = query_object
                 .table_to_tuple_access
-                .get(&table)
+                .get(table)
                 .expect("Table not found in tuple access map");
             format!("x{}.{}.unwrap()", tuple_access, col.column)
         } else {

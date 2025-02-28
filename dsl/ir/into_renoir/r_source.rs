@@ -30,9 +30,9 @@ pub fn process_from_clause(from_clause: &FromClause, query_object: &mut QueryObj
             let mut right_col = join.right_col.clone();
 
             // Get the actual table names using check_alias
-            let mut left_table_name = check_alias(&left_col.table.clone().unwrap(), &query_object);
+            let mut left_table_name = check_alias(&left_col.table.as_ref().unwrap(), &query_object);
             let mut right_table_name =
-                check_alias(&right_col.table.clone().unwrap(), &query_object);
+                check_alias(&right_col.table.as_ref().unwrap(), &query_object);
 
             //validate left and right columns
             query_object.check_column_validity(&left_col, &left_table_name);

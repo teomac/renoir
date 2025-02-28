@@ -664,7 +664,7 @@ fn process_filter_condition(
                     } else {
                         // Not a key column - must be in the accumulated values or aggregates
                         if query_object.has_join {
-                            let table = check_alias(&col_ref.table.clone().unwrap(), query_object);
+                            let table = check_alias(&col_ref.table.as_ref().unwrap(), query_object);
                             format!(
                                 "x.1{}.{}",
                                 query_object.table_to_tuple_access.get(&table).unwrap(),
@@ -784,7 +784,7 @@ fn process_filter_field(
         } else {
             // Not a key - use x.1
             if query_object.has_join {
-                let table = check_alias(&col.table.clone().unwrap(), query_object);
+                let table = check_alias(&col.table.as_ref().unwrap(), query_object);
                 format!(
                     "x.1{}.{}{}.unwrap()",
                     query_object.table_to_tuple_access.get(&table).unwrap(),
@@ -815,7 +815,7 @@ fn process_filter_field(
                     }
                 } else {
                     if query_object.has_join {
-                        let table = check_alias(&col_ref.table.clone().unwrap(), query_object);
+                        let table = check_alias(&col_ref.table.as_ref().unwrap(), query_object);
                         format!(
                             "x.1{}.{}.unwrap()",
                             query_object.table_to_tuple_access.get(&table).unwrap(),

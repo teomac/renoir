@@ -271,11 +271,11 @@ impl QueryObject {
                                             use crate::dsl::ir::r_utils::check_alias;
                                             check_alias(table_ref, &self)
                                         } else {
-                                            self.table_names_list[0].clone()
+                                            self.table_names_list[0].to_string()
                                         }
                                     } else {
                                         // If table is not specified, use the first table
-                                        self.table_names_list[0].clone()
+                                        self.table_names_list[0].to_string()
                                     };
                                     
                                     if let Some(struct_map) = self.table_to_struct.get(&table) {

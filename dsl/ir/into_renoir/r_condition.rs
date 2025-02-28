@@ -194,7 +194,7 @@ fn process_arithmetic_expression(field: &ComplexField, query_object: &QueryObjec
         query_object.check_column_validity(col, &table_name.to_string());
         
         if query_object.has_join {
-            let table = check_alias(&col.table.clone().unwrap(), query_object);
+            let table = check_alias(&col.table.as_ref().unwrap(), query_object);
             let c_type = query_object.get_type(col);
             format!("x{}.{}{}.unwrap()", 
                 query_object.table_to_tuple_access.get(&table).unwrap(),
@@ -215,7 +215,7 @@ fn process_arithmetic_expression(field: &ComplexField, query_object: &QueryObjec
                 query_object.check_column_validity(col_ref, &table_name.to_string());
                 let c_type = query_object.get_type(&col_ref);
                 if query_object.has_join {
-                    let table = check_alias(&col_ref.table.clone().unwrap(), query_object);
+                    let table = check_alias(&col_ref.table.as_ref().unwrap(), query_object);
                     format!("x{}.{}{}.unwrap()", 
                         query_object.table_to_tuple_access.get(&table).unwrap(),
                         col_ref.column,
@@ -270,7 +270,7 @@ fn process_null_check_condition(condition: &NullCondition, query_object: &QueryO
         let field = if condition.field.column_ref.is_some() {
             let col_ref = condition.field.column_ref.as_ref().unwrap();
             let table_name = check_alias(
-                &col_ref.table.clone().unwrap(), 
+                &col_ref.table.as_ref().unwrap(), 
                 query_object
             );
             //validate column
@@ -385,14 +385,14 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
             if has_left_column {
                 let left_columns = collect_columns(&condition.left_field);
                 for col in left_columns {
-                    let table = check_alias(&col.table.clone().unwrap(), query_object);
+                    let table = check_alias(&col.table.as_ref().unwrap(), query_object);
                     collect_column_null_checks(&condition.left_field, query_object, &table, &mut null_checks);
                 }
             }
             if has_right_column {
                 let right_columns = collect_columns(&condition.right_field);
                 for col in right_columns {
-                    let table = check_alias(&col.table.clone().unwrap(), query_object);
+                    let table = check_alias(&col.table.as_ref().unwrap(), query_object);
                     collect_column_null_checks(&condition.right_field, query_object, &table, &mut null_checks);
                 }
             }
@@ -473,7 +473,7 @@ fn collect_column_null_checks(field: &ComplexField, query_object: &QueryObject, 
     if let Some(ref col) = field.column_ref {
         query_object.check_column_validity(col, &table_name.to_string());
         if query_object.has_join {
-            let table = check_alias(&col.table.clone().unwrap(), query_object);
+            let table = check_alias(&col.table.as_ref().unwrap(), query_object);
             checks.push(format!("x{}.{}.is_some()", 
                 query_object.table_to_tuple_access.get(&table).unwrap(),
                 col.column
@@ -491,7 +491,7 @@ fn collect_column_null_checks(field: &ComplexField, query_object: &QueryObject, 
         if let IrLiteral::ColumnRef(col) = lit {
             query_object.check_column_validity(col, &table_name.to_string());
             if query_object.has_join {
-                let table = check_alias(&col.table.clone().unwrap(), query_object);
+                let table = check_alias(&col.table.as_ref().unwrap(), query_object);
                 checks.push(format!("x{}.{}.is_some()", 
                     query_object.table_to_tuple_access.get(&table).unwrap(),
                     col.column
@@ -504,7 +504,7 @@ fn collect_column_null_checks(field: &ComplexField, query_object: &QueryObject, 
     if let Some(ref agg) = field.aggregate {
         query_object.check_column_validity(&agg.column, &table_name.to_string());
         if query_object.has_join {
-            let table = check_alias(&agg.column.table.clone().unwrap(), query_object);
+            let table = check_alias(&agg.column.table.as_ref().unwrap(), query_object);
             checks.push(format!("x{}.{}.is_some()", 
                 query_object.table_to_tuple_access.get(&table).unwrap(),
                 agg.column.column

@@ -69,7 +69,7 @@ impl RustProject {
 }
 
 pub fn create_template(query_object: &QueryObject) -> String {
-    let table_names = query_object.table_names_list.clone();
+    let table_names = query_object.table_names_list.as_ref();
     let struct_names = query_object
         .table_to_struct_name
         .values()
