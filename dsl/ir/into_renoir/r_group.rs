@@ -360,41 +360,35 @@ fn create_fold_operation(
 
     // First add types and initializers for regular columns and aggregates
     for (value, (pos, val_type)) in &acc_info.agg_positions {
-        let actual_type = match value {
-            GroupAccumulatorValue::Aggregate(agg_type, _) => {
-                if (*agg_type == AggregateType::Max || *agg_type == AggregateType::Min)
-                    && val_type == "i64"
-                {
-                    "f64".to_string() // Force f64 type for Max/Min operations
-                } else {
-                    val_type.clone()
-                }
-            }
-        };
-        tuple_types.push(actual_type);
-
         match value {
             GroupAccumulatorValue::Aggregate(agg_type, _) => {
-                let init_value = match agg_type {
-                    AggregateType::Sum | AggregateType::Count => match val_type.as_str() {
-                        "f64" => "0.0",
-                        "i64" | "usize" => "0",
-                        _ => panic!("Unsupported type for Sum/Count: {}", val_type),
-                    },
-                    AggregateType::Max => match val_type.as_str() {
-                        "f64" => "f64::MIN",
-                        "i64" => "f64::MIN",
-                        _ => panic!("Unsupported type for Max: {}", val_type),
-                    },
-                    AggregateType::Min => match val_type.as_str() {
-                        "f64" => "f64::MAX",
-                        "i64" => "f64::MAX",
-                        _ => panic!("Unsupported type for Min: {}", val_type),
-                    },
-                    AggregateType::Avg => "0.0",
+                match agg_type {
+                    AggregateType::Max | AggregateType::Min | AggregateType::Sum => {
+                        // These will be Option types
+                        let actual_type = match (agg_type, val_type.as_str()) {
+                            (AggregateType::Max | AggregateType::Min, "i64") => {
+                                "Option<f64>".to_string()
+                            }
+                            _ => format!("Option<{}>", val_type),
+                        };
+                        tuple_types.push(actual_type);
+                        tuple_inits.push("None".to_string());
+                    }
+                    AggregateType::Count => {
+                        // Count stays as is
+                        tuple_types.push(val_type.clone());
+                        match val_type.as_str() {
+                            "f64" => tuple_inits.push("0.0".to_string()),
+                            "i64" | "usize" => tuple_inits.push("0".to_string()),
+                            _ => panic!("Unsupported type for Count: {}", val_type),
+                        }
+                    }
+                    AggregateType::Avg => {
+                        // Avg is handled through Sum and Count
+                        tuple_types.push(val_type.clone());
+                        tuple_inits.push("0.0".to_string());
+                    }
                 }
-                .to_string();
-                tuple_inits.push(init_value);
 
                 // Generate update code
                 match value {
@@ -446,8 +440,20 @@ fn create_fold_operation(
                             }
                             AggregateType::Sum => {
                                 update_code.push_str(&format!(
-                                    "    if let Some(val) = {} {{ {}acc{} += val; }}\n",
+                                    "    if let Some(val) = {} {{ 
+                                        {}acc{} = Some({}acc{}.unwrap_or(0.0) + val);
+                                    }}\n",
                                     col_access,
+                                    if !single_agg {
+                                        String::from("")
+                                    } else {
+                                        String::from("*")
+                                    },
+                                    if single_agg {
+                                        String::from("")
+                                    } else {
+                                        format!(".{}", pos)
+                                    },
                                     if !single_agg {
                                         String::from("")
                                     } else {
@@ -462,7 +468,12 @@ fn create_fold_operation(
                             }
                             AggregateType::Max => {
                                 update_code.push_str(&format!(
-                                    "    if let Some(val) = {} {{ {}acc{} = acc{}.max(val as f64); }}\n",
+                                    "    if let Some(val) = {} {{
+                                        {}acc{} = Some(match {}acc{} {{
+                                            Some(current_max) => current_max.max(val as f64),
+                                            None => val as f64
+                                        }});
+                                    }}\n",
                                     col_access,
                                     if !single_agg {
                                         String::from("")
@@ -473,6 +484,11 @@ fn create_fold_operation(
                                         String::from("")
                                     } else {
                                         format!(".{}", pos)
+                                    },
+                                    if !single_agg {
+                                        String::from("")
+                                    } else {
+                                        String::from("*")
                                     },
                                     if single_agg {
                                         String::from("")
@@ -483,7 +499,12 @@ fn create_fold_operation(
                             }
                             AggregateType::Min => {
                                 update_code.push_str(&format!(
-                                    "    if let Some(val) = {} {{ {}acc{} = acc{}.min(val as f64); }}\n",
+                                    "    if let Some(val) = {} {{
+                                        {}acc{} = Some(match {}acc{} {{
+                                            Some(current_min) => current_min.min(val as f64),
+                                            None => val as f64
+                                        }});
+                                    }}\n",
                                     col_access,
                                     if !single_agg {
                                         String::from("")
@@ -494,6 +515,11 @@ fn create_fold_operation(
                                         String::from("")
                                     } else {
                                         format!(".{}", pos)
+                                    },
+                                    if !single_agg {
+                                        String::from("")
+                                    } else {
+                                        String::from("*")
                                     },
                                     if single_agg {
                                         String::from("")
@@ -820,7 +846,17 @@ fn process_filter_field(
                     format!("{}.is_some() as usize", col_access)
                 }
             }
-            _ => format!("{}", col_access),
+            AggregateType::Max | AggregateType::Min | AggregateType::Sum => {
+                format!("{}.unwrap()", col_access)
+            }
+            AggregateType::Avg =>{
+                //get the sum and count positions. Sum position corresponds to the position of the aggregate in the accumulator
+                let count_pos = acc_info.get_agg_position(&AggregateFunction{
+                    function: AggregateType::Count,
+                    column: col.clone()
+                });
+                format!("{}.unwrap() / {} as f64", col_access, format!("x.1.{}", count_pos))
+            },
         }
     } else {
         panic!("Invalid ComplexField - no valid content")
