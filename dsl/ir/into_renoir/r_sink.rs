@@ -704,9 +704,11 @@ pub fn process_complex_field(field: &ComplexField, query_object: &QueryObject) -
     } else if let Some(ref col) = field.column_ref {
         // Handle column reference
         if query_object.has_join {
-            let table = col.table.as_ref().unwrap();
+            let mut table = col.table.clone().unwrap_or_else(String::new);
+            table = check_alias(&table, query_object);
+            
             let tuple_access = query_object.table_to_tuple_access
-                .get(table)
+                .get(&table)
                 .expect("Table not found in tuple access map");
             format!("x{}.{}.unwrap()", tuple_access, col.column)
         } else {

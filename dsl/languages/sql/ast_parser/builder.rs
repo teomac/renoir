@@ -16,12 +16,18 @@ impl SqlASTBuilder {
         for pair in pairs {
             match pair.as_rule() {
                 Rule::query => {
-                    let mut inner = pair.into_inner();
+                    let mut inner = pair.clone().into_inner();
                     inner.next(); // Skip SELECT keyword
 
                     let distinct = inner
                         .next()
                         .map_or(false, |token| token.as_rule() == Rule::distinct_keyword);
+
+                    if !distinct{
+                        // If the next token is not DISTINCT, we need to go back to the beginning
+                        inner = pair.into_inner();
+                        inner.next(); // Skip SELECT keyword
+                    }
 
                     let select_part = inner.next().ok_or_else(|| {
                         SqlParseError::InvalidInput("Missing SELECT clause".to_string())
