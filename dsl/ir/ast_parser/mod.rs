@@ -40,8 +40,6 @@ impl IrParser {
             .map_err(|e| IrParseError::PestError(e))?;
         
         let ast = IrASTBuilder::build_ast_from_pairs(pairs)?;
-        IrASTBuilder::validate_ast(&ast)?;
-        //println!("Ir AST: {:#?}", ast);
         Ok(ast)
     }
 }

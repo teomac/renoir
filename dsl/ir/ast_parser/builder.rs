@@ -70,18 +70,4 @@ impl IrASTBuilder {
 
         Ok(ast)
     }
-
-    pub fn validate_ast(_ast: &IrAST) -> Result<(), IrParseError> {
-        //Validate the WHERE clause
-        // column types must be coherent with the condition.
-
-        //validate HAVING clause
-        // column types must be coherent with the condition.
-
-        //validate the SELECT clause
-        // column types must be coherent with the operation.
-        //if we have a GROUP BY, the single columns in the SELECT clause must be in the GROUP BY clause.
-
-        Ok(())
-    }
 }
