@@ -1,7 +1,7 @@
+use crate::dsl::languages::sql::ast_parser::Rule;
+use pest::error::Error as PestError;
 use std::error::Error;
 use std::fmt::{self, Display};
-use pest::error::Error as PestError;
-use crate::dsl::languages::sql::ast_parser::Rule;
 
 #[derive(Debug)]
 pub enum SqlParseError {

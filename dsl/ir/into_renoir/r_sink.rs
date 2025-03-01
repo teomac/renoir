@@ -101,7 +101,8 @@ pub fn process_select_clauses(
 fn create_aggregate_map(select_clauses: &Vec<SelectColumn>, query_object: &QueryObject) -> String {
     let mut acc_info = AccumulatorInfo::new();
     let mut result = String::new();
-    let is_single_agg: bool = select_clauses.len() == 1;
+
+    let mut check_list = Vec::new();
 
     // First analyze all clauses to build accumulator info
     for (i, clause) in select_clauses.iter().enumerate() {
@@ -119,7 +120,12 @@ fn create_aggregate_map(select_clauses: &Vec<SelectColumn>, query_object: &Query
                 }
             },
             SelectColumn::ComplexValue(field, _) => {
-                process_complex_field_for_accumulator(field, &mut acc_info, query_object);
+                process_complex_field_for_accumulator(
+                    field,
+                    &mut acc_info,
+                    query_object,
+                    &mut check_list,
+                );
             }
             SelectColumn::Column(col, _) => {
                 acc_info.add_value(AccumulatorValue::Column(col.clone()), result_type.clone());
@@ -181,11 +187,15 @@ fn create_aggregate_map(select_clauses: &Vec<SelectColumn>, query_object: &Query
     // Generate fold accumulator updates
     let mut update_code = String::new();
 
+    let is_single_acc = acc_info.value_positions.len() == 1;
+    let mut asterisk: String = String::new();
+
     for (value, (pos, _)) in acc_info.value_positions.iter() {
         let mut index_acc = format!(".{}", pos);
 
-        if acc_info.value_positions.len() == 1 {
+        if is_single_acc {
             index_acc = String::new();
+            asterisk = "*".to_string();
         }
         match value {
             AccumulatorValue::Aggregate(agg_type, col) => {
@@ -204,42 +214,42 @@ fn create_aggregate_map(select_clauses: &Vec<SelectColumn>, query_object: &Query
                 match agg_type {
                     AggregateType::Count => {
                         if col.column == "*" {
-                            update_code.push_str(&format!("    acc{} += 1;\n", pos));
+                            update_code.push_str(&format!("    acc{} += 1;\n", index_acc));
                         } else {
                             update_code.push_str(&format!(
-                                "    if {}.is_some() {{ acc{} += 1.0; }}\n",
-                                col_access, index_acc
+                                "    if {}.is_some() {{ {}acc{} += 1; }}\n",
+                                col_access, asterisk, index_acc
                             ));
                         }
                     }
                     AggregateType::Sum => {
                         update_code.push_str(&format!(
                             "    if let Some(val) = {} {{ 
-                                acc{} = Some(acc{}.unwrap_or(0.0) + val);
+                                {}acc{} = Some(acc{}.unwrap_or(0.0) + val);
                             }}\n",
-                            col_access, index_acc, index_acc
+                            col_access, asterisk, index_acc, index_acc
                         ));
                     }
                     AggregateType::Max => {
                         update_code.push_str(&format!(
                             "    if let Some(val) = {} {{
-                                acc{} = Some(match acc{} {{
+                                {}acc{} = Some(match acc{} {{
                                     Some(current_max) => current_max.max(val),
                                     None => val
                                 }});
                             }}\n",
-                            col_access, index_acc, index_acc
+                            col_access, asterisk, index_acc, index_acc
                         ));
                     }
                     AggregateType::Min => {
                         update_code.push_str(&format!(
                             "    if let Some(val) = {} {{
-                                acc{} = Some(match acc{} {{
+                                {}acc{} = Some(match acc{} {{
                                     Some(current_min) => current_min.min(val),
                                     None => val
                                 }});
                             }}\n",
-                            col_access, index_acc, index_acc
+                            col_access, asterisk, index_acc, index_acc
                         ));
                     }
                     AggregateType::Avg => {} // Handled through Sum and Count
@@ -273,6 +283,7 @@ fn create_aggregate_map(select_clauses: &Vec<SelectColumn>, query_object: &Query
     result.push_str(".map(|acc| OutputStruct {\n");
 
     for (i, clause) in select_clauses.iter().enumerate() {
+        check_list.clear();
         let field_name = query_object.result_column_types.get_index(i).unwrap().0;
         let value = match clause {
             SelectColumn::Aggregate(agg, _) => {
@@ -312,7 +323,7 @@ fn create_aggregate_map(select_clauses: &Vec<SelectColumn>, query_object: &Query
                         // These are already Option types, so we just return them directly
                         format!(
                             "acc{}",
-                            if !is_single_agg {
+                            if !is_single_acc {
                                 format!(".{}", pos)
                             } else {
                                 String::new()
@@ -329,7 +340,7 @@ fn create_aggregate_map(select_clauses: &Vec<SelectColumn>, query_object: &Query
                             .unwrap()
                             .0;
                         //if there is only one acc, do not use .0
-                        if acc_info.value_positions.len() == 1 {
+                        if is_single_acc {
                             format!("Some(acc)")
                         } else {
                             format!("Some(acc.{})", pos)
@@ -338,10 +349,28 @@ fn create_aggregate_map(select_clauses: &Vec<SelectColumn>, query_object: &Query
                 }
             }
             SelectColumn::ComplexValue(field, _) => {
-                format!(
-                    "Some({})",
-                    process_complex_field_for_accumulator(field, &mut acc_info, query_object)
-                )
+                let temp = process_complex_field_for_accumulator(
+                    field,
+                    &mut acc_info,
+                    query_object,
+                    &mut check_list,
+                );
+                check_list.sort();
+                check_list.dedup();
+                let is_check_list_empty = check_list.is_empty();
+                if is_check_list_empty {
+                    format!(
+                        "Some({})",
+                        temp
+                    )
+                } else {
+                  format!(
+                    "if {} {{ Some({}) }} else {{ None }}",
+                    check_list.join(" && "),
+                    temp
+                )  
+                }
+                
             }
             SelectColumn::Column(col, _) => {
                 let pos = acc_info
@@ -363,7 +392,10 @@ fn process_complex_field_for_accumulator(
     field: &ComplexField,
     acc_info: &mut AccumulatorInfo,
     query_object: &QueryObject,
+    check_list: &mut Vec<String>,
 ) -> String {
+    let is_single_acc = acc_info.value_positions.len() == 1;
+
     if let Some(ref nested) = field.nested_expr {
         // Handle nested expression (left_field OP right_field)
         let (left, op, right) = &**nested;
@@ -380,18 +412,36 @@ fn process_complex_field_for_accumulator(
                 if op == "/" {
                     return format!(
                         "({} as f64) {} ({} as f64)",
-                        process_complex_field_for_accumulator(left, acc_info, query_object),
+                        process_complex_field_for_accumulator(
+                            left,
+                            acc_info,
+                            query_object,
+                            check_list
+                        ),
                         op,
-                        process_complex_field_for_accumulator(right, acc_info, query_object)
+                        process_complex_field_for_accumulator(
+                            right,
+                            acc_info,
+                            query_object,
+                            check_list
+                        )
                     );
                 }
 
                 // Special handling for power operation (^)
                 if op == "^" {
-                    let left_expr =
-                        process_complex_field_for_accumulator(left, acc_info, query_object);
-                    let right_expr =
-                        process_complex_field_for_accumulator(right, acc_info, query_object);
+                    let left_expr = process_complex_field_for_accumulator(
+                        left,
+                        acc_info,
+                        query_object,
+                        check_list,
+                    );
+                    let right_expr = process_complex_field_for_accumulator(
+                        right,
+                        acc_info,
+                        query_object,
+                        check_list,
+                    );
 
                     // If either operand is f64, use powf
                     if left_type == "f64" || right_type == "f64" {
@@ -410,9 +460,14 @@ fn process_complex_field_for_accumulator(
                     }
                 }
 
-                let left_expr = process_complex_field_for_accumulator(left, acc_info, query_object);
-                let right_expr =
-                    process_complex_field_for_accumulator(right, acc_info, query_object);
+                let left_expr =
+                    process_complex_field_for_accumulator(left, acc_info, query_object, check_list);
+                let right_expr = process_complex_field_for_accumulator(
+                    right,
+                    acc_info,
+                    query_object,
+                    check_list,
+                );
 
                 // Add as f64 to integer literals when needed
                 let processed_left = if let Some(ref lit) = left.literal {
@@ -453,7 +508,7 @@ fn process_complex_field_for_accumulator(
             //case same type
             //if operation is plus, minus, multiply, division, or power and types are not numeric, panic
             if op == "+" || op == "-" || op == "*" || op == "/" || op == "^" {
-                if left_type != "f64" && left_type != "i64" {
+                if left_type != "f64" && left_type != "i64" && left_type != "usize" {
                     panic!(
                         "Invalid arithmetic expression - non-numeric types: {} and {}",
                         left_type, right_type
@@ -465,17 +520,27 @@ fn process_complex_field_for_accumulator(
             if op == "/" {
                 return format!(
                     "({} as f64) {} ({} as f64)",
-                    process_complex_field_for_accumulator(left, acc_info, query_object),
+                    process_complex_field_for_accumulator(left, acc_info, query_object, check_list),
                     op,
-                    process_complex_field_for_accumulator(right, acc_info, query_object)
+                    process_complex_field_for_accumulator(
+                        right,
+                        acc_info,
+                        query_object,
+                        check_list
+                    )
                 );
             }
 
             // Special handling for power operation (^)
             if op == "^" {
-                let left_expr = process_complex_field_for_accumulator(left, acc_info, query_object);
-                let right_expr =
-                    process_complex_field_for_accumulator(right, acc_info, query_object);
+                let left_expr =
+                    process_complex_field_for_accumulator(left, acc_info, query_object, check_list);
+                let right_expr = process_complex_field_for_accumulator(
+                    right,
+                    acc_info,
+                    query_object,
+                    check_list,
+                );
 
                 // If both are f64, use powf
                 if left_type == "f64" {
@@ -489,9 +554,9 @@ fn process_complex_field_for_accumulator(
             // Regular arithmetic with same types
             format!(
                 "({} {} {})",
-                process_complex_field_for_accumulator(left, acc_info, query_object),
+                process_complex_field_for_accumulator(left, acc_info, query_object, check_list),
                 op,
-                process_complex_field_for_accumulator(right, acc_info, query_object)
+                process_complex_field_for_accumulator(right, acc_info, query_object, check_list)
             )
         }
     } else if let Some(ref col) = field.column_ref {
@@ -522,21 +587,35 @@ fn process_complex_field_for_accumulator(
             AggregateType::Avg => {
                 let (sum_pos, count_pos) =
                     acc_info.add_avg(agg.column.clone(), query_object.get_type(&agg.column));
-                format!("(acc.{}.unwrap() as f64 / acc.{} as f64)", sum_pos, count_pos)
+                check_list.push(format!("acc.{}.is_some()", sum_pos));
+                format!(
+                    "(acc.{}.unwrap() as f64 / acc.{} as f64)",
+                    sum_pos, count_pos
+                )
             }
             AggregateType::Max | AggregateType::Min | AggregateType::Sum => {
                 let pos = acc_info.add_value(
                     AccumulatorValue::Aggregate(agg.function.clone(), agg.column.clone()),
                     query_object.get_type(&agg.column),
                 );
-                format!("acc.{}.unwrap()", pos)
+                if is_single_acc {
+                    check_list.push(format!("acc.is_some()"));
+                    format!("acc.unwrap()")
+                } else {
+                    check_list.push(format!("acc.{}.is_some()", pos));
+                    format!("acc.{}.unwrap()", pos)
+                }
             }
-            _ => {
+            AggregateType::Count => {
                 let pos = acc_info.add_value(
                     AccumulatorValue::Aggregate(agg.function.clone(), agg.column.clone()),
                     query_object.get_type(&agg.column),
                 );
-                format!("acc.{}", pos)
+                if is_single_acc {
+                    format!("acc")
+                } else {
+                    format!("acc.{}", pos)
+                }
             }
         }
     } else {
@@ -607,6 +686,8 @@ fn create_simple_map(select_clauses: &Vec<SelectColumn>, query_object: &QueryObj
     let mut map_string = String::from(".map(|x| OutputStruct { ");
     let empty_string = "".to_string();
 
+    let mut check_list = Vec::new();
+
     let fields: Vec<String> = select_clauses
         .iter()
         .enumerate() // Add enumerate to track position
@@ -639,8 +720,22 @@ fn create_simple_map(select_clauses: &Vec<SelectColumn>, query_object: &QueryObj
                             .map(|(name, _)| name)
                             .unwrap()
                     });
-                    let value = process_complex_field(complex_field, query_object);
-                    format!("{}: Some({})", field_name, value)
+                    let value = process_complex_field(complex_field, query_object, &mut check_list);
+                    // Deduplicate and the check list
+                    check_list.sort();
+                    check_list.dedup();
+                    let is_check_list_empty = check_list.is_empty();
+                    if is_check_list_empty {
+                        format!("{}: Some({})", field_name, value)
+                    } else {
+                        format!(
+                        "{}: if {} {{Some({})}} else {{ None }}",
+                        field_name,
+                        check_list.join(" && "),
+                        value
+                    )
+                    }
+                    
                 }
                 _ => unreachable!("Should not have aggregates in simple map"),
             }
@@ -652,7 +747,11 @@ fn create_simple_map(select_clauses: &Vec<SelectColumn>, query_object: &QueryObj
     map_string
 }
 
-pub fn process_complex_field(field: &ComplexField, query_object: &QueryObject) -> String {
+pub fn process_complex_field(
+    field: &ComplexField,
+    query_object: &QueryObject,
+    check_list: &mut Vec<String>,
+) -> String {
     if let Some(ref nested) = field.nested_expr {
         // Handle nested expression (left_field OP right_field)
         let (left, op, right) = &**nested;
@@ -669,16 +768,16 @@ pub fn process_complex_field(field: &ComplexField, query_object: &QueryObject) -
                 if op == "/" {
                     return format!(
                         "({} as f64) {} ({} as f64)",
-                        process_complex_field(left, query_object),
+                        process_complex_field(left, query_object, check_list),
                         op,
-                        process_complex_field(right, query_object)
+                        process_complex_field(right, query_object, check_list)
                     );
                 }
 
                 // Special handling for power operation (^)
                 if op == "^" {
-                    let left_expr = process_complex_field(left, query_object);
-                    let right_expr = process_complex_field(right, query_object);
+                    let left_expr = process_complex_field(left, query_object, check_list);
+                    let right_expr = process_complex_field(right, query_object, check_list);
 
                     // If either operand is f64, use powf
                     if left_type == "f64" || right_type == "f64" {
@@ -697,8 +796,8 @@ pub fn process_complex_field(field: &ComplexField, query_object: &QueryObject) -
                     }
                 }
 
-                let left_expr = process_complex_field(left, query_object);
-                let right_expr = process_complex_field(right, query_object);
+                let left_expr = process_complex_field(left, query_object, check_list);
+                let right_expr = process_complex_field(right, query_object, check_list);
 
                 // Add as f64 to integer literals when needed
                 let processed_left = if let Some(ref lit) = left.literal {
@@ -751,16 +850,16 @@ pub fn process_complex_field(field: &ComplexField, query_object: &QueryObject) -
             if op == "/" {
                 return format!(
                     "({} as f64) {} ({} as f64)",
-                    process_complex_field(left, query_object),
+                    process_complex_field(left, query_object, check_list),
                     op,
-                    process_complex_field(right, query_object)
+                    process_complex_field(right, query_object, check_list)
                 );
             }
 
             // Special handling for power operation (^)
             if op == "^" {
-                let left_expr = process_complex_field(left, query_object);
-                let right_expr = process_complex_field(right, query_object);
+                let left_expr = process_complex_field(left, query_object, check_list);
+                let right_expr = process_complex_field(right, query_object, check_list);
 
                 // If both are f64, use powf
                 if left_type == "f64" {
@@ -774,9 +873,9 @@ pub fn process_complex_field(field: &ComplexField, query_object: &QueryObject) -
             // Regular arithmetic with same types
             format!(
                 "({} {} {})",
-                process_complex_field(left, query_object),
+                process_complex_field(left, query_object, check_list),
                 op,
-                process_complex_field(right, query_object)
+                process_complex_field(right, query_object, check_list)
             )
         }
     } else if let Some(ref col) = field.column_ref {
@@ -790,8 +889,11 @@ pub fn process_complex_field(field: &ComplexField, query_object: &QueryObject) -
                 .table_to_tuple_access
                 .get(table)
                 .expect("Table not found in tuple access map");
+
+            check_list.push(format!("x{}.{}.is_some()", tuple_access, col.column));
             format!("x{}.{}.unwrap()", tuple_access, col.column)
         } else {
+            check_list.push(format!("x.{}.is_some()", col.column));
             format!("x.{}.unwrap()", col.column)
         }
     } else if let Some(ref lit) = field.literal {
@@ -881,6 +983,7 @@ pub fn process_grouping_projections(
 ) -> String {
     let mut result = String::new();
     let is_single_agg: bool = acc_info.agg_positions.len() == 1;
+    let mut check_list = Vec::new();
 
     // Start the map operation
     result.push_str(".map(|x| OutputStruct {\n");
@@ -895,6 +998,7 @@ pub fn process_grouping_projections(
         .iter()
         .enumerate()
     {
+        check_list.clear();
         let field_name = query_object.result_column_types.get_index(i).unwrap().0;
 
         match clause {
@@ -952,7 +1056,16 @@ pub fn process_grouping_projections(
                             .expect("COUNT for AVG not found in accumulator")
                             .0;
 
-                        format!("Some(x.1.{} as f64 / x.1.{} as f64)", sum_pos, count_pos)
+                        let is_check_list_empty = check_list.is_empty();
+                        if is_check_list_empty {
+                            format!(
+                                "Some(x.1.{} as f64 / x.1.{} as f64)",
+                                sum_pos, count_pos
+                            )
+                        } else {
+                            format!("if {} {{ Some(x.1.{} as f64 / x.1.{} as f64) }} else {{ None }}", check_list.join(" && "), sum_pos, count_pos)
+                        }
+                        
                     }
                     AggregateType::Max | AggregateType::Min | AggregateType::Sum => {
                         let agg_key = GroupAccumulatorValue::Aggregate(
@@ -961,26 +1074,54 @@ pub fn process_grouping_projections(
                         );
                         let original_type = query_object.get_type(&agg.column);
 
+                        let is_check_list_empty = check_list.is_empty();
+
                         if let Some((pos, _)) = acc_info.agg_positions.get(&agg_key) {
                             if original_type == "i64" {
                                 // Cast back to i64 if that was the original type
-                                format!(
-                                    "Some((x.1{}.unwrap() as i64))",
+                                if is_check_list_empty {
+                                    format!(
+                                        "Some((x.1{}.unwrap() as i64))",
+                                        if !is_single_agg {
+                                            format!(".{}", pos)
+                                        } else {
+                                            String::new()
+                                        }
+                                    )
+                                } else {
+                                    format!(
+                                    "if {} {{ Some((x.1{}.unwrap() as i64)) }} else {{ None }}",
+                                    check_list.join(" && "),
                                     if !is_single_agg {
                                         format!(".{}", pos)
                                     } else {
                                         String::new()
                                     }
                                 )
+                                }
+                                
                             } else {
-                                format!(
-                                    "Some(x.1{}.unwrap())",
+                                if is_check_list_empty {
+                                    format!(
+                                        "Some(x.1{}.unwrap())",
+                                        if !is_single_agg {
+                                            format!(".{}", pos)
+                                        } else {
+                                            String::new()
+                                        }
+                                    )
+                                } else {
+                                    format!(
+                                    "if {} {{ Some(x.1{}.unwrap())  }} else {{ None }}",
+                                    check_list.join(" &&"),
                                     if !is_single_agg {
                                         format!(".{}", pos)
                                     } else {
                                         String::new()
                                     }
                                 )
+                                }
+                                
                             }
                         } else {
                             panic!("Aggregate {:?} not found in accumulator", agg);
@@ -991,15 +1132,29 @@ pub fn process_grouping_projections(
                             agg.function.clone(),
                             agg.column.clone(),
                         );
+                        let is_check_list_empty = check_list.is_empty();
                         if let Some((pos, _)) = acc_info.agg_positions.get(&agg_key) {
-                            format!(
-                                "Some(x.1{})",
+                            if is_check_list_empty {
+                                format!(
+                                    "Some(x.1{})",
+                                    if !is_single_agg {
+                                        format!(".{}", pos)
+                                    } else {
+                                        String::new()
+                                    }
+                                )
+                            } else {
+                               format!(
+                                "if {} {{ Some(x.1{}) }} else {{ None }}",
+                                check_list.join(" && "),
                                 if !is_single_agg {
                                     format!(".{}", pos)
                                 } else {
                                     String::new()
                                 }
-                            )
+                            ) 
+                            }
+                            
                         } else {
                             panic!("Aggregate {:?} not found in accumulator", agg);
                         }
@@ -1008,11 +1163,28 @@ pub fn process_grouping_projections(
                 result.push_str(&format!("    {}: {},\n", field_name, value));
             }
             SelectColumn::ComplexValue(field, _) => {
+                let temp = process_complex_field_for_group(&field, query_object, acc_info, &mut check_list);
+                // Deduplicate check list
+                check_list.sort();
+                check_list.dedup();
+                let is_check_list_empty = check_list.is_empty();
                 // For complex expressions, recursively process them
-                let value = format!(
-                    "Some({})",
-                    process_complex_field_for_group(&field, query_object, acc_info)
+                let value ;
+                if is_check_list_empty {
+                    value = 
+                    format!(
+                        "Some({})",
+                        temp
+                    );
+                } else {
+                    value = 
+                    format!(
+                    "if {} {{ Some({}) }} else {{ None }}",
+                    check_list.join(" && "),
+                    temp
                 );
+                }
+                
                 result.push_str(&format!("    {}: {},\n", field_name, value));
             }
         }
@@ -1029,6 +1201,7 @@ fn process_complex_field_for_group(
     field: &ComplexField,
     query_object: &QueryObject,
     acc_info: &GroupAccumulatorInfo,
+    check_list: &mut Vec<String>,
 ) -> String {
     let is_single_agg: bool = acc_info.agg_positions.len() == 1;
     if let Some(ref nested) = field.nested_expr {
@@ -1047,16 +1220,16 @@ fn process_complex_field_for_group(
                 if op == "/" {
                     return format!(
                         "({} as f64) {} ({} as f64)",
-                        process_complex_field_for_group(left, query_object, acc_info),
+                        process_complex_field_for_group(left, query_object, acc_info, check_list),
                         op,
-                        process_complex_field_for_group(right, query_object, acc_info)
+                        process_complex_field_for_group(right, query_object, acc_info, check_list)
                     );
                 }
 
                 // Special handling for power operation (^)
                 if op == "^" {
-                    let left_expr = process_complex_field_for_group(left, query_object, acc_info);
-                    let right_expr = process_complex_field_for_group(right, query_object, acc_info);
+                    let left_expr = process_complex_field_for_group(left, query_object, acc_info, check_list);
+                    let right_expr = process_complex_field_for_group(right, query_object, acc_info, check_list);
 
                     // If either operand is f64, use powf
                     if left_type == "f64" || right_type == "f64" {
@@ -1075,8 +1248,8 @@ fn process_complex_field_for_group(
                     }
                 }
 
-                let left_expr = process_complex_field_for_group(left, query_object, acc_info);
-                let right_expr = process_complex_field_for_group(right, query_object, acc_info);
+                let left_expr = process_complex_field_for_group(left, query_object, acc_info, check_list);
+                let right_expr = process_complex_field_for_group(right, query_object, acc_info, check_list);
 
                 // Add as f64 to integer literals when needed
                 let processed_left = if let Some(ref lit) = left.literal {
@@ -1117,7 +1290,7 @@ fn process_complex_field_for_group(
             //case same type
             //if operation is plus, minus, multiply, division, or power and types are not numeric, panic
             if op == "+" || op == "-" || op == "*" || op == "/" || op == "^" {
-                if left_type != "f64" && left_type != "i64" {
+                if left_type != "f64" && left_type != "i64" && left_type != "usize" {
                     panic!(
                         "Invalid arithmetic expression - non-numeric types: {} and {}",
                         left_type, right_type
@@ -1129,16 +1302,16 @@ fn process_complex_field_for_group(
             if op == "/" {
                 return format!(
                     "({} as f64) {} ({} as f64)",
-                    process_complex_field_for_group(left, query_object, acc_info),
+                    process_complex_field_for_group(left, query_object, acc_info, check_list),
                     op,
-                    process_complex_field_for_group(right, query_object, acc_info)
+                    process_complex_field_for_group(right, query_object, acc_info, check_list)
                 );
             }
 
             // Special handling for power operation (^)
             if op == "^" {
-                let left_expr = process_complex_field_for_group(left, query_object, acc_info);
-                let right_expr = process_complex_field_for_group(right, query_object, acc_info);
+                let left_expr = process_complex_field_for_group(left, query_object, acc_info, check_list);
+                let right_expr = process_complex_field_for_group(right, query_object, acc_info, check_list);
 
                 // If both are f64, use powf
                 if left_type == "f64" {
@@ -1152,9 +1325,9 @@ fn process_complex_field_for_group(
             // Regular arithmetic with same types
             format!(
                 "({} {} {})",
-                process_complex_field_for_group(left, query_object, acc_info),
+                process_complex_field_for_group(left, query_object, acc_info, check_list),
                 op,
-                process_complex_field_for_group(right, query_object, acc_info)
+                process_complex_field_for_group(right, query_object, acc_info, check_list)
             )
         }
     } else if let Some(ref col) = field.column_ref {

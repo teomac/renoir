@@ -54,9 +54,9 @@ pub struct SelectClause {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum SelectColumn {
-    Column(ColumnRef, Option<String>),  // Added Option<String> for alias
-    Aggregate(AggregateFunction, Option<String>),  // Added Option<String> for alias 
-    ComplexValue(ComplexField, Option<String>),  // Added Option<String> for alias
+    Column(ColumnRef, Option<String>), // Added Option<String> for alias
+    Aggregate(AggregateFunction, Option<String>), // Added Option<String> for alias
+    ComplexValue(ComplexField, Option<String>), // Added Option<String> for alias
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -90,18 +90,18 @@ pub enum AggregateType {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum WhereClause {
-   Base(WhereConditionType),
-   Expression{
+    Base(WhereConditionType),
+    Expression {
         left: Box<WhereClause>,
         binary_op: BinaryOp,
         right: Box<WhereClause>,
-   }
+    },
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum WhereConditionType {
     Comparison(Condition),
-    NullCheck(NullCondition)
+    NullCheck(NullCondition),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -116,14 +116,14 @@ pub enum GroupClause {
     Expression {
         left: Box<GroupClause>,
         op: BinaryOp,
-        right: Box<GroupClause>
-    }
+        right: Box<GroupClause>,
+    },
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum GroupBaseCondition {
     Comparison(Condition),
-    NullCheck(NullCondition)
+    NullCheck(NullCondition),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -178,19 +178,19 @@ pub struct LimitClause {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct OrderByClause {
-    pub items: Vec<OrderByItem>
+    pub items: Vec<OrderByItem>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct OrderByItem {
     pub column: ColumnRef,
-    pub direction: OrderDirection
+    pub direction: OrderDirection,
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum OrderDirection {
     Asc,
-    Desc
+    Desc,
 }
 
 impl ColumnRef {
@@ -202,7 +202,7 @@ impl ColumnRef {
     }
 }
 
-impl AggregateType{
+impl AggregateType {
     pub fn to_string(&self) -> String {
         match self {
             AggregateType::Max => "max".to_string(),
@@ -230,7 +230,8 @@ impl ComplexField {
                 IrLiteral::ColumnRef(cr) => cr.to_string(),
             }
         } else if let Some(ref agg) = self.aggregate {
-            format!("{}({})", 
+            format!(
+                "{}({})",
                 match agg.function {
                     AggregateType::Max => "max",
                     AggregateType::Min => "min",
@@ -243,4 +244,5 @@ impl ComplexField {
         } else {
             String::new()
         }
-    }}
+    }
+}

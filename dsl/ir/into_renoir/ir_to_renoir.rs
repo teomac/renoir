@@ -33,7 +33,6 @@ impl IrToRenoir {
         if let Some(ref group_by) = ast.group_by {
             //process group by and conditions. Inside this function, there will also be processing of select clauses
             final_string.push_str(&process_group_by(&group_by, query_object));
-
         } else {
             // Process all select clauses together
             final_string.push_str(&process_select_clauses(&ast.select.select, query_object));

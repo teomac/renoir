@@ -37,10 +37,7 @@ pub fn process_distinct(query_object: &QueryObject) -> String {
         // Replace original file with distinct version
         std::fs::rename(format!("{}_distinct.csv"), format!("{}.csv")).unwrap();
         "#,
-        csv_path,
-        csv_path,
-        csv_path,
-        csv_path
+        csv_path, csv_path, csv_path, csv_path
     );
 
     distinct_code

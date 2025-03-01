@@ -69,7 +69,8 @@ impl SqlToIr {
         };
 
         let select_strs: Vec<String> = sql_ast
-            .select.select
+            .select
+            .select
             .iter()
             .map(|select_clause| {
                 let selection_str = match &select_clause.selection {

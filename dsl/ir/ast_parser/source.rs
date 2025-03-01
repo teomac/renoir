@@ -1,5 +1,5 @@
-use super::ir_ast_structure::*;
 use super::error::IrParseError;
+use super::ir_ast_structure::*;
 use crate::dsl::ir::ast_parser::Rule;
 use pest::iterators::Pair;
 
@@ -24,7 +24,7 @@ impl SourceParser {
         while inner.peek().is_some() {
             // Check if the next token is a join_type or "join"
             let mut join_type = JoinType::Inner; // Default join type
-            
+
             // Look for join type first
             if let Some(token) = inner.peek() {
                 if token.as_rule() == Rule::join_type {
@@ -33,22 +33,25 @@ impl SourceParser {
                         "inner" => JoinType::Inner,
                         "left" => JoinType::Left,
                         "outer" => JoinType::Outer,
-                        _ => return Err(IrParseError::InvalidInput(
-                            format!("Invalid join type: {}", join_type_token.as_str())
-                        )),
+                        _ => {
+                            return Err(IrParseError::InvalidInput(format!(
+                                "Invalid join type: {}",
+                                join_type_token.as_str()
+                            )))
+                        }
                     };
                 }
             }
-            
+
             // Now look for "join" keyword
             if inner.peek().map_or(false, |p| p.as_str() == "join") {
                 // Consume 'join' token
                 inner.next();
-                
+
                 // Parse the join scan
-                let join_scan_expr = inner.next().ok_or_else(|| {
-                    IrParseError::InvalidInput("Missing join stream".to_string())
-                })?;
+                let join_scan_expr = inner
+                    .next()
+                    .ok_or_else(|| IrParseError::InvalidInput("Missing join stream".to_string()))?;
                 let join_scan = Self::parse_scan(join_scan_expr)?;
 
                 // Expect and skip 'on' keyword
@@ -142,10 +145,11 @@ impl JoinCondition {
     fn parse(pair: Pair<Rule>) -> Result<Self, IrParseError> {
         let mut conditions = Vec::new();
         let mut pairs = pair.into_inner().peekable();
-        
+
         while let Some(left_pair) = pairs.next() {
-            let right_pair = pairs.next()
-                .ok_or_else(|| IrParseError::InvalidInput("Missing right side of join condition".to_string()))?;
+            let right_pair = pairs.next().ok_or_else(|| {
+                IrParseError::InvalidInput("Missing right side of join condition".to_string())
+            })?;
 
             conditions.push(JoinPair {
                 left_col: SourceParser::parse_qualified_column(left_pair)?,

@@ -1,7 +1,7 @@
+use crate::dsl::ir::ir_ast_structure::*;
 use crate::dsl::ir::r_utils::check_alias;
 use crate::dsl::ir::FromClause;
 use crate::dsl::ir::QueryObject;
-use crate::dsl::ir::ir_ast_structure::*;
 use indexmap::IndexMap;
 
 pub fn process_from_clause(from_clause: &FromClause, query_object: &mut QueryObject) -> String {
@@ -102,17 +102,19 @@ pub fn process_from_clause(from_clause: &FromClause, query_object: &mut QueryObj
             right_tuple.push(format!("y.{}.clone()", right_field));
         }
 
-         // Determine the join method based on the join type
-         let join_type = match join.join_type {
+        // Determine the join method based on the join type
+        let join_type = match join.join_type {
             JoinType::Inner => "join",
             JoinType::Left => "left_join",
             JoinType::Outer => "outer_join",
         };
 
-
         join_string.push_str(&format!(
             ".{}(stream{}, |x| ({}), |y| ({})).drop_key()",
-            join_type, struct_index, left_tuple.join(", "), right_tuple.join(", ")
+            join_type,
+            struct_index,
+            left_tuple.join(", "),
+            right_tuple.join(", ")
         ));
 
         // Update IndexMap after this join

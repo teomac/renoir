@@ -1,61 +1,61 @@
-use pest::iterators::Pair;
-use super::sql_ast_structure::*;
 use super::error::SqlParseError;
 use super::literal::LiteralParser;
+use super::sql_ast_structure::*;
 use crate::dsl::languages::sql::ast_parser::Rule;
+use pest::iterators::Pair;
 
 pub struct SelectParser;
 
 impl SelectParser {
     pub fn parse(pair: Pair<Rule>) -> Result<SelectType, SqlParseError> {
-        
-        
         // First, handle the column_with_alias rule
         match pair.as_rule() {
-            Rule::asterisk => {
-                Ok(SelectType::Simple(ColumnRef {
-                    table: None,
-                    column: "*".to_string(),
-                }))
-            },
-            
+            Rule::asterisk => Ok(SelectType::Simple(ColumnRef {
+                table: None,
+                column: "*".to_string(),
+            })),
+
             Rule::column_with_alias => {
                 // Get the inner column_item
                 let mut inner = pair.into_inner();
-                let column_item = inner.next()
-                    .ok_or_else(|| SqlParseError::InvalidInput("Missing column item".to_string()))?;
-                
+                let column_item = inner.next().ok_or_else(|| {
+                    SqlParseError::InvalidInput("Missing column item".to_string())
+                })?;
+
                 // Parse the actual column content
                 return Self::parse_column_item(column_item);
             }
-            _ => return Err(SqlParseError::InvalidInput(format!("Expected column_with_alias, got {:?}", pair.as_rule()))),
+            _ => {
+                return Err(SqlParseError::InvalidInput(format!(
+                    "Expected column_with_alias, got {:?}",
+                    pair.as_rule()
+                )))
+            }
         }
     }
 
     // New function to parse column_item
     fn parse_column_item(pair: Pair<Rule>) -> Result<SelectType, SqlParseError> {
         let mut inner = pair.into_inner();
-        let item = inner.next()
+        let item = inner
+            .next()
             .ok_or_else(|| SqlParseError::InvalidInput("Empty column item".to_string()))?;
 
         match item.as_rule() {
-            Rule::variable => {
-                Ok(SelectType::Simple(ColumnRef {
-                    table: None,
-                    column: item.as_str().to_string(),
-                }))
-            },
-            Rule::table_column => {
-                Self::parse_column_ref(item).map(SelectType::Simple)
-            },
+            Rule::variable => Ok(SelectType::Simple(ColumnRef {
+                table: None,
+                column: item.as_str().to_string(),
+            })),
+            Rule::table_column => Self::parse_column_ref(item).map(SelectType::Simple),
             Rule::aggregate_expr => {
                 let agg = Self::parse_aggregate(item)?;
                 Ok(SelectType::Aggregate(agg.0, agg.1))
-            },
-            Rule::select_expr => {
-                Self::parse_complex_expression(item)
-            },
-            _ => Err(SqlParseError::InvalidInput(format!("Invalid column item: {:?}", item.as_rule()))),
+            }
+            Rule::select_expr => Self::parse_complex_expression(item),
+            _ => Err(SqlParseError::InvalidInput(format!(
+                "Invalid column item: {:?}",
+                item.as_rule()
+            ))),
         }
     }
 
@@ -68,11 +68,13 @@ impl SelectParser {
             }),
             Rule::table_column => {
                 let mut inner = pair.into_inner();
-                let table = inner.next()
+                let table = inner
+                    .next()
                     .ok_or_else(|| SqlParseError::InvalidInput("Missing table name".to_string()))?
                     .as_str()
                     .to_string();
-                let column = inner.next()
+                let column = inner
+                    .next()
                     .ok_or_else(|| SqlParseError::InvalidInput("Missing column name".to_string()))?
                     .as_str()
                     .to_string();
@@ -81,126 +83,152 @@ impl SelectParser {
                     column,
                 })
             }
-            
-            Rule::variable => {
-                Ok(ColumnRef {
-                    table: None,
-                    column: pair.as_str().to_string(),
-                })
-            }
-            
-            _ => Err(SqlParseError::InvalidInput(format!("Expected column reference, got {:?}", pair.as_rule()))),
+
+            Rule::variable => Ok(ColumnRef {
+                table: None,
+                column: pair.as_str().to_string(),
+            }),
+
+            _ => Err(SqlParseError::InvalidInput(format!(
+                "Expected column reference, got {:?}",
+                pair.as_rule()
+            ))),
         }
     }
 
     fn parse_aggregate(pair: Pair<Rule>) -> Result<(AggregateFunction, ColumnRef), SqlParseError> {
         let mut agg = pair.into_inner();
-        let func = match agg.next()
+        let func = match agg
+            .next()
             .ok_or_else(|| SqlParseError::InvalidInput("Missing aggregate function".to_string()))?
             .as_str()
             .to_uppercase()
-            .as_str() 
+            .as_str()
         {
             "MAX" => AggregateFunction::Max,
             "MIN" => AggregateFunction::Min,
             "SUM" => AggregateFunction::Sum,
             "COUNT" => AggregateFunction::Count,
             "AVG" => AggregateFunction::Avg,
-            _ => return Err(SqlParseError::InvalidInput("Unknown aggregate function".to_string())),
+            _ => {
+                return Err(SqlParseError::InvalidInput(
+                    "Unknown aggregate function".to_string(),
+                ))
+            }
         };
-        
-        let var_pair = agg.next()
+
+        let var_pair = agg
+            .next()
             .ok_or_else(|| SqlParseError::InvalidInput("Missing aggregate column".to_string()))?;
         let col_ref = Self::parse_column_ref(var_pair)?;
 
         //if aggregation is different than COUNT and column is *, return error
         if func != AggregateFunction::Count && col_ref.column == "*" {
-            return Err(SqlParseError::InvalidInput("Invalid aggregation".to_string()));
+            return Err(SqlParseError::InvalidInput(
+                "Invalid aggregation".to_string(),
+            ));
         }
-            
+
         Ok((func, col_ref))
     }
 
     fn parse_complex_expression(pair: Pair<Rule>) -> Result<SelectType, SqlParseError> {
         let mut pairs = pair.into_inner().peekable();
-        
+
         // Get first operand
-        let first = pairs.next()
+        let first = pairs
+            .next()
             .ok_or_else(|| SqlParseError::InvalidInput("Missing first operand".to_string()))?;
-        
+
         let mut left_field = match first.as_rule() {
             Rule::parenthesized_expr => Self::parse_parenthesized_expr(first)?,
             Rule::column_operand => Self::parse_operand(first)?,
-            _ => return Err(SqlParseError::InvalidInput(format!("Invalid first operand: {:?}", first.as_rule())))
+            _ => {
+                return Err(SqlParseError::InvalidInput(format!(
+                    "Invalid first operand: {:?}",
+                    first.as_rule()
+                )))
+            }
         };
-        
+
         // If no operator, return just the left field
         while let Some(op) = pairs.next() {
             let symbol = op.as_str().to_string();
-            
-            let right = pairs.next()
+
+            let right = pairs
+                .next()
                 .ok_or_else(|| SqlParseError::InvalidInput("Missing right operand".to_string()))?;
-                
+
             let right_field = match right.as_rule() {
                 Rule::parenthesized_expr => Self::parse_parenthesized_expr(right)?,
                 Rule::column_operand => Self::parse_operand(right)?,
-                _ => return Err(SqlParseError::InvalidInput(format!("Invalid right operand: {:?}", right.as_rule())))
+                _ => {
+                    return Err(SqlParseError::InvalidInput(format!(
+                        "Invalid right operand: {:?}",
+                        right.as_rule()
+                    )))
+                }
             };
-            
+
             // Create new ComplexField with nested expression
             left_field = ComplexField {
                 column_ref: None,
                 literal: None,
                 aggregate: None,
-                nested_expr: Some(Box::new((left_field, symbol, right_field)))
+                nested_expr: Some(Box::new((left_field, symbol, right_field))),
             };
         }
-        
+
         Ok(SelectType::ComplexValue(
             left_field,
-            String::new(),  // Empty string since we handled operators in nested_expr
-            ComplexField {  // Empty right field since we handled everything in left_field
+            String::new(), // Empty string since we handled operators in nested_expr
+            ComplexField {
+                // Empty right field since we handled everything in left_field
                 column_ref: None,
                 literal: None,
                 aggregate: None,
-                nested_expr: None
-            }
+                nested_expr: None,
+            },
         ))
     }
-    
 
     // New helper function to parse operands
     fn parse_parenthesized_expr(pair: Pair<Rule>) -> Result<ComplexField, SqlParseError> {
         let mut inner = pair.into_inner();
-        
+
         // Skip left parenthesis
         inner.next();
-        
+
         // Get the inner expression
-        let expr = inner.next()
+        let expr = inner
+            .next()
             .ok_or_else(|| SqlParseError::InvalidInput("Empty parentheses".to_string()))?;
-            
+
         match Self::parse_complex_expression(expr)? {
             SelectType::ComplexValue(left, op, right) => {
                 if op.is_empty() {
-                    Ok(left)  // If no operator, just return the left field
+                    Ok(left) // If no operator, just return the left field
                 } else {
                     Ok(ComplexField {
                         column_ref: None,
                         literal: None,
                         aggregate: None,
-                        nested_expr: Some(Box::new((left, op, right)))
+                        nested_expr: Some(Box::new((left, op, right))),
                     })
                 }
-            },
-            _ => Err(SqlParseError::InvalidInput("Invalid parenthesized expression".to_string()))
+            }
+            _ => Err(SqlParseError::InvalidInput(
+                "Invalid parenthesized expression".to_string(),
+            )),
         }
     }
-    
+
     fn parse_operand(pair: Pair<Rule>) -> Result<ComplexField, SqlParseError> {
-        let inner = pair.into_inner().next()
+        let inner = pair
+            .into_inner()
+            .next()
             .ok_or_else(|| SqlParseError::InvalidInput("Empty operand".to_string()))?;
-        
+
         match inner.as_rule() {
             Rule::number => Ok(ComplexField {
                 column_ref: None,
@@ -231,8 +259,11 @@ impl SelectParser {
                     aggregate: Some((func, col)),
                     nested_expr: None,
                 })
-            },
-            _ => Err(SqlParseError::InvalidInput(format!("Invalid operand: {:?}", inner.as_rule())))
+            }
+            _ => Err(SqlParseError::InvalidInput(format!(
+                "Invalid operand: {:?}",
+                inner.as_rule()
+            ))),
         }
     }
 }

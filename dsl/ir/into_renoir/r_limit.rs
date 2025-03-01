@@ -37,9 +37,8 @@ pub fn process_limit(query_object: &QueryObject) -> String {
             start_index,
             start_index + limit_clause.limit,
             start_index + limit_clause.limit,
-
-        )
+        );
     } else {
-        return String::new()
+        return String::new();
     };
 }

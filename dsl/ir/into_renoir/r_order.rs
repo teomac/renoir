@@ -34,13 +34,15 @@ pub fn process_order_by(order_by: &OrderByClause, query_object: &QueryObject) ->
 
     for item in &mut order_by_items {
         // Find the matching result column that correctly corresponds to this ORDER BY item
-        let matching_column = find_matching_result_column(&item.column.column, 
-                                                         item.column.table.as_deref(),
-                                                         query_object);
-        
+        let matching_column = find_matching_result_column(
+            &item.column.column,
+            item.column.table.as_deref(),
+            query_object,
+        );
+
         if let Some(matched_col) = matching_column {
             item.column.column = matched_col.clone();
-            
+
             order_string.push_str(&format!(
                 r#"let {}_idx = headers.iter().position(|h| h == "{}").unwrap();"#,
                 matched_col, matched_col
@@ -48,11 +50,12 @@ pub fn process_order_by(order_by: &OrderByClause, query_object: &QueryObject) ->
         }
     }
 
-
     // Generate sorting code
-    order_string.push_str(r#"
+    order_string.push_str(
+        r#"
         records.sort_by(|a, b| {
-            "#);
+            "#,
+    );
 
     let length = &order_by_items.len();
 
@@ -95,7 +98,7 @@ pub fn process_order_by(order_by: &OrderByClause, query_object: &QueryObject) ->
             ),
             _ => panic!("Unsupported type for column {}", column_name)
         };
-        
+
         if i > 0 {
             order_string.push_str(".then_with(|| ");
         }
@@ -106,7 +109,9 @@ pub fn process_order_by(order_by: &OrderByClause, query_object: &QueryObject) ->
     }
 
     // Close the sort closure and write sorted records
-    order_string.push_str(&format!(r#"
+    order_string.push_str(
+        &format!(
+            r#"
         }});
 
         // Write sorted records back to CSV
@@ -122,10 +127,10 @@ pub fn process_order_by(order_by: &OrderByClause, query_object: &QueryObject) ->
         // Replace original file with sorted file
         std::fs::rename(format!("{}_sorted.csv"), format!("{}.csv")).unwrap();
     "#,
-    csv_path,
-    csv_path,
-    csv_path,        
-    ).to_string());
+            csv_path, csv_path, csv_path,
+        )
+        .to_string(),
+    );
 
     order_string
 }

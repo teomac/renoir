@@ -1,10 +1,12 @@
-use crate::dsl::ir::ir_ast_structure::{WhereConditionType, NullCondition, NullOp, IrLiteral, ColumnRef};
-use crate::dsl::ir::BinaryOp;
-use crate::dsl::ir::WhereClause;
-use crate::dsl::ir::QueryObject;
-use crate::dsl::ir::{ComparisonOp, Condition};
 use crate::dsl::ir::ir_ast_structure::ComplexField;
+use crate::dsl::ir::ir_ast_structure::{
+    ColumnRef, IrLiteral, NullCondition, NullOp, WhereConditionType,
+};
 use crate::dsl::ir::r_utils::*;
+use crate::dsl::ir::BinaryOp;
+use crate::dsl::ir::QueryObject;
+use crate::dsl::ir::WhereClause;
+use crate::dsl::ir::{ComparisonOp, Condition};
 
 /// Processes a `WhereClause` and generates a string representation of the conditions.
 ///
@@ -22,18 +24,32 @@ use crate::dsl::ir::r_utils::*;
 /// A `String` representing the processed where clause conditions.
 pub fn process_where_clause(clause: &WhereClause, query_object: &QueryObject) -> String {
     match clause {
-        WhereClause::Base(condition) => {
-            process_condition(condition, query_object)
-        },
-        WhereClause::Expression { left, binary_op, right } => {
+        WhereClause::Base(condition) => process_condition(condition, query_object),
+        WhereClause::Expression {
+            left,
+            binary_op,
+            right,
+        } => {
             let op_str = match binary_op {
                 BinaryOp::And => "&&",
                 BinaryOp::Or => "||",
             };
 
             // Look for the specific patterns that need parentheses
-            let left_needs_parens = matches!(**left, WhereClause::Expression { binary_op: BinaryOp::Or, .. });
-            let right_needs_parens = matches!(**right, WhereClause::Expression { binary_op: BinaryOp::Or, .. });
+            let left_needs_parens = matches!(
+                **left,
+                WhereClause::Expression {
+                    binary_op: BinaryOp::Or,
+                    ..
+                }
+            );
+            let right_needs_parens = matches!(
+                **right,
+                WhereClause::Expression {
+                    binary_op: BinaryOp::Or,
+                    ..
+                }
+            );
 
             let left_str = if left_needs_parens {
                 format!("({})", process_where_clause(left, query_object))
@@ -46,27 +62,34 @@ pub fn process_where_clause(clause: &WhereClause, query_object: &QueryObject) ->
             } else {
                 process_where_clause(right, query_object)
             };
-            
+
             format!("{} {} {}", left_str, op_str, right_str)
         }
     }
 }
 
 // Added new helper function to process arithmetic expressions
-fn process_arithmetic_expression(field: &ComplexField, query_object: &QueryObject, table_name: &str) -> String {
+fn process_arithmetic_expression(
+    field: &ComplexField,
+    query_object: &QueryObject,
+    table_name: &str,
+) -> String {
     if let Some(ref nested) = field.nested_expr {
         let (left, op, right) = &**nested;
-        
+
         let left_type = query_object.get_complex_field_type(left);
         let right_type = query_object.get_complex_field_type(right);
 
         //type checking
         //if types are different: case 1. they are both numeric, case 2. one is numeric and the other is not
         if left_type != right_type {
-            if (left_type == "f64" || left_type == "i64") && (right_type=="f64"|| right_type == "i64") {
+            if (left_type == "f64" || left_type == "i64")
+                && (right_type == "f64" || right_type == "i64")
+            {
                 // Division always results in f64
                 if op == "/" {
-                    return format!("({} as f64) {} ({} as f64)",
+                    return format!(
+                        "({} as f64) {} ({} as f64)",
                         process_arithmetic_expression(left, query_object, table_name),
                         op,
                         process_arithmetic_expression(right, query_object, table_name)
@@ -77,25 +100,27 @@ fn process_arithmetic_expression(field: &ComplexField, query_object: &QueryObjec
                 if op == "^" {
                     let left_expr = process_arithmetic_expression(left, query_object, table_name);
                     let right_expr = process_arithmetic_expression(right, query_object, table_name);
-                    
+
                     // If either operand is f64, use powf
                     if left_type == "f64" || right_type == "f64" {
-                        return format!("({}).powf({} as f64)", 
-                            if left_type == "i64" { format!("({} as f64)", left_expr) } else { left_expr },
+                        return format!(
+                            "({}).powf({} as f64)",
+                            if left_type == "i64" {
+                                format!("({} as f64)", left_expr)
+                            } else {
+                                left_expr
+                            },
                             right_expr
                         );
                     } else {
                         // Both are integers, use pow
-                        return format!("({}).pow({} as i64)", 
-                            left_expr,
-                            right_expr
-                        );
+                        return format!("({}).pow({} as i64)", left_expr, right_expr);
                     }
                 }
 
                 let left_expr = process_arithmetic_expression(left, query_object, table_name);
                 let right_expr = process_arithmetic_expression(right, query_object, table_name);
-                
+
                 // Add as f64 to integer literals when needed
                 let processed_left = if let Some(ref lit) = left.literal {
                     if let IrLiteral::Integer(_) = lit {
@@ -106,7 +131,7 @@ fn process_arithmetic_expression(field: &ComplexField, query_object: &QueryObjec
                 } else {
                     left_expr
                 };
-                
+
                 let processed_right = if let Some(ref lit) = right.literal {
                     if let IrLiteral::Integer(_) = lit {
                         format!("{} as f64", right_expr)
@@ -119,43 +144,34 @@ fn process_arithmetic_expression(field: &ComplexField, query_object: &QueryObjec
 
                 //if left is i64 and right is float or vice versa, convert the i64 to f64
                 if left_type == "i64" && right_type == "f64" {
-                    return format!("({} as f64 {} {})", 
-                    processed_left,
-                    op,
-                    processed_right
-                );
-                }
-                else if left_type == "f64" && right_type == "i64" {
-                    return format!("({} {} {} as f64)", 
-                    processed_left,
-                    op,
-                    processed_right
-                );
+                    return format!("({} as f64 {} {})", processed_left, op, processed_right);
+                } else if left_type == "f64" && right_type == "i64" {
+                    return format!("({} {} {} as f64)", processed_left, op, processed_right);
                 }
 
-                return format!("({} {} {})", 
-                    processed_left,
-                    op,
-                    processed_right
+                return format!("({} {} {})", processed_left, op, processed_right);
+            } else {
+                panic!(
+                    "Invalid arithmetic expression - incompatible types: {} and {}",
+                    left_type, right_type
                 );
-
             }
-            else {
-                panic!("Invalid arithmetic expression - incompatible types: {} and {}", left_type, right_type);
-            }
-        }
-        else {
+        } else {
             //case same type
             //if operation is plus, minus, multiply, division, or power and types are not numeric, panic
             if op == "+" || op == "-" || op == "*" || op == "/" || op == "^" {
                 if left_type != "f64" && left_type != "i64" {
-                    panic!("Invalid arithmetic expression - non-numeric types: {} and {}", left_type, right_type);
+                    panic!(
+                        "Invalid arithmetic expression - non-numeric types: {} and {}",
+                        left_type, right_type
+                    );
                 }
             }
 
             // Division always results in f64
             if op == "/" {
-                return format!("({} as f64) {} ({} as f64)",
+                return format!(
+                    "({} as f64) {} ({} as f64)",
                     process_arithmetic_expression(left, query_object, table_name),
                     op,
                     process_arithmetic_expression(right, query_object, table_name)
@@ -166,24 +182,19 @@ fn process_arithmetic_expression(field: &ComplexField, query_object: &QueryObjec
             if op == "^" {
                 let left_expr = process_arithmetic_expression(left, query_object, table_name);
                 let right_expr = process_arithmetic_expression(right, query_object, table_name);
-                
+
                 // If both are f64, use powf
                 if left_type == "f64" {
-                    return format!("({}).powf({})", 
-                        left_expr,
-                        right_expr
-                    );
+                    return format!("({}).powf({})", left_expr, right_expr);
                 } else {
                     // Both are integers, use pow
-                    return format!("({}).pow({})", 
-                        left_expr,
-                        right_expr
-                    );
+                    return format!("({}).pow({})", left_expr, right_expr);
                 }
             }
 
             // Regular arithmetic with same types
-            format!("({} {} {})", 
+            format!(
+                "({} {} {})",
                 process_arithmetic_expression(left, query_object, table_name),
                 op,
                 process_arithmetic_expression(right, query_object, table_name)
@@ -192,18 +203,23 @@ fn process_arithmetic_expression(field: &ComplexField, query_object: &QueryObjec
     } else if let Some(ref col) = field.column_ref {
         // Validate column
         query_object.check_column_validity(col, &table_name.to_string());
-        
+
         if query_object.has_join {
             let table = check_alias(&col.table.as_ref().unwrap(), query_object);
             let c_type = query_object.get_type(col);
-            format!("x{}.{}{}.unwrap()", 
+            format!(
+                "x{}.{}{}.unwrap()",
                 query_object.table_to_tuple_access.get(&table).unwrap(),
                 col.column,
                 if c_type == "String" { ".clone()" } else { "" }
             )
         } else {
             let c_type = query_object.get_type(col);
-            format!("x.{}{}.unwrap()", col.column, if c_type == "String" { ".clone()" } else { "" })
+            format!(
+                "x.{}{}.unwrap()",
+                col.column,
+                if c_type == "String" { ".clone()" } else { "" }
+            )
         }
     } else if let Some(ref lit) = field.literal {
         match lit {
@@ -216,13 +232,18 @@ fn process_arithmetic_expression(field: &ComplexField, query_object: &QueryObjec
                 let c_type = query_object.get_type(&col_ref);
                 if query_object.has_join {
                     let table = check_alias(&col_ref.table.as_ref().unwrap(), query_object);
-                    format!("x{}.{}{}.unwrap()", 
+                    format!(
+                        "x{}.{}{}.unwrap()",
                         query_object.table_to_tuple_access.get(&table).unwrap(),
                         col_ref.column,
                         if c_type == "String" { ".clone()" } else { "" },
                     )
                 } else {
-                    format!("x.{}{}.unwrap()", col_ref.column, if c_type == "String" { ".clone()" } else { "" })
+                    format!(
+                        "x.{}{}.unwrap()",
+                        col_ref.column,
+                        if c_type == "String" { ".clone()" } else { "" }
+                    )
                 }
             }
         }
@@ -231,20 +252,17 @@ fn process_arithmetic_expression(field: &ComplexField, query_object: &QueryObjec
     }
 }
 
-
 /// Process a condition which can be either a comparison or a null check
 fn process_condition(condition: &WhereConditionType, query_object: &QueryObject) -> String {
     match condition {
         WhereConditionType::Comparison(comparison) => {
             process_comparison_condition(comparison, query_object)
-        },
+        }
         WhereConditionType::NullCheck(null_check) => {
             process_null_check_condition(null_check, query_object)
         }
     }
 }
-
-
 
 /// Process a null check condition (IS NULL or IS NOT NULL)
 fn process_null_check_condition(condition: &NullCondition, query_object: &QueryObject) -> String {
@@ -252,11 +270,11 @@ fn process_null_check_condition(condition: &NullCondition, query_object: &QueryO
         // Simple case - no joins
         let field = if condition.field.column_ref.is_some() {
             //validate column
-            query_object.check_column_validity(&condition.field.column_ref.as_ref().unwrap(), query_object.get_all_table_names().first().unwrap());
-            format!(
-                "x.{}", 
-                condition.field.column_ref.as_ref().unwrap().column
-            )
+            query_object.check_column_validity(
+                &condition.field.column_ref.as_ref().unwrap(),
+                query_object.get_all_table_names().first().unwrap(),
+            );
+            format!("x.{}", condition.field.column_ref.as_ref().unwrap().column)
         } else {
             panic!("Invalid null check condition - missing column reference")
         };
@@ -269,15 +287,12 @@ fn process_null_check_condition(condition: &NullCondition, query_object: &QueryO
         // Case with joins
         let field = if condition.field.column_ref.is_some() {
             let col_ref = condition.field.column_ref.as_ref().unwrap();
-            let table_name = check_alias(
-                &col_ref.table.as_ref().unwrap(), 
-                query_object
-            );
+            let table_name = check_alias(&col_ref.table.as_ref().unwrap(), query_object);
             //validate column
             query_object.check_column_validity(&col_ref, &table_name);
-            
+
             format!(
-                "x{}.{}", 
+                "x{}.{}",
                 query_object.table_to_tuple_access.get(&table_name).unwrap(),
                 col_ref.column
             )
@@ -309,7 +324,7 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
 
     let has_left_column = has_column_reference(&condition.left_field);
     let has_right_column = has_column_reference(&condition.right_field);
-    
+
     // Handle type conversions for comparison
     let (left_conversion, right_conversion) = if left_type == "f64" && right_type == "i64" {
         ("", " as f64")
@@ -322,18 +337,29 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
     //type checking
     //if types are different
     if left_type != right_type {
-        if (left_type == "String" && right_type != "String") || (left_type != "String" && right_type == "String") {
+        if (left_type == "String" && right_type != "String")
+            || (left_type != "String" && right_type == "String")
+        {
             panic!("Invalid comparison - cannot compare string with other type");
         }
-        if (left_type == "bool" && right_type != "bool") || (left_type != "bool" && right_type == "bool") {
+        if (left_type == "bool" && right_type != "bool")
+            || (left_type != "bool" && right_type == "bool")
+        {
             panic!("Invalid comparison - cannot compare boolean with other type");
         }
-    }
-    else {
+    } else {
         //if operand is plus, minus, multiply, division, or power and types are not numeric, panic
-        if operator_str == "+" || operator_str == "-" || operator_str == "*" || operator_str == "/" || operator_str == "^" {
+        if operator_str == "+"
+            || operator_str == "-"
+            || operator_str == "*"
+            || operator_str == "/"
+            || operator_str == "^"
+        {
             if left_type != "f64" && left_type != "i64" {
-                panic!("Invalid arithmetic expression - non-numeric types: {} and {}", left_type, right_type);
+                panic!(
+                    "Invalid arithmetic expression - non-numeric types: {} and {}",
+                    left_type, right_type
+                );
             }
         }
     }
@@ -346,19 +372,29 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
         if has_left_column || has_right_column {
             let mut null_checks = Vec::new();
             if has_left_column {
-                collect_column_null_checks(&condition.left_field, query_object, table_name, &mut null_checks);
+                collect_column_null_checks(
+                    &condition.left_field,
+                    query_object,
+                    table_name,
+                    &mut null_checks,
+                );
             }
             if has_right_column {
-                collect_column_null_checks(&condition.right_field, query_object, table_name, &mut null_checks);
+                collect_column_null_checks(
+                    &condition.right_field,
+                    query_object,
+                    table_name,
+                    &mut null_checks,
+                );
             }
 
-             // Remove duplicates from null_checks
+            // Remove duplicates from null_checks
             null_checks.sort();
             null_checks.dedup();
 
             let null_check_str = null_checks.join(" && ");
             format!(
-                "if {} {{ ({}{}) {} ({}{}) }} else {{ false }}", 
+                "if {} {{ ({}{}) {} ({}{}) }} else {{ false }}",
                 null_check_str,
                 process_arithmetic_expression(&condition.left_field, query_object, table_name),
                 left_conversion,
@@ -368,7 +404,8 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
             )
         } else {
             // No column references - direct comparison
-            format!("{}{} {} {}{}",
+            format!(
+                "{}{} {} {}{}",
                 process_arithmetic_expression(&condition.left_field, query_object, table_name),
                 left_conversion,
                 operator_str,
@@ -380,20 +417,30 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
         // Handle JOIN case
         if has_left_column || has_right_column {
             let mut null_checks = Vec::new();
-            
+
             // For JOIN case, we need to get the correct table names
             if has_left_column {
                 let left_columns = collect_columns(&condition.left_field);
                 for col in left_columns {
                     let table = check_alias(&col.table.as_ref().unwrap(), query_object);
-                    collect_column_null_checks(&condition.left_field, query_object, &table, &mut null_checks);
+                    collect_column_null_checks(
+                        &condition.left_field,
+                        query_object,
+                        &table,
+                        &mut null_checks,
+                    );
                 }
             }
             if has_right_column {
                 let right_columns = collect_columns(&condition.right_field);
                 for col in right_columns {
                     let table = check_alias(&col.table.as_ref().unwrap(), query_object);
-                    collect_column_null_checks(&condition.right_field, query_object, &table, &mut null_checks);
+                    collect_column_null_checks(
+                        &condition.right_field,
+                        query_object,
+                        &table,
+                        &mut null_checks,
+                    );
                 }
             }
 
@@ -403,7 +450,7 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
 
             let null_check_str = null_checks.join(" && ");
             format!(
-                "if {} {{ ({}{}) {} ({}{}) }} else {{ false }}", 
+                "if {} {{ ({}{}) {} ({}{}) }} else {{ false }}",
                 null_check_str,
                 process_arithmetic_expression(&condition.left_field, query_object, ""),
                 left_conversion,
@@ -413,7 +460,8 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
             )
         } else {
             // No column references - direct comparison
-            format!("{}{} {} {}{}",
+            format!(
+                "{}{} {} {}{}",
                 process_arithmetic_expression(&condition.left_field, query_object, ""),
                 left_conversion,
                 operator_str,
@@ -447,7 +495,7 @@ fn has_column_reference(field: &ComplexField) -> bool {
 // Helper function to collect all column references from a ComplexField
 fn collect_columns(field: &ComplexField) -> Vec<ColumnRef> {
     let mut columns = Vec::new();
-    
+
     if let Some(ref col) = field.column_ref {
         columns.push(col.clone());
     }
@@ -464,17 +512,23 @@ fn collect_columns(field: &ComplexField) -> Vec<ColumnRef> {
     if let Some(ref agg) = field.aggregate {
         columns.push(agg.column.clone());
     }
-    
+
     columns
 }
 
 // Helper function to collect null checks for all columns in a ComplexField
-fn collect_column_null_checks(field: &ComplexField, query_object: &QueryObject, table_name: &str, checks: &mut Vec<String>) {
+fn collect_column_null_checks(
+    field: &ComplexField,
+    query_object: &QueryObject,
+    table_name: &str,
+    checks: &mut Vec<String>,
+) {
     if let Some(ref col) = field.column_ref {
         query_object.check_column_validity(col, &table_name.to_string());
         if query_object.has_join {
             let table = check_alias(&col.table.as_ref().unwrap(), query_object);
-            checks.push(format!("x{}.{}.is_some()", 
+            checks.push(format!(
+                "x{}.{}.is_some()",
                 query_object.table_to_tuple_access.get(&table).unwrap(),
                 col.column
             ));
@@ -492,7 +546,8 @@ fn collect_column_null_checks(field: &ComplexField, query_object: &QueryObject, 
             query_object.check_column_validity(col, &table_name.to_string());
             if query_object.has_join {
                 let table = check_alias(&col.table.as_ref().unwrap(), query_object);
-                checks.push(format!("x{}.{}.is_some()", 
+                checks.push(format!(
+                    "x{}.{}.is_some()",
                     query_object.table_to_tuple_access.get(&table).unwrap(),
                     col.column
                 ));
@@ -505,7 +560,8 @@ fn collect_column_null_checks(field: &ComplexField, query_object: &QueryObject, 
         query_object.check_column_validity(&agg.column, &table_name.to_string());
         if query_object.has_join {
             let table = check_alias(&agg.column.table.as_ref().unwrap(), query_object);
-            checks.push(format!("x{}.{}.is_some()", 
+            checks.push(format!(
+                "x{}.{}.is_some()",
                 query_object.table_to_tuple_access.get(&table).unwrap(),
                 agg.column.column
             ));

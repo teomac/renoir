@@ -1,6 +1,6 @@
-use crate::dsl::ir::{AggregateFunction, AggregateType, IrLiteral};
 use crate::dsl::ir::ColumnRef;
 use crate::dsl::ir::QueryObject;
+use crate::dsl::ir::{AggregateFunction, AggregateType, IrLiteral};
 
 // helper function to convert column reference to string
 pub fn convert_column_ref(column_ref: &ColumnRef, query_object: &QueryObject) -> String {
@@ -14,19 +14,35 @@ pub fn convert_column_ref(column_ref: &ColumnRef, query_object: &QueryObject) ->
             let table_name = if query_object.table_to_alias.contains_key(val) {
                 val
             } else {
-                query_object.table_names_list.iter().find(|&x| x == val).unwrap()
+                query_object
+                    .table_names_list
+                    .iter()
+                    .find(|&x| x == val)
+                    .unwrap()
             };
-            return format!("x{}", query_object.table_to_tuple_access.get(table_name).unwrap());
+            return format!(
+                "x{}",
+                query_object.table_to_tuple_access.get(table_name).unwrap()
+            );
         }
     }
 
     if !query_object.has_join {
         let table_name = table_names.first().unwrap();
-        let col = if query_object.table_to_struct.get(table_name).unwrap().get(&column_ref.column).is_some() {
+        let col = if query_object
+            .table_to_struct
+            .get(table_name)
+            .unwrap()
+            .get(&column_ref.column)
+            .is_some()
+        {
             format!("{}", column_ref.column)
         } else {
             //throw error
-            panic!("Column {} does not exist in table {}", column_ref.column, table_name);
+            panic!(
+                "Column {} does not exist in table {}",
+                column_ref.column, table_name
+            );
         };
         format!("x.{}", col)
     } else {
@@ -39,24 +55,45 @@ pub fn convert_column_ref(column_ref: &ColumnRef, query_object: &QueryObject) ->
         }
         // else it's a table name
         else {
-            table_name = query_object.table_names_list.iter().find(|&x| x == val).unwrap();
+            table_name = query_object
+                .table_names_list
+                .iter()
+                .find(|&x| x == val)
+                .unwrap();
         }
 
-        let col = if query_object.table_to_struct.get(table_name).unwrap().get(&column_ref.column).is_some() {
+        let col = if query_object
+            .table_to_struct
+            .get(table_name)
+            .unwrap()
+            .get(&column_ref.column)
+            .is_some()
+        {
             format!("{}", column_ref.column)
         } else {
             //throw error
-            panic!("Column {} does not exist in table {}", column_ref.column, table_name);
+            panic!(
+                "Column {} does not exist in table {}",
+                column_ref.column, table_name
+            );
         };
-        let i = query_object.table_to_struct_name.get(table_name).unwrap().chars().last().unwrap();
+        let i = query_object
+            .table_to_struct_name
+            .get(table_name)
+            .unwrap()
+            .chars()
+            .last()
+            .unwrap();
         if !query_object.has_join {
-            return format!("x.{}.{}", i, col)
+            return format!("x.{}.{}", i, col);
         } else {
-            return format!("x{}.{}", query_object.table_to_tuple_access.get(table_name).unwrap(), col)
+            return format!(
+                "x{}.{}",
+                query_object.table_to_tuple_access.get(table_name).unwrap(),
+                col
+            );
         }
-        
     }
-    
 }
 
 // helper function to convert literal to string
@@ -67,7 +104,6 @@ pub fn convert_literal(literal: &IrLiteral) -> String {
         IrLiteral::String(val) => format!("\"{}\"", val),
         IrLiteral::Boolean(val) => format!("{}", val),
         IrLiteral::ColumnRef(_val) => "".to_string(),
-        
     }
 }
 
@@ -83,15 +119,13 @@ pub fn get_type_from_literal(literal: &IrLiteral) -> String {
 }
 
 pub fn convert_aggregate(aggregate: &AggregateFunction, query_object: &QueryObject) -> String {
-    let func = match aggregate.function
-        {
-            AggregateType::Max => "max",
-            AggregateType::Min=>"min"  ,
-              AggregateType::Avg=>"avg",
-            AggregateType::Sum=> "sum" ,
-             AggregateType::Count=>"count" ,
-        };
-
+    let func = match aggregate.function {
+        AggregateType::Max => "max",
+        AggregateType::Min => "min",
+        AggregateType::Avg => "avg",
+        AggregateType::Sum => "sum",
+        AggregateType::Count => "count",
+    };
 
     let col = convert_column_ref(&aggregate.column, query_object);
 
@@ -100,25 +134,34 @@ pub fn convert_aggregate(aggregate: &AggregateFunction, query_object: &QueryObje
 
 // method to check if a table is an alias and return the table name
 pub fn check_alias(table: &str, query_object: &QueryObject) -> String {
-    if let Some((actual_table, _)) = query_object.table_to_alias.iter().find(|(_, alias)| *alias == table) {
+    if let Some((actual_table, _)) = query_object
+        .table_to_alias
+        .iter()
+        .find(|(_, alias)| *alias == table)
+    {
         actual_table.clone()
     } else {
-        query_object.table_names_list.iter().find(|&x| x == table).unwrap().clone()
+        query_object
+            .table_names_list
+            .iter()
+            .find(|&x| x == table)
+            .unwrap()
+            .clone()
     }
 }
 
 // Helper function to find the exact matching result column for an ORDER BY column
 pub fn find_matching_result_column(
-    column_name: &str, 
+    column_name: &str,
     table_name: Option<&str>,
-    query_object: &QueryObject
+    query_object: &QueryObject,
 ) -> Option<String> {
     let result_column_keys: Vec<&String> = query_object.result_column_types.keys().collect();
     // If the column name is already an exact match in the result columns, return it
     if result_column_keys.contains(&&column_name.to_string()) {
         return Some(column_name.to_string());
     }
-    
+
     // Case 1: With table name specified
     if let Some(table) = table_name {
         // Check if table is an alias and get the actual table name if needed
@@ -127,17 +170,19 @@ pub fn find_matching_result_column(
         } else {
             table
         };
-        
+
         // Try to find a result column that matches the format "column_table" or "column_alias"
         let actual_table_string = actual_table.to_string();
-        let table_suffix = query_object.get_alias(actual_table).unwrap_or(&actual_table_string);
+        let table_suffix = query_object
+            .get_alias(actual_table)
+            .unwrap_or(&actual_table_string);
         let expected_pattern = format!("{}_{}", column_name, table_suffix);
-        
+
         // First check for exact match with the pattern
         if let Some(key) = result_column_keys.iter().find(|k| ***k == expected_pattern) {
             return Some(key.to_string());
         }
-        
+
         // If not found, check for any result column that starts with column name and matches the table
         for key in result_column_keys {
             // Split by underscore to check if the last part matches the table/alias
@@ -145,18 +190,22 @@ pub fn find_matching_result_column(
             if parts.len() >= 2 {
                 let potential_col = parts[0];
                 let potential_table = parts.last().unwrap();
-                
-                if potential_col == column_name && (potential_table == &table || potential_table == table_suffix) {
+
+                if potential_col == column_name
+                    && (potential_table == &table || potential_table == table_suffix)
+                {
                     return Some(key.clone());
                 }
             }
         }
-    } 
+    }
     // Case 2: No table specified - try to find any matching column
     else {
         for key in result_column_keys {
-            if key.starts_with(column_name) && 
-               (key.len() == column_name.len() || key.chars().nth(column_name.len()) == Some('_')) {
+            if key.starts_with(column_name)
+                && (key.len() == column_name.len()
+                    || key.chars().nth(column_name.len()) == Some('_'))
+            {
                 return Some(key.clone());
             }
         }

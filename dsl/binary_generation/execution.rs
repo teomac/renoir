@@ -1,13 +1,12 @@
-
-use std::fs;
-use std::process::Command;
-use std::io;
 use super::creation;
+use std::fs;
+use std::io;
+use std::process::Command;
 
-
-
-
-pub fn binary_execution(output_path: &str, rust_project: creation::RustProject) -> io::Result<String> {
+pub fn binary_execution(
+    output_path: &str,
+    rust_project: creation::RustProject,
+) -> io::Result<String> {
     // Ensure output directory exists
     if let Some(parent) = std::path::Path::new(output_path).parent() {
         fs::create_dir_all(parent)?;
@@ -22,7 +21,7 @@ pub fn binary_execution(output_path: &str, rust_project: creation::RustProject) 
     if !fmt_status.success() {
         return Err(io::Error::new(
             io::ErrorKind::Other,
-            "Failed to format the code"
+            "Failed to format the code",
         ));
     }
 
@@ -35,7 +34,7 @@ pub fn binary_execution(output_path: &str, rust_project: creation::RustProject) 
     if !fix_status.success() {
         return Err(io::Error::new(
             io::ErrorKind::Other,
-            "Failed to fix the code"
+            "Failed to fix the code",
         ));
     }
 
@@ -48,7 +47,7 @@ pub fn binary_execution(output_path: &str, rust_project: creation::RustProject) 
     if !status.success() {
         return Err(io::Error::new(
             io::ErrorKind::Other,
-            "Failed to compile the binary"
+            "Failed to compile the binary",
         ));
     }
 
@@ -60,16 +59,19 @@ pub fn binary_execution(output_path: &str, rust_project: creation::RustProject) 
 
     // Execute the binary with the provided input range
     let output = Command::new(
-        rust_project.project_path.join("target/debug").join(binary_name),
+        rust_project
+            .project_path
+            .join("target/debug")
+            .join(binary_name),
     )
-        //.current_dir(std::env::current_dir()?)
-        .output()?;
+    //.current_dir(std::env::current_dir()?)
+    .output()?;
 
     if !output.status.success() {
         let error = String::from_utf8_lossy(&output.stderr);
         return Err(io::Error::new(
             io::ErrorKind::Other,
-            format!("Binary execution failed: {}", error)
+            format!("Binary execution failed: {}", error),
         ));
     }
 
@@ -78,4 +80,4 @@ pub fn binary_execution(output_path: &str, rust_project: creation::RustProject) 
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 
     Ok(output_str)
-} 
+}

@@ -1,13 +1,13 @@
 use indexmap::IndexMap;
 
-use crate::dsl::csv_utils::csv_parsers::*;
-use crate::dsl::binary_generation::execution::*;
-use crate::dsl::binary_generation::creation::*;
-use crate::dsl::ir::*;
-use std::io;
 use super::binary_generation::creation;
+use crate::dsl::binary_generation::creation::*;
+use crate::dsl::binary_generation::execution::*;
+use crate::dsl::csv_utils::csv_parsers::*;
+use crate::dsl::ir::*;
 use crate::dsl::languages::sql::sql_parser::sql_to_ir;
 use crate::dsl::struct_object::object::*;
+use std::io;
 
 /// Executes a query on CSV files and generates a Rust binary to process the query.
 ///
@@ -45,13 +45,18 @@ use crate::dsl::struct_object::object::*;
 /// 5. Generate the main.rs file and update it in the Rust project.
 /// 6. Compile the binary and save it to the specified output path.
 
-pub fn query_csv(query_str: &String, output_path: &str, csv_path: &Vec<String>, user_defined_types: &Vec<String>) -> io::Result<String>
-{
-
+pub fn query_csv(
+    query_str: &String,
+    output_path: &str,
+    csv_path: &Vec<String>,
+    user_defined_types: &Vec<String>,
+) -> io::Result<String> {
     //step 0: safety check on inputs
-    if csv_path.len() != user_defined_types.len()
-    {
-        return Err(io::Error::new(io::ErrorKind::InvalidInput, "Number of csv files and user defined types do not match"));
+    if csv_path.len() != user_defined_types.len() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "Number of csv files and user defined types do not match",
+        ));
     }
 
     let mut query_object = QueryObject::new();
@@ -63,48 +68,41 @@ pub fn query_csv(query_str: &String, output_path: &str, csv_path: &Vec<String>, 
 
     // step 2: open csv input, read column names and data types, create the struct for each csv file
     let user_types: Vec<Vec<String>> = user_defined_types
-    .iter()
-    .map(|types| parse_type_string(types)
-        .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e)))
-    .collect::<Result<Vec<_>, _>>()?;
-
+        .iter()
+        .map(|types| {
+            parse_type_string(types).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
 
     // step 2.1: Get CSV columns an combine with user defined types
-    let columns: Vec<Vec<String>> = csv_path
-    .iter()
-    .map(|path| get_csv_columns(path))
-    .collect();
-
+    let columns: Vec<Vec<String>> = csv_path.iter().map(|path| get_csv_columns(path)).collect();
 
     let hash_maps: Vec<IndexMap<String, String>> = columns
-    .iter()
-    .zip(user_types.iter())
-    .map(|(cols, types)| {
-        cols.iter()
-            .zip(types.iter())
-            .map(|(c, t)| (c.to_string(), t.to_string()))
-            .collect()
-    })
-    .collect();
+        .iter()
+        .zip(user_types.iter())
+        .map(|(cols, types)| {
+            cols.iter()
+                .zip(types.iter())
+                .map(|(c, t)| (c.to_string(), t.to_string()))
+                .collect()
+        })
+        .collect();
 
     println!("{:?}", hash_maps);
-    
+
     // step 3: parse the query
     let ir_query = sql_to_ir(query_str);
     let ir_ast = query_ir_to_ast(&ir_query);
     query_object = query_object.populate(&ir_ast, &csv_path, &hash_maps);
-    
+
     // step 4: convert Ir AST to renoir string
     let renoir_string = ir_ast_to_renoir(&ir_ast, &mut query_object);
     query_object.set_renoir_string(&renoir_string);
-
 
     // step 5: generate main.rs and update it in the Rust project
     let main = create_template(&query_object);
     rust_project.update_main_rs(&main)?;
 
-
     // step 6: compile the binary
     binary_execution(output_path, rust_project)
-
 }

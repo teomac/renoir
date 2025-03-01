@@ -1,10 +1,10 @@
+use csv::Reader;
+use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
-use std::collections::HashMap;
+use std::fmt::Write;
 use std::fs::File;
 use std::path::Path;
-use csv::Reader;
-use std::fmt::Write;
 
 #[derive(Debug)]
 pub struct ParseTypeError {
@@ -43,9 +43,11 @@ pub fn parse_type_string(input: &str) -> Result<Vec<String>, ParseTypeError> {
                 "str" | "string" | "String" => "String",
                 "float" | "f64" | "f32" => "f64",
                 "bool" | "boolean" => "bool",
-                invalid_type => return Err(ParseTypeError {
-                    message: format!("Invalid type: {}", invalid_type),
-                }),
+                invalid_type => {
+                    return Err(ParseTypeError {
+                        message: format!("Invalid type: {}", invalid_type),
+                    })
+                }
             };
 
             // Create the indexed type string
@@ -60,26 +62,23 @@ pub fn get_csv_columns<P: AsRef<Path>>(path: P) -> Vec<String> {
     // Open the CSV file
     let file = File::open(path).expect("Unable to open file");
     let mut reader = Reader::from_reader(file);
-    
+
     // Get the headers
     let headers = reader.headers().expect("Unable to read headers");
-    
+
     // Convert headers into owned String values
-    let columns: Vec<String> = headers
-        .iter()
-        .map(|header| header.to_string())
-        .collect();
-    
+    let columns: Vec<String> = headers.iter().map(|header| header.to_string()).collect();
+
     columns
 }
 
 pub fn combine_arrays(keys: &Vec<String>, values: &Vec<String>) -> HashMap<String, String> {
     let mut map = HashMap::new();
-    
+
     for (key, value) in keys.iter().zip(values.iter()) {
         map.insert(key.clone(), value.clone());
     }
-    
+
     map
 }
 
@@ -91,7 +90,7 @@ fn parse_field(field: &str) -> (&str, &str) {
 
     let base_type = &field[..numeric_start];
     let number = &field[numeric_start..];
-    
+
     (base_type, number)
 }
 
@@ -103,7 +102,7 @@ pub fn create_struct(fields: &Vec<(String, String)>, index: String) -> String {
         index
     );
 
-    for (field_name, rust_type) in fields {        
+    for (field_name, rust_type) in fields {
         writeln!(&mut output, "    {}: Option<{}>,", field_name, rust_type).unwrap();
     }
 

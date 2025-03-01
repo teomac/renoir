@@ -1,5 +1,5 @@
-use super::ir_ast_structure::IrLiteral;
 use super::error::IrParseError;
+use super::ir_ast_structure::IrLiteral;
 
 pub struct LiteralParser;
 

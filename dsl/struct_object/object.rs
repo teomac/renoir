@@ -1,6 +1,6 @@
 use crate::dsl::ir::{
-    ir_ast_structure::{AggregateType, JoinClause, SelectColumn, ComplexField},
-    IrAST, ColumnRef, IrLiteral,
+    ir_ast_structure::{AggregateType, ComplexField, JoinClause, SelectColumn},
+    ColumnRef, IrAST, IrLiteral,
 };
 use indexmap::IndexMap;
 
@@ -12,9 +12,9 @@ pub struct QueryObject {
 
     pub output_path: String, //output path
 
-    pub ir_ast: Option<IrAST>,                  //ir ast
-    pub joined_tables: Vec<String>,               // list of joined tables
-    pub table_names_list: Vec<String>,            // list of table names
+    pub ir_ast: Option<IrAST>,         //ir ast
+    pub joined_tables: Vec<String>,    // list of joined tables
+    pub table_names_list: Vec<String>, // list of table names
 
     pub table_to_alias: IndexMap<String, String>, // key: table name, value: alias
     pub table_to_csv: IndexMap<String, String>,   // key: table name, value: csv file path
@@ -23,29 +23,30 @@ pub struct QueryObject {
     pub table_to_tuple_access: IndexMap<String, String>, // key: table name, value: tuple field access
 
     //IndexMap to store the result column name and its corresponding data type
-    pub result_column_types: IndexMap<String, String>,}
-    // key: result column name, value: data type
+    pub result_column_types: IndexMap<String, String>,
+}
+// key: result column name, value: data type
 
-    //ex. SELECT power * total_km AS product FROM table1
-    //this indexMap will be filled with:
-    //"product" -> f64 || i64
+//ex. SELECT power * total_km AS product FROM table1
+//this indexMap will be filled with:
+//"product" -> f64 || i64
 
-    //ex. SELECT SUM(total_km) AS total_distance FROM table1
-    //this indexMap will be filled with:
-    //"total_distance" -> f64 || i64
+//ex. SELECT SUM(total_km) AS total_distance FROM table1
+//this indexMap will be filled with:
+//"total_distance" -> f64 || i64
 
-    //ex. SELECT SUM(total_km) FROM table1
-    //this indexMap will be filled with:
-    //"sum_total_km" -> f64 || i64
+//ex. SELECT SUM(total_km) FROM table1
+//this indexMap will be filled with:
+//"sum_total_km" -> f64 || i64
 
-    //ex. SELECT * FROM table1
-    //this indexMap will be filled with:
-    //all the columns from all the tables -> corresponding type
+//ex. SELECT * FROM table1
+//this indexMap will be filled with:
+//all the columns from all the tables -> corresponding type
 
-    //ex. SELECT power, power FROM table1
-    //this indexMap will be filled with:
-    //"power" -> f64 || i64
-    //"power_1" -> f64 || i64
+//ex. SELECT power, power FROM table1
+//this indexMap will be filled with:
+//"power" -> f64 || i64
+//"power_1" -> f64 || i64
 
 impl QueryObject {
     pub fn new() -> Self {
@@ -136,15 +137,9 @@ impl QueryObject {
         self.table_to_tuple_access = map.clone();
     }
 
-    pub fn insert_result_col(
-        &mut self,
-        result_col: &str,
-        result_type: &str,
-    ) {
-        self.result_column_types.insert(
-            result_col.to_string(),
-            result_type.to_string(),
-            );
+    pub fn insert_result_col(&mut self, result_col: &str, result_type: &str) {
+        self.result_column_types
+            .insert(result_col.to_string(), result_type.to_string());
     }
 
     pub fn populate(
@@ -183,18 +178,24 @@ impl QueryObject {
 
             //check if the table is already in the list
             if self.table_names_list.contains(&join_table) {
-                panic!("Table {} is already in the list. Please use unique names.", join_table);
+                panic!(
+                    "Table {} is already in the list. Please use unique names.",
+                    join_table
+                );
             }
 
             //if it is not in the list, add it
             self.table_names_list.push(join_table.clone());
             self.joined_tables.push(join_table.clone());
-            
+
             if let Some(join_alias) = &join.join_scan.alias {
                 //check if the alias is already in the list
                 for (_, alias) in &self.table_to_alias {
                     if alias == join_alias {
-                        panic!("Alias {} is already in the list. Please use unique alias names.", join_alias);
+                        panic!(
+                            "Alias {} is already in the list. Please use unique alias names.",
+                            join_alias
+                        );
                     }
                 }
 
@@ -250,16 +251,15 @@ impl QueryObject {
                 .insert(table.clone(), format!("StructVar{}", i));
         }
 
-
         // Populate the result column types based on select clauses
         if let Some(ref ir_ast) = self.ir_ast {
             let mut used_names = std::collections::HashSet::new();
-            
+
             for select_clause in &ir_ast.select.select {
                 match select_clause {
                     SelectColumn::Column(col_ref, alias) => {
-                           // Handle SELECT * case
-                           if col_ref.column == "*" {
+                        // Handle SELECT * case
+                        if col_ref.column == "*" {
                             // Check if there's a GROUP BY clause
                             if let Some(ref group_by) = ir_ast.group_by {
                                 // If GROUP BY is present, only include the columns from the GROUP BY clause
@@ -277,15 +277,16 @@ impl QueryObject {
                                         // If table is not specified, use the first table
                                         self.table_names_list[0].to_string()
                                     };
-                                    
+
                                     if let Some(struct_map) = self.table_to_struct.get(&table) {
                                         if let Some(col_type) = struct_map.get(&group_col.column) {
-                                            let suffix = self.table_to_alias
-                                                .get(&table)
-                                                .unwrap_or(&table);
-                                            
-                                            let full_col_name = format!("{}_{}", group_col.column, suffix);
-                                            self.result_column_types.insert(full_col_name, col_type.clone());
+                                            let suffix =
+                                                self.table_to_alias.get(&table).unwrap_or(&table);
+
+                                            let full_col_name =
+                                                format!("{}_{}", group_col.column, suffix);
+                                            self.result_column_types
+                                                .insert(full_col_name, col_type.clone());
                                         }
                                     }
                                 }
@@ -294,20 +295,21 @@ impl QueryObject {
                                 for table_name in &self.table_names_list {
                                     if let Some(struct_map) = self.table_to_struct.get(table_name) {
                                         // Get the suffix (alias or table name)
-                                        let suffix = self.table_to_alias
+                                        let suffix = self
+                                            .table_to_alias
                                             .get(table_name)
                                             .unwrap_or(table_name);
-                                        
+
                                         // Add each column with the appropriate suffix
                                         for (col_name, col_type) in struct_map {
                                             let full_col_name = format!("{}_{}", col_name, suffix);
-                                            self.result_column_types.insert(full_col_name, col_type.clone());
+                                            self.result_column_types
+                                                .insert(full_col_name, col_type.clone());
                                         }
                                     }
                                 }
                             }
                         } else {
-                            
                             //check if the column is valid
                             self.check_column_validity(col_ref, &String::new());
 
@@ -315,11 +317,10 @@ impl QueryObject {
                             let col_name = alias.clone().unwrap_or_else(|| {
                                 if self.has_join {
                                     // Add table suffix in join case
-                                    let table = col_ref.table.as_ref()
-                                        .expect("Column reference must have table name in JOIN query");
-                                    let suffix = self.table_to_alias
-                                        .get(table)
-                                        .unwrap_or(table);
+                                    let table = col_ref.table.as_ref().expect(
+                                        "Column reference must have table name in JOIN query",
+                                    );
+                                    let suffix = self.table_to_alias.get(table).unwrap_or(table);
                                     format!("{}_{}", col_ref.column, suffix)
                                 } else {
                                     col_ref.column.clone()
@@ -330,12 +331,13 @@ impl QueryObject {
                             let col_type = self.get_type(col_ref);
                             self.result_column_types.insert(col_name, col_type);
                         }
-                    },
-                    
+                    }
+
                     SelectColumn::Aggregate(agg_func, alias) => {
                         //check if the column is valid
                         if agg_func.column.column != "*" {
-                        self.check_column_validity(&agg_func.column, &String::new());}
+                            self.check_column_validity(&agg_func.column, &String::new());
+                        }
 
                         let col_name = if let Some(alias_name) = alias {
                             self.get_unique_name(alias_name, &mut used_names)
@@ -350,45 +352,48 @@ impl QueryObject {
                                         if self.has_join {
                                             let table = agg_func.column.table.as_ref()
                                                 .expect("Column reference must have table name in JOIN query");
-                                            let suffix = self.table_to_alias
-                                                .get(table)
-                                                .unwrap_or(table);
+                                            let suffix =
+                                                self.table_to_alias.get(table).unwrap_or(table);
                                             format!("count_{}_{}", agg_func.column.column, suffix)
                                         } else {
                                             format!("count_{}", agg_func.column.column)
                                         }
                                     }
-                                },
+                                }
                                 other_agg => {
                                     if self.has_join {
-                                        let table = agg_func.column.table.as_ref()
-                                            .expect("Column reference must have table name in JOIN query");
-                                        let suffix = self.table_to_alias
-                                            .get(table)
-                                            .unwrap_or(table);
-                                        format!("{}_{}_{}",
+                                        let table = agg_func.column.table.as_ref().expect(
+                                            "Column reference must have table name in JOIN query",
+                                        );
+                                        let suffix =
+                                            self.table_to_alias.get(table).unwrap_or(table);
+                                        format!(
+                                            "{}_{}_{}",
                                             other_agg.to_string().to_lowercase(),
                                             agg_func.column.column,
-                                            suffix)
+                                            suffix
+                                        )
                                     } else {
-                                        format!("{}_{}", 
+                                        format!(
+                                            "{}_{}",
                                             other_agg.to_string().to_lowercase(),
-                                            agg_func.column.column)
+                                            agg_func.column.column
+                                        )
                                     }
                                 }
                             };
                             self.get_unique_name(&base_name, &mut used_names)
                         };
-                        
+
                         let col_type = match agg_func.function {
                             AggregateType::Count => "usize".to_string(),
                             AggregateType::Avg => "f64".to_string(),
-                            _ => self.get_type(&agg_func.column)
+                            _ => self.get_type(&agg_func.column),
                         };
-                        
+
                         self.result_column_types.insert(col_name, col_type);
-                    },
-                    
+                    }
+
                     SelectColumn::ComplexValue(col_ref, alias) => {
                         let result_type = self.get_complex_field_type(col_ref);
                         let col_name = if let Some(alias_name) = alias {
@@ -397,11 +402,10 @@ impl QueryObject {
                             if self.has_join {
                                 // Try to construct a meaningful name from the complex expression
                                 let base_name = if let Some(ref col) = col_ref.column_ref {
-                                    let table = col.table.as_ref()
-                                        .expect("Column reference must have table name in JOIN query");
-                                    let suffix = self.table_to_alias
-                                        .get(table)
-                                        .unwrap_or(table);
+                                    let table = col.table.as_ref().expect(
+                                        "Column reference must have table name in JOIN query",
+                                    );
+                                    let suffix = self.table_to_alias.get(table).unwrap_or(table);
                                     format!("expr_{}_{}", col.column, suffix)
                                 } else {
                                     format!("expr_{}", used_names.len())
@@ -412,26 +416,30 @@ impl QueryObject {
                                 self.get_unique_name(&base_name, &mut used_names)
                             }
                         };
-                        
+
                         self.result_column_types.insert(col_name, result_type);
-                    },
+                    }
                 }
             }
         }
-        
+
         self
     }
-    
+
     // Helper method to generate unique column names
-    fn get_unique_name(&self, base_name: &str, used_names: &mut std::collections::HashSet<String>) -> String {
+    fn get_unique_name(
+        &self,
+        base_name: &str,
+        used_names: &mut std::collections::HashSet<String>,
+    ) -> String {
         let mut name = base_name.to_string();
         let mut counter = 1;
-        
+
         while used_names.contains(&name) {
             name = format!("{}_{}", base_name, counter);
             counter += 1;
         }
-        
+
         used_names.insert(name.clone());
         name
     }
@@ -453,7 +461,7 @@ impl QueryObject {
             let (left, op, right) = &**nested;
             let left_type = self.get_complex_field_type(left);
             let right_type = self.get_complex_field_type(right);
-            
+
             // If either operand is f64 or operation is division, result is f64
             if left_type == "f64" || right_type == "f64" || op == "/" {
                 "f64".to_string()
@@ -466,7 +474,7 @@ impl QueryObject {
             match agg.function {
                 AggregateType::Count => "usize".to_string(),
                 AggregateType::Avg => "f64".to_string(),
-                _ => self.get_type(&agg.column)
+                _ => self.get_type(&agg.column),
             }
         } else {
             panic!("Invalid complex field - no valid content")
@@ -475,13 +483,13 @@ impl QueryObject {
 
     pub fn check_column_validity(&self, col_ref: &ColumnRef, known_table: &String) {
         //check if the col ref corresponds to a real column
-        let col_to_check  = col_ref.column.clone();
+        let col_to_check = col_ref.column.clone();
         if col_ref.table.is_some() {
             let mut table = col_ref.table.as_ref().unwrap();
 
             //check if the table is an alias. If it is, get the real table name
             if self.get_table_from_alias(&table).is_some() {
-               table = self.get_table_from_alias(&table).unwrap();
+                table = self.get_table_from_alias(&table).unwrap();
             }
 
             //get the struct map for the table
@@ -493,22 +501,23 @@ impl QueryObject {
             }
         } else {
             let mut found = false;
-            if !known_table.is_empty(){
+            if !known_table.is_empty() {
                 let struct_map = self.table_to_struct.get(known_table).unwrap();
                 if struct_map.contains_key(&col_to_check) {
                     found = true;
                 }
-            }else{
-            
-            for table in &self.table_names_list {
-                let struct_map = self.table_to_struct.get(table).unwrap();
-                if struct_map.contains_key(&col_to_check) {
-                    found = true;
-                    break;
+            } else {
+                for table in &self.table_names_list {
+                    let struct_map = self.table_to_struct.get(table).unwrap();
+                    if struct_map.contains_key(&col_to_check) {
+                        found = true;
+                        break;
+                    }
                 }
-            }}
+            }
             if !found {
                 panic!("Column {} does not exist in any table", col_to_check);
             }
         }
-    }}
+    }
+}

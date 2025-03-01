@@ -27,7 +27,6 @@ pub enum SelectType {
     ComplexValue(ComplexField, String, ComplexField),
 }
 
-
 #[derive(Debug, PartialEq, Clone)]
 pub struct ComplexField {
     pub column_ref: Option<ColumnRef>,
@@ -45,26 +44,26 @@ pub enum AggregateFunction {
     Sum,
 }
 
-#[derive(Debug, PartialEq, Clone)] 
+#[derive(Debug, PartialEq, Clone)]
 pub struct FromClause {
     pub scan: ScanClause,
     pub joins: Option<Vec<JoinClause>>,
 }
 
-#[derive(Debug, PartialEq, Clone)] 
+#[derive(Debug, PartialEq, Clone)]
 pub struct ScanClause {
     pub variable: String,
     pub alias: Option<String>,
 }
 
-#[derive(Debug, PartialEq, Clone)] 
+#[derive(Debug, PartialEq, Clone)]
 pub struct JoinClause {
     pub join_type: JoinType,
     pub join_scan: ScanClause,
     pub join_expr: JoinExpr,
 }
 
-#[derive(Debug, PartialEq, Clone)] 
+#[derive(Debug, PartialEq, Clone)]
 pub enum JoinType {
     Inner,
     Left,
@@ -88,18 +87,18 @@ pub enum WhereClause {
     Expression {
         left: Box<WhereClause>,
         op: BinaryOp,
-        right: Box<WhereClause>
-    }
+        right: Box<WhereClause>,
+    },
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum WhereBaseCondition {
     Comparison(WhereCondition),
-    NullCheck(WhereNullCondition)
+    NullCheck(WhereNullCondition),
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct  GroupByClause {
+pub struct GroupByClause {
     pub columns: Vec<ColumnRef>,
     pub having: Option<HavingClause>,
 }
@@ -110,15 +109,14 @@ pub enum HavingClause {
     Expression {
         left: Box<HavingClause>,
         op: BinaryOp,
-        right: Box<HavingClause>
-    }
+        right: Box<HavingClause>,
+    },
 }
-
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum HavingBaseCondition {
     Comparison(HavingCondition),
-    NullCheck(HavingNullCondition)
+    NullCheck(HavingNullCondition),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -208,19 +206,19 @@ pub enum BinaryOp {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct OrderByClause {
-    pub items: Vec<OrderByItem>
+    pub items: Vec<OrderByItem>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct OrderByItem {
     pub column: ColumnRef,
-    pub direction: OrderDirection
+    pub direction: OrderDirection,
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum OrderDirection {
     Asc,
-    Desc
+    Desc,
 }
 
 #[derive(Debug, PartialEq, Clone)]

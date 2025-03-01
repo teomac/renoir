@@ -106,7 +106,7 @@ pub fn create_template(query_object: &QueryObject) -> String {
         if query_object.ir_ast.as_ref().unwrap().select.distinct {
             stream.push_str(&process_distinct(query_object));
         }
-        
+
         stream_declarations.push(stream);
     }
     // case 2: join inside the query

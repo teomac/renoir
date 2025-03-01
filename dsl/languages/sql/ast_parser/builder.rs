@@ -23,7 +23,7 @@ impl SqlASTBuilder {
                         .next()
                         .map_or(false, |token| token.as_rule() == Rule::distinct_keyword);
 
-                    if !distinct{
+                    if !distinct {
                         // If the next token is not DISTINCT, we need to go back to the beginning
                         inner = pair.into_inner();
                         inner.next(); // Skip SELECT keyword

@@ -231,8 +231,10 @@ fn parse_group_conditions(
 
                     // Validate types are compatible for comparison
                     if left_type != right_type {
-                        if !((left_type == "f64" || left_type == "i64")
-                            && (right_type == "f64" || right_type == "i64"))
+                        if !((left_type == "f64" || left_type == "i64" || left_type == "usize")
+                            && (right_type == "f64"
+                                || right_type == "i64"
+                                || right_type == "usize"))
                         {
                             panic!(
                                 "Invalid comparison between incompatible types: {} and {}",
@@ -579,6 +581,7 @@ fn process_filter_condition(
     query_object: &QueryObject,
     acc_info: &GroupAccumulatorInfo,
 ) -> String {
+    let mut check_list: Vec<String> = Vec::new();
     match condition {
         GroupClause::Base(base_condition) => {
             match base_condition {
@@ -597,31 +600,73 @@ fn process_filter_condition(
                     let right_type = query_object.get_complex_field_type(&comp.right_field);
 
                     // Process left and right expressions
-                    let left_expr =
-                        process_filter_field(&comp.left_field, group_by, query_object, acc_info);
-                    let right_expr =
-                        process_filter_field(&comp.right_field, group_by, query_object, acc_info);
+                    let left_expr = process_filter_field(
+                        &comp.left_field,
+                        group_by,
+                        query_object,
+                        acc_info,
+                        &mut check_list,
+                    );
+                    let right_expr = process_filter_field(
+                        &comp.right_field,
+                        group_by,
+                        query_object,
+                        acc_info,
+                        &mut check_list,
+                    );
+
+                    let is_check_list_empty = check_list.is_empty(); // if true there is only one or more count
+                                                                     // Deduplicate and the check list
+                    check_list.sort();
+                    check_list.dedup();
 
                     // Handle type conversions for comparison - improved handling for numeric types
                     if left_type != right_type {
-                        if (left_type == "f64" || left_type == "i64")
-                            && (right_type == "f64" || right_type == "i64")
+                        if (left_type == "f64" || left_type == "i64" || left_type == "usize")
+                            && (right_type == "f64" || right_type == "i64" || right_type == "usize")
                         {
-                            // Both are numeric types but different
-                            if left_type == "f64" {
-                                // Convert right to f64
-                                format!("({}) {} ({} as f64)", left_expr, operator, right_expr)
+                            if is_check_list_empty {
+                                format!(
+                                    "({} as f64) {} ({} as f64)",
+                                    left_expr, operator, right_expr
+                                )
                             } else {
-                                // Convert left to f64
-                                format!("({} as f64) {} ({})", left_expr, operator, right_expr)
+                                // Cast both to f64
+                                format!(
+                                    "if {} {{({} as f64) {} ({} as f64)}} else {{ false }}",
+                                    check_list.join(" && "),
+                                    left_expr,
+                                    operator,
+                                    right_expr
+                                )
                             }
                         } else {
-                            // Different non-numeric types - this should already be caught during validation
-                            format!("({}) {} ({})", left_expr, operator, right_expr)
+                            if is_check_list_empty {
+                                format!("{} {} {}", left_expr, operator, right_expr)
+                            } else {
+                                // Different non-numeric types - this should already be caught during validation
+                                format!(
+                                    "if {} {{({}) {} ({})}} else {{ false }}",
+                                    check_list.join(" && "),
+                                    left_expr,
+                                    operator,
+                                    right_expr
+                                )
+                            }
                         }
                     } else {
-                        // Same types
-                        format!("({}) {} ({})", left_expr, operator, right_expr)
+                        if is_check_list_empty {
+                            format!("{} {} {}", left_expr, operator, right_expr)
+                        } else {
+                            // Same types
+                            format!(
+                                "if {} {{({}) {} ({})}} else {{ false }}",
+                                check_list.join(" && "),
+                                left_expr,
+                                operator,
+                                right_expr
+                            )
+                        }
                     }
                 }
                 GroupBaseCondition::NullCheck(null_check) => {
@@ -705,7 +750,7 @@ fn process_filter_field(
     group_by: &Group,
     query_object: &QueryObject,
     acc_info: &GroupAccumulatorInfo,
-    // Added parameter
+    mut check_list: &mut Vec<String>, // Added parameter
 ) -> String {
     if let Some(ref nested) = field.nested_expr {
         let (left, op, right) = &**nested;
@@ -713,8 +758,10 @@ fn process_filter_field(
         let left_type = query_object.get_complex_field_type(left);
         let right_type = query_object.get_complex_field_type(right);
 
-        let left_expr = process_filter_field(left, group_by, query_object, acc_info);
-        let right_expr = process_filter_field(right, group_by, query_object, acc_info);
+        let left_expr =
+            process_filter_field(left, group_by, query_object, acc_info, &mut check_list);
+        let right_expr =
+            process_filter_field(right, group_by, query_object, acc_info, &mut check_list);
 
         // Improved type handling for arithmetic operations
         if left_type != right_type {
@@ -777,14 +824,24 @@ fn process_filter_field(
         if let Some(key_position) = group_by.columns.iter().position(|c| c.column == col.column) {
             // It's a key - use its position in the group by tuple
             if group_by.columns.len() == 1 {
+                check_list.push(format!("x.0{}.is_some()", as_ref));
                 format!("x.0{}.unwrap()", as_ref)
             } else {
+                check_list.push(format!("x.0.{}{}.is_some()", key_position, as_ref));
                 format!("x.0.{}{}.unwrap()", key_position, as_ref)
             }
         } else {
             // Not a key - use x.1
             if query_object.has_join {
                 let table = check_alias(&col.table.as_ref().unwrap(), query_object);
+
+                check_list.push(format!(
+                    "x.1{}.{}{}.is_some()",
+                    query_object.table_to_tuple_access.get(&table).unwrap(),
+                    col.column,
+                    as_ref
+                ));
+
                 format!(
                     "x.1{}.{}{}.unwrap()",
                     query_object.table_to_tuple_access.get(&table).unwrap(),
@@ -792,6 +849,7 @@ fn process_filter_field(
                     as_ref
                 )
             } else {
+                check_list.push(format!("x.1.{}{}.is_some()", col.column, as_ref));
                 format!("x.1.{}{}.unwrap()", col.column, as_ref)
             }
         }
@@ -838,25 +896,33 @@ fn process_filter_field(
             format!("x.1.{}", agg_pos)
         };
 
+        if agg.function != AggregateType::Count {
+            check_list.push(format!("{}.is_some()", col_access));
+        }
+
         match agg.function {
             AggregateType::Count => {
                 if col.column == "*" {
                     format!("{}.unwrap()", col_access)
                 } else {
-                    format!("{}.is_some() as usize", col_access)
+                    format!("{}", col_access)
                 }
             }
             AggregateType::Max | AggregateType::Min | AggregateType::Sum => {
                 format!("{}.unwrap()", col_access)
             }
-            AggregateType::Avg =>{
+            AggregateType::Avg => {
                 //get the sum and count positions. Sum position corresponds to the position of the aggregate in the accumulator
-                let count_pos = acc_info.get_agg_position(&AggregateFunction{
+                let count_pos = acc_info.get_agg_position(&AggregateFunction {
                     function: AggregateType::Count,
-                    column: col.clone()
+                    column: col.clone(),
                 });
-                format!("{}.unwrap() / {} as f64", col_access, format!("x.1.{}", count_pos))
-            },
+                format!(
+                    "{}.unwrap() / {} as f64",
+                    col_access,
+                    format!("x.1.{}", count_pos)
+                )
+            }
         }
     } else {
         panic!("Invalid ComplexField - no valid content")

@@ -1,5 +1,5 @@
-use super::sql_ast_structure::SqlLiteral;
 use super::error::SqlParseError;
+use super::sql_ast_structure::SqlLiteral;
 
 pub struct LiteralParser;
 
