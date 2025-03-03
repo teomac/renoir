@@ -85,7 +85,7 @@ pub fn create_fold_operation(
                                     ));
                                 } else {
                                     update_code.push_str(&format!(
-                                        "    if {}.is_some() {{ {}acc{} += 1; }}\n",
+                                        "if {}.is_some() {{ {}acc{} += 1; }}\n",
                                         col_access,
                                         if !single_agg {
                                             String::from("")
@@ -102,9 +102,7 @@ pub fn create_fold_operation(
                             }
                             AggregateType::Sum => {
                                 update_code.push_str(&format!(
-                                    "    if let Some(val) = {} {{ 
-                                        {}acc{} = Some({}acc{}.unwrap_or(0.0) + val);
-                                    }}\n",
+                                    "if let Some(val) = {} {{ {}acc{} = Some({}acc{}.unwrap_or(0.0) + val); }}\n",
                                     col_access,
                                     if !single_agg {
                                         String::from("")
@@ -130,8 +128,7 @@ pub fn create_fold_operation(
                             }
                             AggregateType::Max => {
                                 update_code.push_str(&format!(
-                                    "    if let Some(val) = {} {{
-                                        {}acc{} = Some(match {}acc{} {{
+                                    "if let Some(val) = {} {{ {}acc{} = Some(match {}acc{} {{
                                             Some(current_max) => current_max.max(val as f64),
                                             None => val as f64
                                         }});
@@ -161,8 +158,7 @@ pub fn create_fold_operation(
                             }
                             AggregateType::Min => {
                                 update_code.push_str(&format!(
-                                    "    if let Some(val) = {} {{
-                                        {}acc{} = Some(match {}acc{} {{
+                                    "if let Some(val) = {} {{{}acc{} = Some(match {}acc{} {{
                                             Some(current_min) => current_min.min(val as f64),
                                             None => val as f64
                                         }});
@@ -202,7 +198,7 @@ pub fn create_fold_operation(
     let tuple_type = format!("({})", tuple_types.join(", "));
     let tuple_init = format!("({})", tuple_inits.join(", "));
 
-    let mut fold_str = format!(".fold({}, |acc: &mut {}, x| {{\n", tuple_init, tuple_type);
+    let mut fold_str = format!(".fold({}, |acc: &mut {}, x| {{ \n", tuple_init, tuple_type);
     fold_str.push_str(&update_code);
     fold_str.push_str("\n})\n");
 
