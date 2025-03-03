@@ -1,3 +1,5 @@
+use core::panic;
+
 use crate::dsl::ir::ir_ast_structure::{ComplexField, SelectColumn};
 use crate::dsl::ir::r_group::{GroupAccumulatorInfo, GroupAccumulatorValue};
 use crate::dsl::ir::r_utils::check_alias;
@@ -112,6 +114,12 @@ fn create_aggregate_map(select_clauses: &Vec<SelectColumn>, query_object: &Query
                 AggregateType::Avg => {
                     acc_info.add_avg(agg.column.clone(), result_type.clone());
                 }
+                AggregateType::Count => {
+                    acc_info.add_value(
+                        AccumulatorValue::Aggregate(agg.function.clone(), agg.column.clone()),
+                        "usize".to_string(),
+                    );
+                }
                 _ => {
                     acc_info.add_value(
                         AccumulatorValue::Aggregate(agg.function.clone(), agg.column.clone()),
@@ -137,10 +145,13 @@ fn create_aggregate_map(select_clauses: &Vec<SelectColumn>, query_object: &Query
     let mut tuple_types = Vec::new();
     let mut tuple_inits = Vec::new();
 
+    println!("acc_info: {:?}", acc_info);
+
     // Set appropriate initial values based on type and aggregation
     for (value, (_pos, val_type)) in acc_info.value_positions.iter() {
         match value {
             AccumulatorValue::Aggregate(agg_type, _) => {
+                println!("val_type: {}", val_type);
                 match agg_type {
                     AggregateType::Max | AggregateType::Min | AggregateType::Sum => {
                         // Initialize these as None
@@ -151,7 +162,7 @@ fn create_aggregate_map(select_clauses: &Vec<SelectColumn>, query_object: &Query
                     AggregateType::Count => {
                         // Count stays the same - initialized to 0
                         tuple_inits.push("0".to_string());
-                        tuple_types.push(val_type.clone());
+                        tuple_types.push("usize".to_string());
                     }
                     AggregateType::Avg => {
                         // Avg is handled through Sum and Count
@@ -359,18 +370,14 @@ fn create_aggregate_map(select_clauses: &Vec<SelectColumn>, query_object: &Query
                 check_list.dedup();
                 let is_check_list_empty = check_list.is_empty();
                 if is_check_list_empty {
+                    format!("Some({})", temp)
+                } else {
                     format!(
-                        "Some({})",
+                        "if {} {{ Some({}) }} else {{ None }}",
+                        check_list.join(" && "),
                         temp
                     )
-                } else {
-                  format!(
-                    "if {} {{ Some({}) }} else {{ None }}",
-                    check_list.join(" && "),
-                    temp
-                )  
                 }
-                
             }
             SelectColumn::Column(col, _) => {
                 let pos = acc_info
@@ -609,7 +616,7 @@ fn process_complex_field_for_accumulator(
             AggregateType::Count => {
                 let pos = acc_info.add_value(
                     AccumulatorValue::Aggregate(agg.function.clone(), agg.column.clone()),
-                    query_object.get_type(&agg.column),
+                    "usize".to_string(),
                 );
                 if is_single_acc {
                     format!("acc")
@@ -729,13 +736,12 @@ fn create_simple_map(select_clauses: &Vec<SelectColumn>, query_object: &QueryObj
                         format!("{}: Some({})", field_name, value)
                     } else {
                         format!(
-                        "{}: if {} {{Some({})}} else {{ None }}",
-                        field_name,
-                        check_list.join(" && "),
-                        value
-                    )
+                            "{}: if {} {{Some({})}} else {{ None }}",
+                            field_name,
+                            check_list.join(" && "),
+                            value
+                        )
                     }
-                    
                 }
                 _ => unreachable!("Should not have aggregates in simple map"),
             }
@@ -1056,16 +1062,9 @@ pub fn process_grouping_projections(
                             .expect("COUNT for AVG not found in accumulator")
                             .0;
 
-                        let is_check_list_empty = check_list.is_empty();
-                        if is_check_list_empty {
-                            format!(
-                                "Some(x.1.{} as f64 / x.1.{} as f64)",
-                                sum_pos, count_pos
-                            )
-                        } else {
-                            format!("if {} {{ Some(x.1.{} as f64 / x.1.{} as f64) }} else {{ None }}", check_list.join(" && "), sum_pos, count_pos)
-                        }
-                        
+                        check_list.push(format!("x.1.{}.is_some()", sum_pos));
+
+                        format!("if {} {{ Some(x.1.{}.unwrap() as f64 / x.1.{} as f64) }} else {{ None }}", check_list.join(" && "), sum_pos, count_pos)
                     }
                     AggregateType::Max | AggregateType::Min | AggregateType::Sum => {
                         let agg_key = GroupAccumulatorValue::Aggregate(
@@ -1074,22 +1073,13 @@ pub fn process_grouping_projections(
                         );
                         let original_type = query_object.get_type(&agg.column);
 
-                        let is_check_list_empty = check_list.is_empty();
-
                         if let Some((pos, _)) = acc_info.agg_positions.get(&agg_key) {
+                            check_list.push(format!("x.1.{}.is_some()", pos));
+
                             if original_type == "i64" {
                                 // Cast back to i64 if that was the original type
-                                if is_check_list_empty {
-                                    format!(
-                                        "Some((x.1{}.unwrap() as i64))",
-                                        if !is_single_agg {
-                                            format!(".{}", pos)
-                                        } else {
-                                            String::new()
-                                        }
-                                    )
-                                } else {
-                                    format!(
+
+                                format!(
                                     "if {} {{ Some((x.1{}.unwrap() as i64)) }} else {{ None }}",
                                     check_list.join(" && "),
                                     if !is_single_agg {
@@ -1098,20 +1088,8 @@ pub fn process_grouping_projections(
                                         String::new()
                                     }
                                 )
-                                }
-                                
                             } else {
-                                if is_check_list_empty {
-                                    format!(
-                                        "Some(x.1{}.unwrap())",
-                                        if !is_single_agg {
-                                            format!(".{}", pos)
-                                        } else {
-                                            String::new()
-                                        }
-                                    )
-                                } else {
-                                    format!(
+                                format!(
                                     "if {} {{ Some(x.1{}.unwrap())  }} else {{ None }}",
                                     check_list.join(" &&"),
                                     if !is_single_agg {
@@ -1120,41 +1098,25 @@ pub fn process_grouping_projections(
                                         String::new()
                                     }
                                 )
-                                }
-                                
                             }
                         } else {
                             panic!("Aggregate {:?} not found in accumulator", agg);
                         }
                     }
-                    _ => {
+                    AggregateType::Count => {
                         let agg_key = GroupAccumulatorValue::Aggregate(
                             agg.function.clone(),
                             agg.column.clone(),
                         );
-                        let is_check_list_empty = check_list.is_empty();
                         if let Some((pos, _)) = acc_info.agg_positions.get(&agg_key) {
-                            if is_check_list_empty {
-                                format!(
-                                    "Some(x.1{})",
-                                    if !is_single_agg {
-                                        format!(".{}", pos)
-                                    } else {
-                                        String::new()
-                                    }
-                                )
-                            } else {
-                               format!(
-                                "if {} {{ Some(x.1{}) }} else {{ None }}",
-                                check_list.join(" && "),
+                            format!(
+                                "Some(x.1{})",
                                 if !is_single_agg {
                                     format!(".{}", pos)
                                 } else {
                                     String::new()
                                 }
-                            ) 
-                            }
-                            
+                            )
                         } else {
                             panic!("Aggregate {:?} not found in accumulator", agg);
                         }
@@ -1163,28 +1125,32 @@ pub fn process_grouping_projections(
                 result.push_str(&format!("    {}: {},\n", field_name, value));
             }
             SelectColumn::ComplexValue(field, _) => {
-                let temp = process_complex_field_for_group(&field, query_object, acc_info, &mut check_list);
+                let temp = process_complex_field_for_group(
+                    &field,
+                    query_object,
+                    acc_info,
+                    &mut check_list,
+                );
+
+                let is_check_list_empty = check_list.is_empty();
+
+                if !is_check_list_empty{
                 // Deduplicate check list
                 check_list.sort();
-                check_list.dedup();
-                let is_check_list_empty = check_list.is_empty();
+                check_list.dedup();}
+                
                 // For complex expressions, recursively process them
-                let value ;
+                let value;
                 if is_check_list_empty {
-                    value = 
-                    format!(
-                        "Some({})",
+                    value = format!("Some({})", temp);
+                } else {
+                    value = format!(
+                        "if {} {{ Some({}) }} else {{ None }}",
+                        check_list.join(" && "),
                         temp
                     );
-                } else {
-                    value = 
-                    format!(
-                    "if {} {{ Some({}) }} else {{ None }}",
-                    check_list.join(" && "),
-                    temp
-                );
                 }
-                
+
                 result.push_str(&format!("    {}: {},\n", field_name, value));
             }
         }
@@ -1213,8 +1179,8 @@ fn process_complex_field_for_group(
 
         // Different types case
         if left_type != right_type {
-            if (left_type == "f64" || left_type == "i64")
-                && (right_type == "f64" || right_type == "i64")
+            if (left_type == "f64" || left_type == "i64" || left_type == "usize")
+                && (right_type == "f64" || right_type == "i64" || right_type == "usize")
             {
                 // Division always results in f64
                 if op == "/" {
@@ -1228,14 +1194,16 @@ fn process_complex_field_for_group(
 
                 // Special handling for power operation (^)
                 if op == "^" {
-                    let left_expr = process_complex_field_for_group(left, query_object, acc_info, check_list);
-                    let right_expr = process_complex_field_for_group(right, query_object, acc_info, check_list);
+                    let left_expr =
+                        process_complex_field_for_group(left, query_object, acc_info, check_list);
+                    let right_expr =
+                        process_complex_field_for_group(right, query_object, acc_info, check_list);
 
                     // If either operand is f64, use powf
                     if left_type == "f64" || right_type == "f64" {
                         return format!(
                             "({}).powf({} as f64)",
-                            if left_type == "i64" {
+                            if left_type == "i64" || left_type == "usize" {
                                 format!("({} as f64)", left_expr)
                             } else {
                                 left_expr
@@ -1244,12 +1212,14 @@ fn process_complex_field_for_group(
                         );
                     } else {
                         // Both are integers, use pow
-                        return format!("({}).pow({} as u32)", left_expr, right_expr);
+                        return format!("({} as u32).pow({} as u32)", left_expr, right_expr);
                     }
                 }
 
-                let left_expr = process_complex_field_for_group(left, query_object, acc_info, check_list);
-                let right_expr = process_complex_field_for_group(right, query_object, acc_info, check_list);
+                let left_expr =
+                    process_complex_field_for_group(left, query_object, acc_info, check_list);
+                let right_expr =
+                    process_complex_field_for_group(right, query_object, acc_info, check_list);
 
                 // Add as f64 to integer literals when needed
                 let processed_left = if let Some(ref lit) = left.literal {
@@ -1272,14 +1242,8 @@ fn process_complex_field_for_group(
                     right_expr
                 };
 
-                //if left is i64 and right is float or vice versa, convert the i64 to f64
-                if left_type == "i64" && right_type == "f64" {
-                    return format!("({} as f64 {} {})", processed_left, op, processed_right);
-                } else if left_type == "f64" && right_type == "i64" {
-                    return format!("({} {} {} as f64)", processed_left, op, processed_right);
-                }
-
-                return format!("({} {} {})", processed_left, op, processed_right);
+                //for any operation, convert all to f64
+                return format!("(({} as f64) {} ({} as f64))", processed_left, op, processed_right);
             } else {
                 panic!(
                     "Invalid arithmetic expression - incompatible types: {} and {}",
@@ -1310,15 +1274,17 @@ fn process_complex_field_for_group(
 
             // Special handling for power operation (^)
             if op == "^" {
-                let left_expr = process_complex_field_for_group(left, query_object, acc_info, check_list);
-                let right_expr = process_complex_field_for_group(right, query_object, acc_info, check_list);
+                let left_expr =
+                    process_complex_field_for_group(left, query_object, acc_info, check_list);
+                let right_expr =
+                    process_complex_field_for_group(right, query_object, acc_info, check_list);
 
                 // If both are f64, use powf
                 if left_type == "f64" {
                     return format!("({}).powf({})", left_expr, right_expr);
                 } else {
                     // Both are integers, use pow
-                    return format!("({}).pow({} as u32)", left_expr, right_expr);
+                    return format!("({} as u32).pow({} as u32)", left_expr, right_expr);
                 }
             }
 
@@ -1337,6 +1303,11 @@ fn process_complex_field_for_group(
                 .columns
                 .iter()
                 .position(|c| c.column == col.column && c.table == col.table);
+
+            check_list.push(format!(
+                "x.0.{}.is_some()",
+                key_position.expect("Column not in GROUP BY key")
+            ));
 
             if let Some(pos) = key_position {
                 // Column is in the GROUP BY key
@@ -1358,29 +1329,8 @@ fn process_complex_field_for_group(
             IrLiteral::Float(f) => format!("{:.2}", f),
             IrLiteral::String(s) => format!("\"{}\"", s),
             IrLiteral::Boolean(b) => b.to_string(),
-            IrLiteral::ColumnRef(col) => {
-                // This is a column reference - handle like above
-                if let Some(group_by) = &query_object.ir_ast.as_ref().unwrap().group_by {
-                    let key_position = group_by
-                        .columns
-                        .iter()
-                        .position(|c| c.column == col.column && c.table == col.table);
-
-                    if let Some(pos) = key_position {
-                        // Column is in the GROUP BY key
-                        if group_by.columns.len() == 1 {
-                            format!("x.0.unwrap()")
-                        } else {
-                            format!("x.0.{}.unwrap()", pos)
-                        }
-                    } else {
-                        panic!("Column {} not in GROUP BY clause", col.column);
-                    }
-                } else {
-                    panic!(
-                        "GROUP BY clause missing but process_complex_field_for_group was called"
-                    );
-                }
+            _ => {
+                panic!("Invalid ComplexField - no valid content");
             }
         }
     } else if let Some(ref agg) = field.aggregate {
@@ -1404,10 +1354,11 @@ fn process_complex_field_for_group(
                     .expect("COUNT for AVG not found in accumulator")
                     .0;
 
+                check_list.push(format!("x.1{}.is_some()", sum_pos));
                 // Only compute average if sum is Some
-                format!("if let Some(sum) = x.1{} {{ Some(sum as f64 / x.1{} as f64) }} else {{ None }}", 
-                    if !is_single_agg { format!(".{}", sum_pos) } else { String::new() },
-                    if !is_single_agg { format!(".{}", count_pos) } else { String::new() }
+                format!("(x.1{}.unwrap() as f64) / x.1{} as f64",
+                    format!(".{}", sum_pos),
+                    format!(".{}", count_pos)
                 )
             }
             AggregateType::Max | AggregateType::Min | AggregateType::Sum => {
@@ -1415,9 +1366,10 @@ fn process_complex_field_for_group(
                     GroupAccumulatorValue::Aggregate(agg.function.clone(), agg.column.clone());
 
                 if let Some((pos, _)) = acc_info.agg_positions.get(&agg_key) {
+                    check_list.push(format!("x.1.{}.is_some()", pos));
                     // These are already Option types, so we return them directly
                     format!(
-                        "x.1{}",
+                        "x.1{}.unwrap()",
                         if !is_single_agg {
                             format!(".{}", pos)
                         } else {
@@ -1428,7 +1380,7 @@ fn process_complex_field_for_group(
                     panic!("Aggregate {:?} not found in accumulator", agg);
                 }
             }
-            _ => {
+            AggregateType::Count => {
                 let agg_key =
                     GroupAccumulatorValue::Aggregate(agg.function.clone(), agg.column.clone());
                 if let Some((pos, _)) = acc_info.agg_positions.get(&agg_key) {

@@ -902,11 +902,9 @@ fn process_filter_field(
 
         match agg.function {
             AggregateType::Count => {
-                if col.column == "*" {
-                    format!("{}.unwrap()", col_access)
-                } else {
+                
                     format!("{}", col_access)
-                }
+                
             }
             AggregateType::Max | AggregateType::Min | AggregateType::Sum => {
                 format!("{}.unwrap()", col_access)

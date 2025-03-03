@@ -70,6 +70,10 @@ impl GroupByParser {
                 table: None,
                 column: pair.as_str().to_string(),
             }),
+            Rule::asterisk => Ok(ColumnRef {
+                table: None,
+                column: "*".to_string(),
+            }),
             _ => Err(SqlParseError::InvalidInput(format!(
                 "Expected column reference, got {:?}",
                 pair.as_rule()
@@ -360,7 +364,14 @@ impl GroupByParser {
                         ))
                     }
                 };
+
                 let column = Self::parse_column_ref(agg.next().unwrap())?;
+
+                if column.column == '*'.to_string() && aggregate != AggregateFunction::Count {
+                    return Err(SqlParseError::InvalidInput(
+                        "Aggregate function must be COUNT(*)".to_string(),
+                    ));
+                }
                 Ok(HavingField {
                     column: None,
                     value: None,

@@ -470,7 +470,8 @@ impl QueryObject {
             }
         } else if let Some(ref agg) = field.aggregate {
             //check if the column is valid
-            self.check_column_validity(&agg.column, &String::new());
+            if &agg.column.column != "*" {
+            self.check_column_validity(&agg.column, &String::new());}
             match agg.function {
                 AggregateType::Count => "usize".to_string(),
                 AggregateType::Avg => "f64".to_string(),
