@@ -1,14 +1,13 @@
 use crate::dsl::{
     ir::{
         ast_parser::ir_ast_structure::IrAST,
-        into_renoir::{r_condition::process_where_clause, r_source::*},
-        r_sink::process_select_clauses,
+        into_renoir::{r_condition::process_where_clause, 
+            r_source::*, 
+            r_sink::base::r_sink_base::process_projections,
+            r_group::r_group_keys::process_group_by}
     },
     struct_object::object::QueryObject,
 };
-
-use super::r_group::process_group_by;
-
 pub struct IrToRenoir;
 
 impl IrToRenoir {
@@ -35,7 +34,7 @@ impl IrToRenoir {
             final_string.push_str(&process_group_by(&group_by, query_object));
         } else {
             // Process all select clauses together
-            final_string.push_str(&process_select_clauses(&ast.select.select, query_object));
+            final_string.push_str(&process_projections(&ast.select.select, query_object));
         }
 
         //println!("Final string: {}", final_string);
