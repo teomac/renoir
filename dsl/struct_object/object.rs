@@ -6,6 +6,7 @@ use indexmap::IndexMap;
 
 #[derive(Clone, Debug)]
 pub struct QueryObject {
+    pub tables_info: IndexMap<String, IndexMap<String, String>>, // key: table name, value: IndexMap of column name and data type
     pub has_join: bool, // true if the query has a join
 
     pub renoir_string: String, //Renoir final string
@@ -52,6 +53,7 @@ impl QueryObject {
     pub fn new() -> Self {
         QueryObject {
             has_join: false,
+            tables_info: IndexMap::new(),
             joined_tables: Vec::new(),
             table_names_list: Vec::new(),
             table_to_alias: IndexMap::new(),
@@ -66,8 +68,16 @@ impl QueryObject {
         }
     }
 
+    pub fn set_tables_info(&mut self, tables_info: IndexMap<String, IndexMap<String, String>>) {
+        self.tables_info = tables_info;
+    }
+
     pub fn set_output_path(&mut self, output_path: &str) {
         self.output_path = output_path.to_string();
+    }
+
+    pub fn set_table_to_csv(&mut self, table_to_csv: IndexMap<String, String>) {
+        self.table_to_csv = table_to_csv;
     }
 
     pub fn get_alias(&self, table: &str) -> Option<&String> {
@@ -470,8 +480,7 @@ impl QueryObject {
             }
         } else if let Some(ref agg) = field.aggregate {
             //check if the column is valid
-            if &agg.column.column != "*" {
-            self.check_column_validity(&agg.column, &String::new());}
+            self.check_column_validity(&agg.column, &String::new());
             match agg.function {
                 AggregateType::Count => "usize".to_string(),
                 AggregateType::Avg => "f64".to_string(),

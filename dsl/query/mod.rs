@@ -7,6 +7,9 @@ use crate::dsl::csv_utils::csv_parsers::*;
 use crate::dsl::ir::*;
 use crate::dsl::languages::sql::sql_parser::sql_to_ir;
 use crate::dsl::struct_object::object::*;
+use core::panic;
+use std::collections::HashMap;
+use std::hash::Hash;
 use std::io;
 
 /// Executes a query on CSV files and generates a Rust binary to process the query.
@@ -48,16 +51,25 @@ use std::io;
 pub fn query_csv(
     query_str: &String,
     output_path: &str,
-    csv_path: &Vec<String>,
-    user_defined_types: &Vec<String>,
+    input_tables: &IndexMap<String, (String, String)>, // key: table name, value: (csv_path, user_defined_types)
 ) -> io::Result<String> {
-    //step 0: safety check on inputs
-    if csv_path.len() != user_defined_types.len() {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidInput,
-            "Number of csv files and user defined types do not match",
-        ));
+
+    // step 0: safety checks
+    if input_tables.len() == 0 {
+        panic!("No input tables provided");
     }
+
+    // check if every key of input_tables has a value
+    for (key, (csv, types)) in input_tables.iter() {
+        if csv == "" {
+            panic!("No CSV path provided for table {}", key);
+        }
+        if types == "" {
+            panic!("No user-defined types provided for table {}", key);
+        }
+    }
+
+
 
     let mut query_object = QueryObject::new();
 
@@ -67,33 +79,29 @@ pub fn query_csv(
     let rust_project = creation::RustProject::create_empty_project()?;
 
     // step 2: open csv input, read column names and data types, create the struct for each csv file
-    let user_types: Vec<Vec<String>> = user_defined_types
-        .iter()
-        .map(|types| {
-            parse_type_string(types).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))
-        })
-        .collect::<Result<Vec<_>, _>>()?;
 
-    // step 2.1: Get CSV columns an combine with user defined types
-    let columns: Vec<Vec<String>> = csv_path.iter().map(|path| get_csv_columns(path)).collect();
+    let mut tables_info: IndexMap<String, IndexMap<String, String>> = IndexMap::new();
+    let mut tables_csv: IndexMap<String, String> = IndexMap::new();
 
-    let hash_maps: Vec<IndexMap<String, String>> = columns
-        .iter()
-        .zip(user_types.iter())
-        .map(|(cols, types)| {
-            cols.iter()
-                .zip(types.iter())
-                .map(|(c, t)| (c.to_string(), t.to_string()))
-                .collect()
-        })
-        .collect();
+    for (key, (csv, type_list)) in input_tables.iter() {
+        tables_csv.insert(key.to_string(), csv.to_string());
+        let user_types = parse_type_string(type_list).unwrap();
+        let csv_columns = get_csv_columns(csv);
+        let temp: IndexMap<String, String> = csv_columns
+            
+            .into_iter().zip(user_types.into_iter())
+            .map(|(c, t)| (c.to_string(), t.to_string()))
+            .collect();
+        tables_info.insert(key.to_string(), temp);
+    } 
 
-    println!("{:?}", hash_maps);
+    query_object.set_tables_info(tables_info);
+    query_object.set_table_to_csv(tables_csv);
 
     // step 3: parse the query
     let ir_query = sql_to_ir(query_str);
     let ir_ast = query_ir_to_ast(&ir_query);
-    query_object = query_object.populate(&ir_ast, &csv_path, &hash_maps);
+    query_object = query_object.populate(&ir_ast /*todo*/ );
 
     // step 4: convert Ir AST to renoir string
     let renoir_string = ir_ast_to_renoir(&ir_ast, &mut query_object);
