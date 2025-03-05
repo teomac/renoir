@@ -2,14 +2,14 @@ WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 COMMENT = _{ "//" ~ (!"\n" ~ ANY)* }
 
 // Basic building blocks
-identifier = @{ ('a'..'z' | "_") ~ ('a'..'z' | '0'..'9' | "_")* }
+identifier = @{ ('a'..'z' | 'A'..'Z'| "_") ~ ('a'..'z' | 'A'..'Z'| '0'..'9' | "_")* }
 number = @{ ("-")? ~
     ('0'..'9')+ // Integer part
     ~ ("." ~ ('0'..'9')+)? // Optional decimal part
 }
 boolean_keyword = @{ ^"true" | ^"false" }
 symbol = @{ ("^"| "+" | "-" | "*" | "/")}
-string = @{ "'" ~ ('a'..'z' | "_")* ~ "'" }
+string = @{ "'" ~ ('a'..'z' | 'A'..'Z'| "_")* ~ "'" }
 value = { boolean_keyword | number | string }
 
 as_keyword = { "as" }
@@ -47,7 +47,7 @@ from_clause = {
     (join_type? ~ join ~ scan_expr ~ on ~ join_condition)*
 }
 
-stream_input = @{ ('a'..'z' | "_") ~ ('a'..'z' | '0'..'9' | "_")* }
+stream_input = @{ ('a'..'z' | 'A'..'Z'| "_") ~ ('a'..'z' | 'A'..'Z'| '0'..'9' | "_")* }
 
 scan_expr = { 
     identifier ~ 
@@ -116,7 +116,7 @@ column_list = {
 }
 
 column_item = {
-    (qualified_column | aggregate_expr | identifier |  complex_op) ~
+    (qualified_column | aggregate_expr | identifier | complex_op | string) ~
     (as_keyword ~ identifier)?
 }
 

@@ -7,9 +7,9 @@ use indexmap::IndexMap;
 #[derive(Clone, Debug)]
 pub struct QueryObject {
     pub tables_info: IndexMap<String, IndexMap<String, String>>, // key: table name, value: IndexMap of column name and data type
-    pub has_join: bool, // true if the query has a join
-    pub renoir_string: String, //Renoir final string
-    pub output_path: String, //output path
+    pub has_join: bool,                                          // true if the query has a join
+    pub renoir_string: String,                                   //Renoir final string
+    pub output_path: String,                                     //output path
 
     pub ir_ast: Option<IrAST>,         //ir ast
     pub joined_tables: Vec<String>,    // list of joined tables
@@ -17,7 +17,7 @@ pub struct QueryObject {
 
     pub table_to_alias: IndexMap<String, String>, // key: table name, value: alias
     pub table_to_csv: IndexMap<String, String>,   // key: table name, value: csv file path
-    
+
     pub table_to_struct_name: IndexMap<String, String>, // key: table name, value: struct name
     pub table_to_tuple_access: IndexMap<String, String>, // key: table name, value: tuple field access
 
@@ -149,10 +149,7 @@ impl QueryObject {
             .insert(result_col.to_string(), result_type.to_string());
     }
 
-    pub fn populate(
-        mut self,
-        ir_ast: &IrAST
-    ) -> Self {
+    pub fn populate(mut self, ir_ast: &IrAST) -> Self {
         //insert the ir ast
         self.ir_ast = Some(ir_ast.clone());
         let mut joins_vec: Vec<JoinClause> = Vec::new();
@@ -217,7 +214,11 @@ impl QueryObject {
         }
 
         // Process paths
-        let paths: Vec<String> = self.table_to_csv.values().cloned().collect::<Vec<_>>()
+        let paths: Vec<String> = self
+            .table_to_csv
+            .values()
+            .cloned()
+            .collect::<Vec<_>>()
             .iter()
             .map(|path| {
                 std::env::current_dir()
@@ -232,7 +233,6 @@ impl QueryObject {
         for (table, path) in self.table_to_csv.iter_mut() {
             *path = paths[table_names.iter().position(|x| x == table).unwrap()].clone();
         }
-
 
         // Set up mappings for each table
         for i in 0..table_names.len() {
@@ -410,6 +410,10 @@ impl QueryObject {
                         };
 
                         self.result_column_types.insert(col_name, result_type);
+                    }
+                    SelectColumn::StringLiteral(value) => {
+                        let col_name = self.get_unique_name(value, &mut used_names);
+                        self.result_column_types.insert(col_name, "String".to_string());
                     }
                 }
             }

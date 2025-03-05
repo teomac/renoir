@@ -172,6 +172,7 @@ fn create_simple_map(select_clauses: &Vec<SelectColumn>, query_object: &QueryObj
                         )
                     }
                 }
+                SelectColumn::StringLiteral(value) => format!("{}: Some(\"{}\".to_string())", value, value),
                 _ => unreachable!("Should not have aggregates in simple map"),
             }
         })

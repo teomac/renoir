@@ -195,6 +195,9 @@ pub fn process_grouping_projections(
 
                 result.push_str(&format!("    {}: {},\n", field_name, value));
             }
+            SelectColumn::StringLiteral(value) => {
+                result.push_str(&format!("    {}: Some(\"{}\".to_string()),\n", field_name, value));
+            },
         }
     }
 

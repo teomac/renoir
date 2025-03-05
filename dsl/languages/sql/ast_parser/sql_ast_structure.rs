@@ -25,6 +25,7 @@ pub enum SelectType {
     Simple(ColumnRef),
     Aggregate(AggregateFunction, ColumnRef),
     ComplexValue(ComplexField, String, ComplexField),
+    StringLiteral(String),
 }
 
 #[derive(Debug, PartialEq, Clone)]

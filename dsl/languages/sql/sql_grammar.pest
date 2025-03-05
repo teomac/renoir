@@ -19,7 +19,7 @@ r_paren = { ")" }
 
 boolean = { "true" | "false"}
 
-variable = @{ ('a'..'z' | "_") ~ ('a'..'z' | '0'..'9' | "_")* }
+variable = @{ ('a'..'z' | 'A'..'Z'| "_") ~ ('a'..'z' | 'A'..'Z'| '0'..'9' | "_")* }
 number = @{ ("-")? ~
     ('0'..'9')+ // Integer part
     ~ ("." ~ ('0'..'9')+)? // Optional decimal part
@@ -77,9 +77,9 @@ where_term = {
 where_expr = { where_keyword ~ where_conditions }
 
 //Projections
-column_item = {select_expr | aggregate_expr | table_column | variable }
+column_item = {select_expr | aggregate_expr | table_column | variable | string_literal }
 column_with_alias = { column_item ~ (as_keyword ~ variable)? }
-column_list = { column_with_alias ~ ("," ~ column_with_alias)* }
+column_list = { (column_with_alias ) ~ ("," ~ (column_with_alias ))* }
 select_expr = { 
     (parenthesized_expr | column_operand) ~ 
     (symbol ~ (parenthesized_expr | column_operand))*
@@ -121,7 +121,7 @@ offset_clause = { offset_keyword ~ number }
 
 query = {
     SOI ~
-    select ~ distinct_keyword? ~ (asterisk| column_list) ~
+    select ~ distinct_keyword? ~ (asterisk | column_list ) ~
     from_expr ~
     where_expr? ~
     group_by_expr? ~

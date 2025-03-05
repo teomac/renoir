@@ -30,6 +30,7 @@ fn validate_order_by(ast: &SqlAST) -> Result<(), SqlParseError> {
                     extract_columns_from_complex(left, &mut select_columns);
                     extract_columns_from_complex(right, &mut select_columns);
                 }
+                _ => { /* Ignore literals */ }
             }
         }
 

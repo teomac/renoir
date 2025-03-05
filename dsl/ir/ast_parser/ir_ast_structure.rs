@@ -57,6 +57,7 @@ pub enum SelectColumn {
     Column(ColumnRef, Option<String>), // Added Option<String> for alias
     Aggregate(AggregateFunction, Option<String>), // Added Option<String> for alias
     ComplexValue(ComplexField, Option<String>), // Added Option<String> for alias
+    StringLiteral(String),
 }
 
 #[derive(Debug, PartialEq, Clone)]

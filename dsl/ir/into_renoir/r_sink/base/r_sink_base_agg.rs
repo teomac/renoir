@@ -44,6 +44,12 @@ pub fn create_aggregate_map(select_clauses: &Vec<SelectColumn>, query_object: &Q
             SelectColumn::Column(col, _) => {
                 acc_info.add_value(AccumulatorValue::Column(col.clone()), result_type.clone());
             }
+            SelectColumn::StringLiteral(value) => {
+                acc_info.add_value(
+                    AccumulatorValue::Literal(value.clone()),
+                    "String".to_string(),
+                );
+            }
         }
     }
 
@@ -86,6 +92,10 @@ pub fn create_aggregate_map(select_clauses: &Vec<SelectColumn>, query_object: &Q
                     _ => panic!("Unsupported type: {}", val_type),
                 }
                 tuple_types.push(val_type.clone());
+            }
+            AccumulatorValue::Literal(string_val) => {
+                tuple_inits.push(format!("\"{}\"", string_val));
+                tuple_types.push("String".to_string());
             }
         }
     }
@@ -187,6 +197,9 @@ pub fn create_aggregate_map(select_clauses: &Vec<SelectColumn>, query_object: &Q
                     "    if let Some(val) = {} {{ acc{} = val; }}\n",
                     col_access, index_acc
                 ));
+            }
+            AccumulatorValue::Literal(_) => {
+                // String literals are constant, no update needed
             }
         }
     }
@@ -290,6 +303,9 @@ pub fn create_aggregate_map(select_clauses: &Vec<SelectColumn>, query_object: &Q
                     .unwrap()
                     .0;
                 format!("Some(acc.{})", pos)
+            }
+            SelectColumn::StringLiteral(value) => {
+                format!("Some(\"{}\".to_string())", value)
             }
         };
         result.push_str(&format!("    {}: {},\n", field_name, value));

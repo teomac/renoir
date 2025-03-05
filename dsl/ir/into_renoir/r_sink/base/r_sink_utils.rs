@@ -9,6 +9,7 @@ use indexmap::IndexMap;
 pub enum AccumulatorValue {
     Aggregate(AggregateType, ColumnRef),
     Column(ColumnRef),
+    Literal(String),
 }
 
 #[derive(Debug)]

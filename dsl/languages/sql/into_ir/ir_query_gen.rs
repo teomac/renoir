@@ -93,6 +93,7 @@ impl SqlToIr {
                     )
                     .trim()
                     .to_string(),
+                    SelectType::StringLiteral(val) => format!("'{}'", val),
                 };
 
                 // Add alias if present
