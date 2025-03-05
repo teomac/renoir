@@ -195,7 +195,7 @@ pub fn generate_struct_declarations(
             // Generate field definitions directly from table to struct mapping
 
             let fields_str: String = query_object
-                .table_to_struct
+                .tables_info
                 .get(_table_name)
                 .unwrap()
                 .iter()

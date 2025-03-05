@@ -76,7 +76,7 @@ fn create_select_star_map(query_object: &QueryObject) -> String {
                 .table_to_tuple_access
                 .get(table)
                 .unwrap_or_else(|| &empty_string);
-            let table_struct = query_object.table_to_struct.get(table).unwrap();
+            let table_struct = query_object.tables_info.get(table).unwrap();
 
             for (column_index, field_name) in table_struct.iter().enumerate() {
                 result.push_str(&format!(
@@ -97,7 +97,7 @@ fn create_select_star_map(query_object: &QueryObject) -> String {
         // Simple case - direct access
         // retrieve the column list of the first table
         let columns = query_object
-            .table_to_struct
+            .tables_info
             .get(&query_object.get_all_table_names()[0])
             .unwrap();
 

@@ -8,9 +8,7 @@ use indexmap::IndexMap;
 pub struct QueryObject {
     pub tables_info: IndexMap<String, IndexMap<String, String>>, // key: table name, value: IndexMap of column name and data type
     pub has_join: bool, // true if the query has a join
-
     pub renoir_string: String, //Renoir final string
-
     pub output_path: String, //output path
 
     pub ir_ast: Option<IrAST>,         //ir ast
@@ -19,7 +17,7 @@ pub struct QueryObject {
 
     pub table_to_alias: IndexMap<String, String>, // key: table name, value: alias
     pub table_to_csv: IndexMap<String, String>,   // key: table name, value: csv file path
-    pub table_to_struct: IndexMap<String, IndexMap<String, String>>, // key: table name, value: IndexMap of column name and data type
+    
     pub table_to_struct_name: IndexMap<String, String>, // key: table name, value: struct name
     pub table_to_tuple_access: IndexMap<String, String>, // key: table name, value: tuple field access
 
@@ -58,7 +56,6 @@ impl QueryObject {
             table_names_list: Vec::new(),
             table_to_alias: IndexMap::new(),
             table_to_csv: IndexMap::new(),
-            table_to_struct: IndexMap::new(),
             table_to_struct_name: IndexMap::new(),
             table_to_tuple_access: IndexMap::new(),
             result_column_types: IndexMap::new(),
@@ -96,11 +93,11 @@ impl QueryObject {
     }
 
     pub fn get_struct(&self, table: &str) -> Option<&IndexMap<String, String>> {
-        self.table_to_struct.get(table)
+        self.tables_info.get(table)
     }
 
     pub fn get_struct_field(&self, table: &str, field: &str) -> Option<&String> {
-        self.table_to_struct.get(table).and_then(|s| s.get(field))
+        self.tables_info.get(table).and_then(|s| s.get(field))
     }
 
     pub fn get_struct_name(&self, table: &str) -> Option<&String> {
@@ -154,9 +151,7 @@ impl QueryObject {
 
     pub fn populate(
         mut self,
-        ir_ast: &IrAST,
-        csv_paths: &Vec<String>,
-        hash_maps: &Vec<IndexMap<String, String>>,
+        ir_ast: &IrAST
     ) -> Self {
         //insert the ir ast
         self.ir_ast = Some(ir_ast.clone());
@@ -222,7 +217,7 @@ impl QueryObject {
         }
 
         // Process paths
-        let paths: Vec<String> = csv_paths
+        let paths: Vec<String> = self.table_to_csv.values().cloned().collect::<Vec<_>>()
             .iter()
             .map(|path| {
                 std::env::current_dir()
@@ -233,33 +228,20 @@ impl QueryObject {
             })
             .collect();
 
-        // Validate input counts
-        assert_eq!(
-            table_names.len(),
-            paths.len(),
-            "Number of tables ({}) and CSV paths ({}) must match",
-            table_names.len(),
-            paths.len()
-        );
-        assert_eq!(
-            table_names.len(),
-            hash_maps.len(),
-            "Number of tables ({}) and hash maps ({}) must match",
-            table_names.len(),
-            hash_maps.len()
-        );
+        //Replace all the paths in table_to_csv with the processed paths
+        for (table, path) in self.table_to_csv.iter_mut() {
+            *path = paths[table_names.iter().position(|x| x == table).unwrap()].clone();
+        }
+
 
         // Set up mappings for each table
         for i in 0..table_names.len() {
             let table = &table_names[i];
-            let path = &paths[i];
-            let hash_map = &hash_maps[i];
-
-            self.table_to_csv.insert(table.clone(), path.clone());
-            self.table_to_struct.insert(table.clone(), hash_map.clone());
             self.table_to_struct_name
                 .insert(table.clone(), format!("StructVar{}", i));
         }
+
+        //table_to_csv and tables_info are already updated now.
 
         // Populate the result column types based on select clauses
         if let Some(ref ir_ast) = self.ir_ast {
@@ -288,7 +270,7 @@ impl QueryObject {
                                         self.table_names_list[0].to_string()
                                     };
 
-                                    if let Some(struct_map) = self.table_to_struct.get(&table) {
+                                    if let Some(struct_map) = self.tables_info.get(&table) {
                                         if let Some(col_type) = struct_map.get(&group_col.column) {
                                             let suffix =
                                                 self.table_to_alias.get(&table).unwrap_or(&table);
@@ -303,7 +285,7 @@ impl QueryObject {
                             } else {
                                 // If no GROUP BY, include all columns from all tables (existing behavior)
                                 for table_name in &self.table_names_list {
-                                    if let Some(struct_map) = self.table_to_struct.get(table_name) {
+                                    if let Some(struct_map) = self.tables_info.get(table_name) {
                                         // Get the suffix (alias or table name)
                                         let suffix = self
                                             .table_to_alias
@@ -503,7 +485,7 @@ impl QueryObject {
             }
 
             //get the struct map for the table
-            let struct_map = self.table_to_struct.get(table).unwrap_or_else(|| {
+            let struct_map = self.tables_info.get(table).unwrap_or_else(|| {
                 panic!("Error in retrieving struct_map for table {}.", table);
             });
             if !struct_map.contains_key(&col_to_check) {
@@ -512,13 +494,13 @@ impl QueryObject {
         } else {
             let mut found = false;
             if !known_table.is_empty() {
-                let struct_map = self.table_to_struct.get(known_table).unwrap();
+                let struct_map = self.tables_info.get(known_table).unwrap();
                 if struct_map.contains_key(&col_to_check) {
                     found = true;
                 }
             } else {
                 for table in &self.table_names_list {
-                    let struct_map = self.table_to_struct.get(table).unwrap();
+                    let struct_map = self.tables_info.get(table).unwrap();
                     if struct_map.contains_key(&col_to_check) {
                         found = true;
                         break;

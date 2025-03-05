@@ -8,8 +8,6 @@ use crate::dsl::ir::*;
 use crate::dsl::languages::sql::sql_parser::sql_to_ir;
 use crate::dsl::struct_object::object::*;
 use core::panic;
-use std::collections::HashMap;
-use std::hash::Hash;
 use std::io;
 
 /// Executes a query on CSV files and generates a Rust binary to process the query.
@@ -18,8 +16,7 @@ use std::io;
 ///
 /// * `query_str` - A string that holds the query to be executed.
 /// * `output_path` - A string that holds the path where the output binary will be saved.
-/// * `csv_path` - A vector of strings that holds the paths to the CSV files that refers to the tables in the query
-/// * `user_defined_types` - A vector of strings that holds the user-defined types for each CSV file.
+/// *  `input_tables` - An `IndexMap` that holds the table name as the key and a tuple of CSV path and user-defined types as the value.
 ///
 /// # Returns
 ///
@@ -40,7 +37,7 @@ use std::io;
 ///
 /// # Steps
 ///
-/// 0. Safety check on inputs to ensure the number of CSV files matches the number of user-defined types strings.
+/// 0. Safety check on inputs to ensure that for every defined table, there is a CSV path and user-defined types.
 /// 1. Create an empty Rust project.
 /// 2. Open CSV input, read column names and data types, and create the struct for each CSV file.
 /// 3. Parse the query and convert it to an intermediate representation.
@@ -101,7 +98,7 @@ pub fn query_csv(
     // step 3: parse the query
     let ir_query = sql_to_ir(query_str);
     let ir_ast = query_ir_to_ast(&ir_query);
-    query_object = query_object.populate(&ir_ast /*todo*/ );
+    query_object = query_object.populate(&ir_ast);
 
     // step 4: convert Ir AST to renoir string
     let renoir_string = ir_ast_to_renoir(&ir_ast, &mut query_object);

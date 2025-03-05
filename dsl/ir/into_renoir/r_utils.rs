@@ -30,7 +30,7 @@ pub fn convert_column_ref(column_ref: &ColumnRef, query_object: &QueryObject) ->
     if !query_object.has_join {
         let table_name = table_names.first().unwrap();
         let col = if query_object
-            .table_to_struct
+            .tables_info
             .get(table_name)
             .unwrap()
             .get(&column_ref.column)
@@ -63,7 +63,7 @@ pub fn convert_column_ref(column_ref: &ColumnRef, query_object: &QueryObject) ->
         }
 
         let col = if query_object
-            .table_to_struct
+            .tables_info
             .get(table_name)
             .unwrap()
             .get(&column_ref.column)

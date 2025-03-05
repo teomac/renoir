@@ -65,7 +65,7 @@ pub fn process_from_clause(from_clause: &FromClause, query_object: &mut QueryObj
             };
 
             let left_field = if query_object
-                .table_to_struct
+                .tables_info
                 .get(&left_table_name)
                 .unwrap()
                 .get(&left_col.column)
@@ -82,7 +82,7 @@ pub fn process_from_clause(from_clause: &FromClause, query_object: &mut QueryObj
             };
 
             let right_field = if query_object
-                .table_to_struct
+                .tables_info
                 .get(&right_table_name)
                 .unwrap()
                 .get(&right_col.column)
