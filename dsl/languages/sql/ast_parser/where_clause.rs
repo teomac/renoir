@@ -1,5 +1,6 @@
 use super::error::SqlParseError;
 use super::sql_ast_structure::*;
+use super::builder::SqlASTBuilder;
 use crate::dsl::languages::sql::ast_parser::Rule;
 use pest::iterators::Pair;
 
@@ -99,8 +100,49 @@ impl ConditionParser {
     }
 
     fn parse_condition(pair: Pair<Rule>) -> Result<WhereClause, SqlParseError> {
-        let mut inner = pair.into_inner();
+        // We'll use a clone of the pairs to check the condition type first
+        let mut rule_check = pair.clone().into_inner();
+        let first_rule = rule_check.next();
+        
+        // Handle EXISTS subquery
+        if let Some(first) = first_rule {
+            if first.as_rule() == Rule::exists_expr {
+                let exists_inner = first.into_inner().next().ok_or_else(|| {
+                    SqlParseError::InvalidInput("Missing subquery in EXISTS".to_string())
+                })?;
+                
+                let subquery = Self::parse_subquery(exists_inner)?;
+                return Ok(WhereClause::Base(WhereBaseCondition::Exists(Box::new(subquery), true)));
+            }
+            
+            // Handle IN subquery - need to check if the next token is 'IN'
+            if first.as_rule() == Rule::variable || first.as_rule() == Rule::table_column {
+                if let Some(second) = rule_check.next() {
+                    if second.as_rule() == Rule::in_expr {
+                        // Extract the column reference and the subquery
+                        let column = match first.as_rule() {
+                            Rule::variable => ColumnRef {
+                                table: None,
+                                column: first.as_str().to_string(),
+                            },
+                            Rule::table_column => Self::parse_column_ref(first)?,
+                            _ => unreachable!() // Already checked above
+                        };
+                        
+                        // Get the subquery expression from the IN expression
+                        let subquery_expr = second.into_inner().next().ok_or_else(|| {
+                            SqlParseError::InvalidInput("Missing subquery in IN expression".to_string())
+                        })?;
+                        
+                        let subquery = Self::parse_subquery(subquery_expr)?;
+                        return Ok(WhereClause::Base(WhereBaseCondition::In(column, Box::new(subquery), true)));
+                    }
+                }
+            }
+        }
 
+        // Regular condition handling (comparison or null check)
+        let mut inner = pair.into_inner();
         let left = inner.next().ok_or_else(|| {
             SqlParseError::InvalidInput("Missing left side of condition".to_string())
         })?;
@@ -159,6 +201,17 @@ impl ConditionParser {
             }
             _ => Err(SqlParseError::InvalidInput("Expected operator".to_string())),
         }
+    }
+
+    // New method to parse subqueries
+    fn parse_subquery(pair: Pair<Rule>) -> Result<SqlAST, SqlParseError> {
+        // Extract the query part from the subquery
+        let query = pair.into_inner()
+            .next()
+            .ok_or_else(|| SqlParseError::InvalidInput("Empty subquery".to_string()))?;
+        
+        // Use the builder to parse the query
+        SqlASTBuilder::build_ast_from_pairs(query.into_inner())
     }
 
     fn parse_arithmetic_expr(pair: Pair<Rule>) -> Result<ArithmeticExpr, SqlParseError> {
@@ -310,6 +363,11 @@ impl ConditionParser {
 
                 Ok(ArithmeticExpr::Aggregate(func, col_ref))
             }
+            Rule::subquery_expr => {
+                // New: Handle subquery in arithmetic expression
+                let subquery = Self::parse_subquery(factor)?;
+                Ok(ArithmeticExpr::Subquery(Box::new(subquery)))
+            }
             _ => Err(SqlParseError::InvalidInput(format!(
                 "Invalid arithmetic factor: {:?}",
                 factor.as_rule()
@@ -357,7 +415,18 @@ impl ConditionParser {
                 column: None,
                 value: None,
                 arithmetic: Some(Self::parse_arithmetic_expr(pair)?),
+                subquery: None,
             }),
+            Rule::subquery_expr => {
+                // New: Handle subquery in WHERE field
+                let subquery = Self::parse_subquery(pair)?;
+                Ok(WhereField {
+                    column: None,
+                    value: None,
+                    arithmetic: None,
+                    subquery: Some(Box::new(subquery)),
+                })
+            },
             Rule::boolean => {
                 let value = match pair.as_str() {
                     "true" => SqlLiteral::Boolean(true),
@@ -372,6 +441,7 @@ impl ConditionParser {
                     column: None,
                     value: Some(value),
                     arithmetic: None,
+                    subquery: None,
                 })
             }
             Rule::string_literal => {
@@ -382,6 +452,7 @@ impl ConditionParser {
                     column: None,
                     value: Some(SqlLiteral::String(clean_str)),
                     arithmetic: None,
+                    subquery: None,
                 })
             }
             Rule::number => {
@@ -411,6 +482,7 @@ impl ConditionParser {
                     column: None,
                     value: Some(value),
                     arithmetic: None,
+                    subquery: None,
                 })
             }
             Rule::table_column => {
@@ -432,6 +504,7 @@ impl ConditionParser {
                     }),
                     value: None,
                     arithmetic: None,
+                    subquery: None,
                 })
             }
             Rule::variable => Ok(WhereField {
@@ -441,6 +514,7 @@ impl ConditionParser {
                 }),
                 value: None,
                 arithmetic: None,
+                subquery: None,
             }),
             _ => Err(SqlParseError::InvalidInput(format!(
                 "Expected where field, got {:?}",

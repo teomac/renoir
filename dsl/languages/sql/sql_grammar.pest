@@ -14,6 +14,9 @@ order_by_keyword = { "ORDER BY" }
 limit_keyword = { "LIMIT" }
 offset_keyword = { "OFFSET" }
 
+in_keyword = @{ "IN" | "NOT IN" }
+exists_keyword = @{ "EXISTS" | "NOT EXISTS" }
+
 l_paren = { "(" }
 r_paren = { ")" }
 
@@ -46,7 +49,7 @@ string_literal = @{ "'" ~ variable ~ "'" }
 
 // Arithmetic expression components
 arithmetic_expr = {
-    arithmetic_term ~ (symbol ~ arithmetic_term)*
+    (arithmetic_term ~ (symbol ~ arithmetic_term)*) | subquery_expr
 }
 
 arithmetic_term = {
@@ -66,7 +69,7 @@ arithmetic_factor = {
 // Condition parts
 condition = { 
     arithmetic_expr ~ operator ~ arithmetic_expr | 
-    (table_column | variable) ~ null_operator 
+    (table_column | variable) ~ null_operator | (in_expr | exists_expr) ~ subquery_expr
 }
 
 where_conditions = { where_term ~ (binary_op ~ where_term)* }
@@ -77,7 +80,7 @@ where_term = {
 where_expr = { where_keyword ~ where_conditions }
 
 //Projections
-column_item = {select_expr | aggregate_expr | table_column | variable | string_literal }
+column_item = {select_expr | aggregate_expr | table_column | variable | string_literal | subquery_expr }
 column_with_alias = { column_item ~ (as_keyword ~ variable)? }
 column_list = { (column_with_alias ) ~ ("," ~ (column_with_alias ))* }
 select_expr = { 
@@ -85,7 +88,7 @@ select_expr = {
     (symbol ~ (parenthesized_expr | column_operand))*
 }
 
-column_operand = { aggregate_expr | table_column | variable | number }
+column_operand = { aggregate_expr | table_column | variable | number | subquery_expr}
 parenthesized_expr = { l_paren ~ select_expr ~ r_paren }
 
 // Having clause
@@ -102,9 +105,9 @@ group_by_expr = { group_by_keyword ~ group_by_list ~ ( having_keyword ~ having_e
 
 join_condition = { table_column ~ "=" ~ table_column ~ ("AND" ~ table_column ~ "=" ~ table_column)* }
 
-from_expr = { from ~ scan_expr ~ join_expr* }
+from_expr = { from ~ (scan_expr | subquery_expr) ~ join_expr* }
 scan_expr = { variable ~ (as_keyword ~ variable)? }
-join_expr = { join_kind? ~ join ~ scan_expr ~ on ~ join_condition }
+join_expr = { join_kind? ~ join ~ (scan_expr | subquery_expr) ~ on ~ join_condition }
 join_kind = { ( ^"INNER" | (^"LEFT" ~ (^"OUTER")?) | ^"OUTER") }
 
 order_direction = { ^"ASC" | ^"DESC" }
@@ -118,6 +121,11 @@ limit_expr = {
 
 limit_clause = { limit_keyword ~ number }
 offset_clause = { offset_keyword ~ number }
+
+
+exists_expr = { exists_keyword ~ subquery_expr }
+in_expr = { (variable | table_column) ~ in_keyword ~ subquery_expr }
+subquery_expr = { l_paren ~ query ~ r_paren }
 
 query = {
     SOI ~

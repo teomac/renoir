@@ -1,5 +1,6 @@
 use super::error::SqlParseError;
 use super::sql_ast_structure::*;
+use super::builder::SqlASTBuilder;
 use crate::dsl::languages::sql::ast_parser::Rule;
 use pest::iterators::Pair;
 
@@ -13,7 +14,41 @@ impl FromParser {
         let scan_expr = inner
             .next()
             .ok_or_else(|| SqlParseError::InvalidInput("Missing scan expression".to_string()))?;
-        let scan = Self::parse_scan(scan_expr)?;
+        
+        // Parse scan source which can now be a table or a subquery
+        let scan = match scan_expr.as_rule() {
+            Rule::scan_expr => {
+                let scan_clause = Self::parse_scan(scan_expr)?;
+                FromSource::Table(scan_clause)
+            },
+            Rule::subquery_expr => {
+                // Extract and parse the subquery
+                let subquery = Self::parse_subquery(scan_expr)?;
+                
+                // Check for an alias after the subquery
+                let alias = if let Some(next_token) = inner.peek() {
+                    if next_token.as_rule() == Rule::as_keyword {
+                        inner.next(); // Skip AS
+                        if let Some(alias_token) = inner.next() {
+                            Some(alias_token.as_str().to_string())
+                        } else {
+                            None
+                        }
+                    } else if next_token.as_rule() == Rule::variable {
+                        Some(inner.next().unwrap().as_str().to_string())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                
+                FromSource::Subquery(Box::new(subquery), alias)
+            },
+            _ => return Err(SqlParseError::InvalidInput(
+                format!("Expected scan expression or subquery, got {:?}", scan_expr.as_rule())
+            ))
+        };
 
         let mut joins = Vec::new();
 
@@ -25,7 +60,7 @@ impl FromParser {
 
         Ok(FromClause {
             scan,
-            joins: Some(joins),
+            joins: if joins.is_empty() { None } else { Some(joins) },
         })
     }
 
@@ -54,6 +89,17 @@ impl FromParser {
         }
 
         Ok(ScanClause { variable, alias })
+    }
+
+    // New: Parse subquery in FROM clause
+    fn parse_subquery(pair: Pair<Rule>) -> Result<SqlAST, SqlParseError> {
+        // Extract the subquery part
+        let subquery = pair.into_inner()
+            .next()
+            .ok_or_else(|| SqlParseError::InvalidInput("Empty subquery".to_string()))?;
+        
+        // Use the builder to parse the subquery
+        SqlASTBuilder::build_ast_from_pairs(subquery.into_inner())
     }
 
     fn parse_join(pair: Pair<Rule>) -> Result<JoinClause, SqlParseError> {
@@ -103,10 +149,45 @@ impl FromParser {
             )));
         }
 
-        let scan_expr = inner
+        // Parse the join source (table or subquery)
+        let join_source_pair = inner
             .next()
-            .ok_or_else(|| SqlParseError::InvalidInput("Missing join table".to_string()))?;
-        let join_scan = Self::parse_scan(scan_expr)?;
+            .ok_or_else(|| SqlParseError::InvalidInput("Missing join table or subquery".to_string()))?;
+        
+        // Process join source which can now be a table or a subquery
+        let join_scan = match join_source_pair.as_rule() {
+            Rule::scan_expr => {
+                let scan_clause = Self::parse_scan(join_source_pair)?;
+                FromSource::Table(scan_clause)
+            },
+            Rule::subquery_expr => {
+                // Extract and parse the subquery
+                let subquery = Self::parse_subquery(join_source_pair)?;
+                
+                // Check for an alias after the subquery
+                let alias = if let Some(next_token) = inner.peek() {
+                    if next_token.as_rule() == Rule::as_keyword {
+                        inner.next(); // Skip AS
+                        if let Some(alias_token) = inner.next() {
+                            Some(alias_token.as_str().to_string())
+                        } else {
+                            None
+                        }
+                    } else if next_token.as_rule() == Rule::variable {
+                        Some(inner.next().unwrap().as_str().to_string())
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
+                
+                FromSource::Subquery(Box::new(subquery), alias)
+            },
+            _ => return Err(SqlParseError::InvalidInput(
+                format!("Expected scan expression or subquery, got {:?}", join_source_pair.as_rule())
+            ))
+        };
 
         inner
             .next()

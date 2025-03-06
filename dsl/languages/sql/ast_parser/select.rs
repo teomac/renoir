@@ -1,6 +1,7 @@
 use super::error::SqlParseError;
 use super::literal::LiteralParser;
 use super::sql_ast_structure::*;
+use super::builder::SqlASTBuilder;
 use crate::dsl::languages::sql::ast_parser::Rule;
 use pest::iterators::Pair;
 
@@ -50,19 +51,29 @@ impl SelectParser {
             Rule::aggregate_expr => {
                 let agg = Self::parse_aggregate(item)?;
                 Ok(SelectType::Aggregate(agg.0, agg.1))
-            }
+            },
             Rule::select_expr => Self::parse_complex_expression(item),
-            Rule::string_literal => {
-                // remove quotes from string
-                let inner_str = item.as_str();
-                let clean_str = inner_str[1..inner_str.len() - 1].to_string();
-                Ok(SelectType::StringLiteral(clean_str))
+            Rule::subquery_expr => {
+                // New: Handle subquery in SELECT
+                let subquery = Self::parse_subquery(item)?;
+                Ok(SelectType::Subquery(Box::new(subquery)))
             },
             _ => Err(SqlParseError::InvalidInput(format!(
                 "Invalid column item: {:?}",
                 item.as_rule()
             ))),
         }
+    }
+
+    // New: Method to parse subqueries
+    fn parse_subquery(pair: Pair<Rule>) -> Result<SqlAST, SqlParseError> {
+        // Extract the query part from the subquery
+        let query = pair.into_inner()
+            .next()
+            .ok_or_else(|| SqlParseError::InvalidInput("Empty subquery".to_string()))?;
+        
+        // Use the builder to parse the query
+        SqlASTBuilder::build_ast_from_pairs(query.into_inner())
     }
 
     //function to parse column references
@@ -182,6 +193,7 @@ impl SelectParser {
                 literal: None,
                 aggregate: None,
                 nested_expr: Some(Box::new((left_field, symbol, right_field))),
+                subquery: None,
             };
         }
 
@@ -194,6 +206,7 @@ impl SelectParser {
                 literal: None,
                 aggregate: None,
                 nested_expr: None,
+                subquery: None,
             },
         ))
     }
@@ -220,6 +233,7 @@ impl SelectParser {
                         literal: None,
                         aggregate: None,
                         nested_expr: Some(Box::new((left, op, right))),
+                        subquery: None,
                     })
                 }
             }
@@ -241,12 +255,14 @@ impl SelectParser {
                 literal: Some(LiteralParser::parse(inner.as_str())?),
                 aggregate: None,
                 nested_expr: None,
+                subquery: None,
             }),
             Rule::table_column => Ok(ComplexField {
                 column_ref: Some(Self::parse_column_ref(inner)?),
                 literal: None,
                 aggregate: None,
                 nested_expr: None,
+                subquery: None,
             }),
             Rule::variable => Ok(ComplexField {
                 column_ref: Some(ColumnRef {
@@ -256,6 +272,7 @@ impl SelectParser {
                 literal: None,
                 aggregate: None,
                 nested_expr: None,
+                subquery: None,
             }),
             Rule::aggregate_expr => {
                 let (func, col) = Self::parse_aggregate(inner)?;
@@ -264,8 +281,20 @@ impl SelectParser {
                     literal: None,
                     aggregate: Some((func, col)),
                     nested_expr: None,
+                    subquery: None,
                 })
-            }
+            },
+            Rule::subquery_expr => {
+                // New: Handle subquery in column operand
+                let subquery = Self::parse_subquery(inner)?;
+                Ok(ComplexField {
+                    column_ref: None,
+                    literal: None,
+                    aggregate: None,
+                    nested_expr: None,
+                    subquery: Some(Box::new(subquery)),
+                })
+            },
             _ => Err(SqlParseError::InvalidInput(format!(
                 "Invalid operand: {:?}",
                 inner.as_rule()
