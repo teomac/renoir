@@ -14,8 +14,8 @@ order_by_keyword = { "ORDER BY" }
 limit_keyword = { "LIMIT" }
 offset_keyword = { "OFFSET" }
 
-in_keyword = @{ "IN" | "NOT IN" }
-exists_keyword = @{ "EXISTS" | "NOT EXISTS" }
+in_keyword = @{ ^"NOT"? ~ ^"IN" }
+exists_keyword = @{ ^"NOT"? ~ ^"EXISTS" }
 
 l_paren = @{ "(" }
 r_paren = @{ ")" }
@@ -66,10 +66,15 @@ arithmetic_factor = {
     aggregate_expr
 }
 
-// Condition parts
+exists_expr = { exists_keyword ~ subquery_expr }
+in_expr = { (variable | table_column) ~ in_keyword ~ subquery_expr }
+
+
 condition = { 
+    exists_expr |
+    in_expr |
     arithmetic_expr ~ operator ~ arithmetic_expr | 
-    (table_column | variable) ~ null_operator | (in_expr | exists_expr)
+    (table_column | variable) ~ null_operator
 }
 
 where_conditions = { where_term ~ (binary_op ~ where_term)* }
@@ -122,9 +127,6 @@ limit_expr = {
 limit_clause = { limit_keyword ~ number }
 offset_clause = { offset_keyword ~ number }
 
-
-exists_expr = { exists_keyword ~ subquery_expr }
-in_expr = { (variable | table_column) ~ in_keyword ~ subquery_expr }
 subquery_expr = { l_paren ~ 
     select ~ distinct_keyword? ~ (asterisk | column_list ) ~
     from_expr ~

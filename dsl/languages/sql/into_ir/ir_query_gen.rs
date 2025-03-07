@@ -93,7 +93,7 @@ impl SqlToIr {
         parts.join("\n")
     }
 
-    // New helper method to handle the FROM clause with subqueries
+    // Helper method to handle the FROM clause with subqueries
     fn from_clause_to_string(from_clause: &FromClause) -> String {
         let mut from_str = match &from_clause.scan {
             FromSource::Table(scan_clause) => match &scan_clause.alias {
@@ -156,23 +156,6 @@ impl SqlToIr {
     }
 
     // Converts a WHERE clause from the SQL AST to its equivalent IR string representation.
-    /// This function handles nested expressions, comparison operations, and NULL checks
-    /// while maintaining proper operator precedence.
-    ///
-    /// # Arguments
-    /// * `clause` - The WhereClause AST node to convert
-    ///
-    /// # Returns
-    /// A String containing the IR representation of the WHERE clause
-    ///
-    /// # Examples
-    /// ```text
-    /// SQL Input: "WHERE (a > 10 OR b < 20) AND c = 30"
-    /// IR Output: "a > 10 || b < 20 && c == 30"
-    ///
-    /// SQL Input: "WHERE x IS NULL AND (y > 100 OR z <= 50)"
-    /// IR Output: "x is null && (y > 100 || z <= 50)"
-    /// ```
     fn where_clause_to_string(clause: &WhereClause) -> String {
         match clause {
             WhereClause::Base(base_condition) => match base_condition {
@@ -259,21 +242,6 @@ impl SqlToIr {
     }
 
     /// Converts a WhereField to its string representation in IR format.
-    /// This function handles fields that can contain column references,
-    /// literal values, or arithmetic expressions.
-    ///
-    /// # Arguments
-    /// * `field` - The WhereField to convert
-    ///
-    /// # Returns
-    /// A String containing the IR representation of the field
-    ///
-    /// # Examples
-    /// ```text
-    /// Column Reference: "table1.column1" -> "table1.column1"
-    /// Literal Value: 42 -> "42"
-    /// Arithmetic: "a + b" -> "a + b"
-    /// ```
     fn convert_where_field(field: &WhereField) -> String {
         if let Some(ref arithmetic) = field.arithmetic {
             match arithmetic {
@@ -300,26 +268,6 @@ impl SqlToIr {
     }
 
     /// Converts an arithmetic expression to its string representation in IR format.
-    /// Handles column references, literals, aggregate functions, and binary operations.
-    ///
-    /// # Arguments
-    /// * `expr` - The ArithmeticExpr to convert
-    ///
-    /// # Returns
-    /// A String containing the IR representation of the arithmetic expression
-    ///
-    /// # Examples
-    /// ```text
-    /// Column: "table1.column1" -> "table1.column1"
-    /// Binary Op: "a + b" -> "a + b"
-    /// Aggregate: "SUM(x)" -> "sum(x)"
-    /// Complex: "(a + b) * c" -> "(a + b) * c"
-    /// ```
-    ///
-    /// # Notes
-    /// - Maintains operator precedence using parentheses where necessary
-    /// - Converts aggregate function names to lowercase as required by IR
-    /// - Preserves spacing around operators for readability
     fn arithmetic_expr_to_string(expr: &ArithmeticExpr) -> String {
         match expr {
             ArithmeticExpr::Column(col_ref) => col_ref.to_string(),
