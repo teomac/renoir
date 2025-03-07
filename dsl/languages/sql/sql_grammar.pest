@@ -17,8 +17,8 @@ offset_keyword = { "OFFSET" }
 in_keyword = @{ "IN" | "NOT IN" }
 exists_keyword = @{ "EXISTS" | "NOT EXISTS" }
 
-l_paren = { "(" }
-r_paren = { ")" }
+l_paren = @{ "(" }
+r_paren = @{ ")" }
 
 boolean = { "true" | "false"}
 
@@ -69,7 +69,7 @@ arithmetic_factor = {
 // Condition parts
 condition = { 
     arithmetic_expr ~ operator ~ arithmetic_expr | 
-    (table_column | variable) ~ null_operator | (in_expr | exists_expr) ~ subquery_expr
+    (table_column | variable) ~ null_operator | (in_expr | exists_expr)
 }
 
 where_conditions = { where_term ~ (binary_op ~ where_term)* }
@@ -125,7 +125,14 @@ offset_clause = { offset_keyword ~ number }
 
 exists_expr = { exists_keyword ~ subquery_expr }
 in_expr = { (variable | table_column) ~ in_keyword ~ subquery_expr }
-subquery_expr = { l_paren ~ query ~ r_paren }
+subquery_expr = { l_paren ~ 
+    select ~ distinct_keyword? ~ (asterisk | column_list ) ~
+    from_expr ~
+    where_expr? ~
+    group_by_expr? ~
+    order_by_expr? ~
+    limit_expr? ~
+    r_paren }
 
 query = {
     SOI ~
