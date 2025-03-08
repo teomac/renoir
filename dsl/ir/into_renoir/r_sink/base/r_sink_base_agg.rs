@@ -1,6 +1,5 @@
 use core::panic;
 use crate::dsl::ir::ir_ast_structure::{ComplexField, SelectColumn};
-use crate::dsl::ir::r_utils::check_alias;
 use crate::dsl::ir::{AggregateType, IrLiteral};
 use crate::dsl::struct_object::object::QueryObject;
 use crate::dsl::ir::r_sink::base::r_sink_utils::{AccumulatorInfo, AccumulatorValue};
@@ -124,16 +123,29 @@ pub fn create_aggregate_map(select_clauses: &Vec<SelectColumn>, query_object: &Q
         }
         match value {
             AccumulatorValue::Aggregate(agg_type, col) => {
-                let col_access = if query_object.has_join {
-                    let table = col.table.as_ref().unwrap();
-                    let table_name = check_alias(table, query_object);
+                let stream_name = if col.table.is_some(){
+                    query_object.get_stream_from_alias(col.table.as_ref().unwrap()).unwrap()
+                }
+                else{
+                    let all_streams = query_object.streams.keys().collect::<Vec<&String>>();
+                    if all_streams.len() == 1{
+                        &all_streams[0].clone()
+                    }
+                    else{
+                        panic!("Column reference without table name in multi-stream query")
+                    }
+                };
+
+                let stream = query_object.get_stream(stream_name);
+
+                stream.check_if_column_exists(&col.column);
+
+                let col_access = {
                     format!(
                         "x{}.{}",
-                        query_object.table_to_tuple_access.get(&table_name).unwrap(),
+                        stream.get_access().get_base_path(),
                         col.column
                     )
-                } else {
-                    format!("x.{}", col.column)
                 };
 
                 match agg_type {
@@ -181,16 +193,29 @@ pub fn create_aggregate_map(select_clauses: &Vec<SelectColumn>, query_object: &Q
                 }
             }
             AccumulatorValue::Column(col) => {
-                let col_access = if query_object.has_join {
-                    let table = col.table.as_ref().unwrap();
-                    let table_name = check_alias(table, query_object);
+                let stream_name = if col.table.is_some(){
+                    query_object.get_stream_from_alias(col.table.as_ref().unwrap()).unwrap()
+                }
+                else{
+                    let all_streams = query_object.streams.keys().collect::<Vec<&String>>();
+                    if all_streams.len() == 1{
+                        &all_streams[0].clone()
+                    }
+                    else{
+                        panic!("Column reference without table name in multi-stream query")
+                    }
+                };
+
+                let stream = query_object.get_stream(stream_name);
+
+                stream.check_if_column_exists(&col.column);
+
+                let col_access = {
                     format!(
                         "x{}.{}",
-                        query_object.table_to_tuple_access.get(&table_name).unwrap(),
+                        stream.get_access().get_base_path(),
                         col.column
                     )
-                } else {
-                    format!("x.{}", col.column)
                 };
 
                 update_code.push_str(&format!(

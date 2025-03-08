@@ -1,53 +1,55 @@
 use crate::dsl::ir::ir_ast_structure::*;
-use crate::dsl::ir::r_utils::check_alias;
 use crate::dsl::ir::FromClause;
 use crate::dsl::ir::QueryObject;
-use indexmap::IndexMap;
 
 pub fn process_from_clause(from_clause: &FromClause, query_object: &mut QueryObject) -> String {
     if !query_object.has_join {
         return "".to_string();
     }
+    //case with at least one join
+    else{
+    let mut stream_list_join: Vec<String> = Vec::new();
+    stream_list_join.push(from_clause.scan.stream_name.clone());
 
-    let mut join_string = String::new();
 
-    // Single IndexMap to track tuple access paths
-    let mut struct_positions: IndexMap<String, String> = IndexMap::new();
+    let mut join_string: String = String::new();
 
     // Process each join in order
     for (i, join) in from_clause.joins.clone().unwrap().iter().enumerate() {
-        let joined_table = &join.join_scan.stream_name;
+        let joined_stream = &join.join_scan.stream_name;
+
+        stream_list_join.push(joined_stream.clone());
 
         let mut left_tuple: Vec<String> = Vec::new();
         let mut right_tuple: Vec<String> = Vec::new();
-
-        // Get struct names
-        let joined_struct = query_object.get_struct_name(&joined_table).unwrap();
-        let struct_index = joined_struct.chars().last().unwrap();
+    
 
         for (_j, join) in join.condition.conditions.iter().enumerate() {
             let mut left_col = join.left_col.clone();
             let mut right_col = join.right_col.clone();
 
-            // Get the actual table names using check_alias
-            let mut left_table_name = check_alias(&left_col.table.as_ref().unwrap(), &query_object);
-            let mut right_table_name =
-                check_alias(&right_col.table.as_ref().unwrap(), &query_object);
+            // Get the stream name from the alias
+            let mut left_stream_name = query_object.get_stream_from_alias(&left_col.table.as_ref().unwrap()).unwrap().clone();
+            let mut right_stream_name = query_object.get_stream_from_alias(&right_col.table.as_ref().unwrap()).unwrap().clone();
+
 
             //validate left and right columns
-            query_object.check_column_validity(&left_col, &left_table_name);
-            query_object.check_column_validity(&right_col, &right_table_name);
+            query_object.check_column_validity(&left_col, &left_stream_name);
+            query_object.check_column_validity(&right_col, &right_stream_name);
 
             // check if left and right col need to be swapped
-            if left_table_name == *joined_table {
+            if left_stream_name == *joined_stream {
                 let temp = left_col.clone();
                 left_col = right_col.clone();
                 right_col = temp.clone();
 
-                let temp2 = left_table_name.clone();
-                left_table_name = right_table_name.clone();
-                right_table_name = temp2.clone();
+                let temp2 = left_stream_name.clone();
+                left_stream_name = right_stream_name.clone();
+                right_stream_name = temp2.clone();
             }
+
+            let left_stream = query_object.get_stream(&left_stream_name);
+            let right_stream = query_object.get_stream(&right_stream_name);
 
             // Get the correct tuple access for the left table
             let left_access = if i == 0 {
@@ -55,51 +57,38 @@ pub fn process_from_clause(from_clause: &FromClause, query_object: &mut QueryObj
                 String::new()
             } else {
                 // Get access from our tracking structure
-                struct_positions
-                    .get(&left_table_name)
-                    .expect(&format!(
-                        "Could not find tuple position for table {}",
-                        left_table_name
-                    ))
-                    .clone()
+                left_stream.get_access().get_base_path()
             };
 
-            let left_field = if query_object
-                .tables_info
-                .get(&left_table_name)
-                .unwrap()
-                .get(&left_col.column)
-                .is_some()
-            {
+            let left_field = if left_stream.check_if_column_exists(&left_col.column) {
                 // If the column is in the struct, use it directly
                 left_col.column.clone()
             } else {
                 // If the column is not in the struct, use the validated field
                 panic!(
                     "Column {} not found in struct for table {}",
-                    left_col.column, left_table_name
+                    left_col.column, left_stream_name
                 );
             };
 
-            let right_field = if query_object
-                .tables_info
-                .get(&right_table_name)
-                .unwrap()
-                .get(&right_col.column)
-                .is_some()
-            {
+            let right_access = 
+                // Get access from our tracking structure
+                right_stream.get_access().get_base_path()
+            ;
+
+            let right_field = if right_stream.check_if_column_exists(&right_col.column) {
                 // If the column is in the struct, use it directly
                 right_col.column.clone()
             } else {
                 // If the column is not in the struct, use the validated field
                 panic!(
                     "Column {} not found in struct for table {}",
-                    right_col.column, right_table_name
+                    right_col.column, right_stream_name
                 );
             };
 
             left_tuple.push(format!("x{}.{}.clone()", left_access, left_field));
-            right_tuple.push(format!("y.{}.clone()", right_field));
+            right_tuple.push(format!("y{}.{}.clone()", right_access, right_field));
         }
 
         // Determine the join method based on the join type
@@ -109,34 +98,47 @@ pub fn process_from_clause(from_clause: &FromClause, query_object: &mut QueryObj
             JoinType::Outer => "outer_join",
         };
 
-        join_string.push_str(&format!(
-            ".{}(stream{}, |x| ({}), |y| ({})).drop_key()",
+        let join_op= format!(
+            ".{}({}, |x| ({}), |y| ({})).drop_key()",
             join_type,
-            struct_index,
+            joined_stream,
             left_tuple.join(", "),
             right_tuple.join(", ")
-        ));
+        );
+        join_string.push_str(&join_op);
+
+        let stream0 = query_object.get_mut_stream(&stream_list_join[0]);
+        stream0.insert_op(join_op);
 
         // Update IndexMap after this join
         if i == 0 {
             // After first join: (t1, t2)
-            struct_positions.insert(from_clause.scan.stream_name.clone(), ".0".to_string());
-            struct_positions.insert(joined_table.clone(), ".1".to_string());
+
+            //we need to update the tuple access in the two streams of the join
+            let updated_first_access = format!(".0{}", query_object.get_stream(&stream_list_join[0]).get_access().get_base_path());
+            let updated_second_access = format!(".1{}", query_object.get_stream(&stream_list_join[1]).get_access().get_base_path());
+
+            query_object.streams.get_mut(&stream_list_join[0]).unwrap().access.update_base_path(updated_first_access);
+            query_object.streams.get_mut(&stream_list_join[1]).unwrap().access.update_base_path(updated_second_access);
+
+            //first_stream.get_access().update_base_path(updated_first_access);
+            //second_stream.get_access().update_base_path(updated_second_access);
+
         } else {
-            // Create temporary map to store new positions
-            let mut new_positions = IndexMap::new();
-            // Update all existing positions to be nested under .0
-            for (table, pos) in struct_positions.iter() {
-                new_positions.insert(table.clone(), format!(".0{}", pos));
+            //this is the case in which we have more than one join
+            // After second join: ((t1, t2), t3)
+
+            //we need to update the tuple access in all the streams of the join
+            for i in 0..(stream_list_join.len()-1) {
+                let updated_access = format!(".0{}", query_object.get_stream(&stream_list_join[i]).get_access().get_base_path());
+                query_object.streams.get_mut(&stream_list_join[i]).unwrap().access.update_base_path(updated_access);
             }
-            // Add the new table at .1
-            new_positions.insert(joined_table.to_string(), ".1".to_string());
-            // Replace old positions with new ones
-            struct_positions = new_positions;
+
+            let joined_stream = query_object.get_stream(&stream_list_join[stream_list_join.len()-1]);
+            let updated_access = format!(".1{}", joined_stream.get_access().get_base_path());
+            query_object.streams.get_mut(&stream_list_join[stream_list_join.len()-1]).unwrap().access.update_base_path(updated_access);
         }
     }
 
-    query_object.update_tuple_access(&struct_positions);
-
     join_string
-}
+}}

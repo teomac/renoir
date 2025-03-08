@@ -453,6 +453,7 @@ fn process_complex_field_for_group(
 
 //Function to handle select * case
 fn create_select_star_group(query_object: &QueryObject) -> String {
+    let result_column_types = query_object.result_column_types.clone();
     let mut result = String::new();
     let group_by = query_object
         .ir_ast
@@ -471,7 +472,7 @@ fn create_select_star_group(query_object: &QueryObject) -> String {
             let key_col = &group_by.columns[0];
 
             // Find the corresponding result column name
-            for (key, _) in &query_object.result_column_types {
+            for (key, _) in &result_column_types {
                 if key.contains(&key_col.column) {
                     result.push_str(&format!("{}: x.0.clone()", key));
                     break;
@@ -487,7 +488,7 @@ fn create_select_star_group(query_object: &QueryObject) -> String {
 
             // Process each key column and find matching result column names
             for (i, key_col) in group_by.columns.iter().enumerate() {
-                for (key, _) in &query_object.result_column_types {
+                for (key, _) in &result_column_types {
                     if key.contains(&key_col.column) {
                         field_assignments.push(format!("{}: x.0.{}.clone()", key, i));
                         break;

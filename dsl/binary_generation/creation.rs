@@ -69,18 +69,19 @@ impl RustProject {
 }
 
 pub fn create_template(query_object: &QueryObject) -> String {
-    let table_names = query_object.table_names_list.as_ref();
-    let struct_names = query_object
-        .table_to_struct_name
-        .values()
-        .cloned()
-        .collect::<Vec<String>>();
+    let all_streams = &query_object.streams;
+
+    let mut table_names = Vec::new();
+
+    for (_, stream) in all_streams.iter() {
+        table_names.push(stream.source_table.clone());
+    }
 
     // Generate struct definitions for input and output tables
     let struct_definitions =
-        generate_struct_declarations(&table_names, &struct_names, &query_object);
+        generate_struct_declarations(&table_names, &query_object);
 
-    let mut stream_declarations = Vec::new();
+    let mut stream_declarations: Vec<String> = Vec::new();
 
     // case 1: no join inside the query
     if !query_object.has_join {
@@ -138,6 +139,7 @@ pub fn create_template(query_object: &QueryObject) -> String {
 
                 stream_declarations.push(stream);
             } else {
+                //retrieve alias from joined_tables
                 let stream = format!(
                     r#"let stream{} = ctx.stream_csv::<{}>("{}");"#,
                     i,
@@ -175,10 +177,11 @@ pub fn create_template(query_object: &QueryObject) -> String {
 
 pub fn generate_struct_declarations(
     table_names: &Vec<String>,
-    struct_names: &Vec<String>,
     query_object: &QueryObject,
 ) -> String {
     //Part1: generate struct definitions for input tables
+
+    let struct_names = query_object.get_all_structs();
 
     // Use iterators to zip through table_names, struct_names, and field_lists to maintain order
     let mut result: String = table_names
@@ -218,7 +221,7 @@ pub fn generate_struct_declarations(
     result.push_str("struct OutputStruct {\n");
 
     // Add fields from result_column_types
-    for (field_name, field_type) in &query_object.result_column_types {
+    for (field_name, field_type) in query_object.result_column_types.clone() {
         result.push_str(&format!("    {}: Option<{}>,\n", field_name, field_type));
     }
 

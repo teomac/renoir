@@ -1,6 +1,5 @@
 use crate::dsl::ir::ir_ast_structure::{AggregateType, Group};
 use crate::dsl::ir::r_group::r_group_keys::{GroupAccumulatorInfo, GroupAccumulatorValue};
-use crate::dsl::ir::r_utils::check_alias;
 use crate::dsl::ir::QueryObject;
 
 // Function to create fold operation if needed
@@ -55,16 +54,24 @@ pub fn create_fold_operation(
                 // Generate update code
                 match value {
                     GroupAccumulatorValue::Aggregate(agg_type, col) => {
-                        let col_access = if query_object.has_join {
-                            let table = col.table.as_ref().unwrap();
-                            let table_name = check_alias(table, query_object);
+                        let col_access = {
+
+                            let stream_name = if col.table.is_some() {
+                                query_object.get_stream_from_alias(col.table.as_ref().unwrap()).unwrap()
+                            } else {
+                                let all_streams = query_object.streams.keys().cloned().collect::<Vec<String>>();
+                                if all_streams.len() > 1 {
+                                    panic!("Missing stream reference: {}", col.column);
+                                }
+                                &all_streams[0].clone()
+                            };
+
+                            let stream = query_object.get_stream(stream_name);    
                             format!(
                                 "x{}.{}",
-                                query_object.table_to_tuple_access.get(&table_name).unwrap(),
+                                stream.get_access().get_base_path(),
                                 col.column
                             )
-                        } else {
-                            format!("x.{}", col.column)
                         };
 
                         match agg_type {

@@ -181,11 +181,12 @@ pub fn process_group_by(group_by: &Group, query_object: &QueryObject) -> String 
 /// A String containing the tuple of column references for group by
 fn process_group_by_keys(columns: &Vec<ColumnRef>, query_object: &QueryObject) -> String {
     if !query_object.has_join {
+        let stream_name = query_object.streams.keys().cloned().collect::<Vec<String>>()[0].clone();
         // No joins - simple reference to columns
         columns
             .iter()
             .map(|col| {
-                query_object.check_column_validity(col, &String::new());
+                query_object.check_column_validity(col, &stream_name);
                 format!("x.{}.clone()", col.column)
             })
             .collect::<Vec<_>>()
@@ -195,12 +196,26 @@ fn process_group_by_keys(columns: &Vec<ColumnRef>, query_object: &QueryObject) -
         columns
             .iter()
             .map(|col| {
-                let table = col.table.as_ref().unwrap();
-                let table_name = check_alias(table, query_object);
-                query_object.check_column_validity(col, &table_name);
+                let stream_name = if col.table.is_some(){
+                    query_object.get_stream_from_alias(col.table.as_ref().unwrap()).unwrap()
+                }
+                else{
+                    let all_streams = query_object.streams.keys().cloned().collect::<Vec<String>>();
+                    if all_streams.len() == 1{
+                        &all_streams[0].clone()
+                    }
+                    else{
+                        panic!("Column {} does not have a table reference in a join query", col.column);
+                    }
+                };
+
+                let stream = query_object.get_stream(stream_name);
+
+                stream.check_if_column_exists(&col.column);
+                
                 format!(
                     "x{}.{}.clone()",
-                    query_object.table_to_tuple_access.get(&table_name).unwrap(),
+                    stream.get_access().get_base_path(),
                     col.column
                 )
             })

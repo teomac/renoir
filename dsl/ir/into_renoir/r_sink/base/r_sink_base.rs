@@ -1,6 +1,5 @@
 use core::panic;
 use crate::dsl::ir::ir_ast_structure::{ComplexField, SelectColumn};
-use crate::dsl::ir::r_utils::check_alias;
 use crate::dsl::ir::IrLiteral;
 use crate::dsl::struct_object::object::QueryObject;
 use crate::dsl::ir::r_sink::base::r_sink_utils::*;
@@ -62,21 +61,18 @@ pub fn process_projections(
 fn create_select_star_map(query_object: &QueryObject) -> String {
     let mut result = String::from(".map(|x| OutputStruct { ");
 
+    let all_streams = query_object.streams.keys().collect::<Vec<&String>>();
+
     if query_object.has_join {
         // Handle joined case - need to use tuple access
-        let tables = query_object.get_all_table_names();
-        let empty_string = "".to_string();
-
-        //for table in tables, build all the columns mapping in the .map
+        //for stream in all_streams, build all the columns mapping in the .map
         let mut offset: usize = 0;
 
-        for table_index in 0..tables.len() {
-            let table = &tables[table_index];
-            let tuple_access = query_object
-                .table_to_tuple_access
-                .get(table)
-                .unwrap_or_else(|| &empty_string);
-            let table_struct = query_object.tables_info.get(table).unwrap();
+        for stream in all_streams.iter() {
+
+            let stream = query_object.get_stream(stream);
+            let tuple_access = stream.get_access().get_base_path();
+            let table_struct = query_object.get_struct(&stream.source_table).unwrap();
 
             for (column_index, field_name) in table_struct.iter().enumerate() {
                 result.push_str(&format!(
@@ -121,6 +117,8 @@ fn create_select_star_map(query_object: &QueryObject) -> String {
 fn create_simple_map(select_clauses: &Vec<SelectColumn>, query_object: &QueryObject) -> String {
     let mut map_string = String::from(".map(|x| OutputStruct { ");
     let empty_string = "".to_string();
+    let all_streams = query_object.streams.keys().collect::<Vec<&String>>();
+
 
     let mut check_list = Vec::new();
 
@@ -135,16 +133,23 @@ fn create_simple_map(select_clauses: &Vec<SelectColumn>, query_object: &QueryObj
                         .get_index(i)
                         .unwrap_or_else(|| (&empty_string, &empty_string))
                         .0;
-                    let value = if query_object.has_join {
-                        let table = check_alias(&col_ref.table.as_ref().unwrap(), query_object);
-                        let tuple_access = query_object
-                            .table_to_tuple_access
-                            .get(&table)
-                            .expect("Table not found in tuple access map");
-                        format!("x{}.{}", tuple_access, col_ref.column)
-                    } else {
-                        format!("x.{}", col_ref.column)
+
+                    let stream_name = if col_ref.table.is_some(){
+                        query_object.get_stream_from_alias(&col_ref.table.as_ref().unwrap()).unwrap()
+                    }else{
+                        if all_streams.len() == 1{
+                            &all_streams[0].clone()}
+                        else{
+                            panic!("Invalid column reference - no table specified and multiple streams present in query");
+                        }
                     };
+
+                    let stream = query_object.get_stream(stream_name);
+                    stream.check_if_column_exists(&col_ref.column);
+
+                    let value = 
+                        format!("x{}.{}", stream.get_access().get_base_path(), col_ref.column)
+                    ;
                     format!("{}: {}", field_name, value)
                 }
                 SelectColumn::ComplexValue(complex_field, alias) => {
@@ -188,6 +193,8 @@ pub fn process_complex_field(
     query_object: &QueryObject,
     check_list: &mut Vec<String>,
 ) -> String {
+    let all_streams = query_object.streams.keys().collect::<Vec<&String>>();
+
     if let Some(ref nested) = field.nested_expr {
         // Handle nested expression (left_field OP right_field)
         let (left, op, right) = &**nested;
@@ -316,22 +323,23 @@ pub fn process_complex_field(
         }
     } else if let Some(ref col) = field.column_ref {
         // Handle column reference
-        let empty_string = String::new();
-        if query_object.has_join {
-            let table = col.table.as_ref().unwrap_or_else(|| &empty_string);
-            let table = &check_alias(&table, query_object);
+        let stream_name = if col.table.is_some(){
+            query_object.get_stream_from_alias(&col.table.as_ref().unwrap()).unwrap()
+        }else{
+            if all_streams.len() == 1{
+                &all_streams[0].clone()}
+            else{
+                panic!("Invalid column reference - no table specified and multiple streams present in query");
+            }
+        };
 
-            let tuple_access = query_object
-                .table_to_tuple_access
-                .get(table)
-                .expect("Table not found in tuple access map");
+        let stream = query_object.get_stream(stream_name);
+        stream.check_if_column_exists(&col.column);
 
-            check_list.push(format!("x{}.{}.is_some()", tuple_access, col.column));
-            format!("x{}.{}.unwrap()", tuple_access, col.column)
-        } else {
-            check_list.push(format!("x.{}.is_some()", col.column));
-            format!("x.{}.unwrap()", col.column)
-        }
+           
+
+            check_list.push(format!("x{}.{}.is_some()", stream.access.base_path, col.column));
+            format!("x{}.{}.unwrap()", stream.access.base_path, col.column)
     } else if let Some(ref lit) = field.literal {
         // Handle literal value
         match lit {
@@ -339,17 +347,8 @@ pub fn process_complex_field(
             IrLiteral::Float(f) => format!("{:.2}", f),
             IrLiteral::String(s) => format!("\"{}\"", s),
             IrLiteral::Boolean(b) => b.to_string(),
-            IrLiteral::ColumnRef(col_ref) => {
-                if query_object.has_join {
-                    let table = col_ref.table.as_ref().unwrap();
-                    let tuple_access = query_object
-                        .table_to_tuple_access
-                        .get(table)
-                        .expect("Table not found in tuple access map");
-                    format!("x{}.{}.unwrap()", tuple_access, col_ref.column)
-                } else {
-                    format!("x.{}.unwrap()", col_ref.column)
-                }
+            IrLiteral::ColumnRef(_) => {
+                panic!("Column ref should have been handled earlier");
             }
         }
     } else {

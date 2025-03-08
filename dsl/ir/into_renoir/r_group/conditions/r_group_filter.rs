@@ -2,7 +2,6 @@ use crate::dsl::ir::ir_ast_structure::{
     AggregateType, ComplexField, Group, GroupBaseCondition, GroupClause, NullOp,
 };
 use crate::dsl::ir::r_group::r_group_keys::GroupAccumulatorInfo;
-use crate::dsl::ir::r_utils::check_alias;
 use crate::dsl::ir::QueryObject;
 use crate::dsl::ir::{AggregateFunction, BinaryOp, ComparisonOp, IrLiteral};
 
@@ -162,16 +161,31 @@ fn process_filter_condition(
                         }
                     } else {
                         // Not a key column - must be in the accumulated values or aggregates
-                        if query_object.has_join {
-                            let table = check_alias(&col_ref.table.as_ref().unwrap(), query_object);
-                            format!(
-                                "x.1{}.{}",
-                                query_object.table_to_tuple_access.get(&table).unwrap(),
-                                col_ref.column
-                            )
+
+                        let stream_name = if col_ref.table.is_some() {
+                            query_object
+                                .get_stream_from_alias(col_ref.table.as_ref().unwrap())
+                                .unwrap()
                         } else {
-                            format!("x.1.{}", col_ref.column)
-                        }
+                            let all_streams = query_object
+                                .streams
+                                .keys()
+                                .cloned()
+                                .collect::<Vec<String>>();
+                            if all_streams.len() == 1 {
+                                &all_streams[0].clone()
+                            } else {
+                                panic!("Column reference must have a table reference")
+                            }
+                        };
+                        let stream = query_object.get_stream(&stream_name);
+                        stream.check_if_column_exists(&col_ref.column);
+
+                        format!(
+                            "x.1{}.{}",
+                            stream.get_access().get_base_path(),
+                            col_ref.column
+                        )
                     };
 
                     // Generate the appropriate null check
@@ -286,26 +300,41 @@ fn process_filter_field(
             }
         } else {
             // Not a key - use x.1
-            if query_object.has_join {
-                let table = check_alias(&col.table.as_ref().unwrap(), query_object);
 
-                check_list.push(format!(
-                    "x.1{}.{}{}.is_some()",
-                    query_object.table_to_tuple_access.get(&table).unwrap(),
-                    col.column,
-                    as_ref
-                ));
-
-                format!(
-                    "x.1{}.{}{}.unwrap()",
-                    query_object.table_to_tuple_access.get(&table).unwrap(),
-                    col.column,
-                    as_ref
-                )
+            let stream_name = if col.table.is_some() {
+                query_object
+                    .get_stream_from_alias(col.table.as_ref().unwrap())
+                    .unwrap()
             } else {
-                check_list.push(format!("x.1.{}{}.is_some()", col.column, as_ref));
-                format!("x.1.{}{}.unwrap()", col.column, as_ref)
-            }
+                let all_streams = query_object
+                    .streams
+                    .keys()
+                    .cloned()
+                    .collect::<Vec<String>>();
+                if all_streams.len() == 1 {
+                    &all_streams[0].clone()
+                } else {
+                    panic!("Column reference must have a table reference")
+                }
+            };
+
+            let stream = query_object.get_stream(&stream_name);
+
+            stream.check_if_column_exists(&col.column);
+
+            check_list.push(format!(
+                "x.1{}.{}{}.is_some()",
+                stream.get_access().get_base_path(),
+                col.column,
+                as_ref
+            ));
+
+            format!(
+                "x.1{}.{}{}.unwrap()",
+                stream.get_access().get_base_path(),
+                col.column,
+                as_ref
+            )
         }
     } else if let Some(ref lit) = field.literal {
         match lit {
@@ -313,30 +342,8 @@ fn process_filter_field(
             IrLiteral::Float(f) => format!("{:.2}", f),
             IrLiteral::String(s) => format!("\"{}\"", s),
             IrLiteral::Boolean(b) => b.to_string(),
-            IrLiteral::ColumnRef(col_ref) => {
-                // Check if it's a key and get its position
-                if let Some(key_position) = group_by
-                    .columns
-                    .iter()
-                    .position(|c| c.column == col_ref.column)
-                {
-                    if group_by.columns.len() == 1 {
-                        format!("x.0")
-                    } else {
-                        format!("x.0.{}", key_position)
-                    }
-                } else {
-                    if query_object.has_join {
-                        let table = check_alias(&col_ref.table.as_ref().unwrap(), query_object);
-                        format!(
-                            "x.1{}.{}.unwrap()",
-                            query_object.table_to_tuple_access.get(&table).unwrap(),
-                            col_ref.column
-                        )
-                    } else {
-                        format!("x.1.{}.unwrap()", col_ref.column)
-                    }
-                }
+            IrLiteral::ColumnRef(_) => {
+                panic!("ColumnRef should have been handled earlier")
             }
         }
     } else if let Some(ref agg) = field.aggregate {

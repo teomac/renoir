@@ -1,63 +1,63 @@
 use crate::dsl::ir::{
     ir_ast_structure::{AggregateType, ComplexField, JoinClause, SelectColumn},
+    r_utils::check_alias,
     ColumnRef, IrAST, IrLiteral,
 };
 use indexmap::IndexMap;
 
+use super::support_structs::StreamInfo;
+
 #[derive(Clone, Debug)]
 pub struct QueryObject {
+    // Tables references
     pub tables_info: IndexMap<String, IndexMap<String, String>>, // key: table name, value: IndexMap of column name and data type
-    pub has_join: bool,                                          // true if the query has a join
-    pub renoir_string: String,                                   //Renoir final string
-    pub output_path: String,                                     //output path
 
-    pub ir_ast: Option<IrAST>,         //ir ast
-    pub joined_tables: Vec<String>,    // list of joined tables
-    pub table_names_list: Vec<String>, // list of table names
+    pub table_to_csv: IndexMap<String, String>, // key: table name, value: csv file path
 
-    pub table_to_alias: IndexMap<String, String>, // key: table name, value: alias
-    pub table_to_csv: IndexMap<String, String>,   // key: table name, value: csv file path
+    pub table_to_struct_name: IndexMap<String, String>, // key: tuple (table name, alias), value: struct name
 
-    pub table_to_struct_name: IndexMap<String, String>, // key: table name, value: struct name
-    pub table_to_tuple_access: IndexMap<String, String>, // key: table name, value: tuple field access
+    pub alias_to_stream: IndexMap<String, String>, // key: alias, value: stream name. Please note that, if the table has no alias and the query has multiple tables, the alias will be the table name.
 
-    //IndexMap to store the result column name and its corresponding data type
-    pub result_column_types: IndexMap<String, String>,
+    pub streams: IndexMap<String, StreamInfo>, // key: stream name, value: StreamInfo
+
+    pub has_join: bool, // true if the query has a join
+    pub output_path: String, //output path
+    pub ir_ast: Option<IrAST>, //ir ast
+    pub result_column_types: IndexMap<String, String>, // key: result column name, value: data type
+    pub renoir_string: String, //Renoir final string
+
+    //ex. SELECT power * total_km AS product FROM table1
+    //this indexMap will be filled with:
+    //"product" -> f64 || i64
+
+    //ex. SELECT SUM(total_km) AS total_distance FROM table1
+    //this indexMap will be filled with:
+    //"total_distance" -> f64 || i64
+
+    //ex. SELECT SUM(total_km) FROM table1
+    //this indexMap will be filled with:
+    //"sum_total_km" -> f64 || i64
+
+    //ex. SELECT * FROM table1
+    //this indexMap will be filled with:
+    //all the columns from all the tables -> corresponding type
+
+    //ex. SELECT power, power FROM table1
+    //this indexMap will be filled with:
+    //"power" -> f64 || i64
+    //"power_1" -> f64 || i64
+   
 }
-// key: result column name, value: data type
-
-//ex. SELECT power * total_km AS product FROM table1
-//this indexMap will be filled with:
-//"product" -> f64 || i64
-
-//ex. SELECT SUM(total_km) AS total_distance FROM table1
-//this indexMap will be filled with:
-//"total_distance" -> f64 || i64
-
-//ex. SELECT SUM(total_km) FROM table1
-//this indexMap will be filled with:
-//"sum_total_km" -> f64 || i64
-
-//ex. SELECT * FROM table1
-//this indexMap will be filled with:
-//all the columns from all the tables -> corresponding type
-
-//ex. SELECT power, power FROM table1
-//this indexMap will be filled with:
-//"power" -> f64 || i64
-//"power_1" -> f64 || i64
 
 impl QueryObject {
     pub fn new() -> Self {
         QueryObject {
+            streams: IndexMap::new(),
+            alias_to_stream: IndexMap::new(),
             has_join: false,
             tables_info: IndexMap::new(),
-            joined_tables: Vec::new(),
-            table_names_list: Vec::new(),
-            table_to_alias: IndexMap::new(),
             table_to_csv: IndexMap::new(),
             table_to_struct_name: IndexMap::new(),
-            table_to_tuple_access: IndexMap::new(),
             result_column_types: IndexMap::new(),
             renoir_string: String::new(),
             output_path: String::new(),
@@ -65,97 +65,191 @@ impl QueryObject {
         }
     }
 
+    //getter and setter methods for tables_info
     pub fn set_tables_info(&mut self, tables_info: IndexMap<String, IndexMap<String, String>>) {
         self.tables_info = tables_info;
     }
 
+    //method to create a new stream
+    pub fn create_new_stream(
+        &mut self,
+        stream_name: &String,
+        source_table: &String,
+        alias: &String,
+    ) {
+        //create the StreamInfo object
+        let mut stream = StreamInfo::new(stream_name.clone(), source_table.clone(), alias.clone());
+
+        //check if the stream already exists
+        if self.check_stream(&stream) {
+            panic!("Stream {} already exists.", stream_name);
+        }
+
+        if !alias.is_empty() {
+            self.alias_to_stream
+                .insert(alias.clone(), stream_name.clone());
+        }
+
+        stream.update_columns(self.tables_info.get(source_table).unwrap().clone());
+
+        self.streams.insert(stream_name.clone(), stream);
+    }
+
+    //method to insert a new stream operator in the chain
+    pub fn insert_stream_op_chain(&mut self, stream_name: &String, op: &String) {
+        self.streams
+            .get_mut(stream_name)
+            .unwrap()
+            .insert_op(op.clone());
+    }
+
+    //method to check the validity of an alias
+    pub fn is_alias_valid(&self, alias: &String) -> bool {
+        //first check if the alias is already in the list of aliases
+        if self.alias_to_stream.get(alias).is_some() {
+            return false;
+        }
+
+        return true;
+    }
+
+    //setter method for output_path
     pub fn set_output_path(&mut self, output_path: &str) {
         self.output_path = output_path.to_string();
     }
 
+    //setter method for table_to_csv
     pub fn set_table_to_csv(&mut self, table_to_csv: IndexMap<String, String>) {
         self.table_to_csv = table_to_csv;
     }
 
-    pub fn get_alias(&self, table: &str) -> Option<&String> {
-        self.table_to_alias.get(table)
+    // setter for ir_ast
+    pub fn set_ir_ast(&mut self, ir_ast: &IrAST) {
+        self.ir_ast = Some(ir_ast.clone());
     }
 
-    pub fn get_table_from_alias(&self, alias: &str) -> Option<&String> {
-        self.table_to_alias
-            .iter()
-            .find(|(_, v)| v == &alias)
-            .map(|(k, _)| k)
+    //getter for result_column_types
+    pub fn get_result_column_types(&self) -> &IndexMap<String, String> {
+        &self.result_column_types
     }
 
+    //getter for single stream
+    pub fn get_stream(&self, stream_name: &String) -> &StreamInfo {
+        self.streams
+            .get(stream_name)
+            .unwrap_or_else(|| panic!("Stream {} does not exist.", stream_name))
+    }
+
+    //getter for single stream mutable
+    pub fn get_mut_stream(&mut self, stream_name: &String) -> &mut StreamInfo {
+        self.streams
+            .get_mut(stream_name)
+            .unwrap_or_else(|| panic!("Stream {} does not exist.", stream_name))
+    }
+
+    //method to check if a stream already exists
+    pub fn check_stream(&self, stream: &StreamInfo) -> bool {
+        let mut exists = false;
+
+        for (_, s) in self.streams.iter() {
+            if s.equals(stream) || s.source_equals(stream) {
+                exists = true;
+                break;
+            }
+        }
+
+        exists
+    }
+
+    //get stream from alias
+    pub fn get_stream_from_alias(&self, alias: &str) -> Option<&String> {
+        self.alias_to_stream.get(alias)
+    }
+
+    //method to insert final result columns types
+    pub fn insert_final_result_col(&mut self, result_col: &str, result_type: &str) {
+        self.result_column_types
+            .insert(result_col.to_string(), result_type.to_string());
+    }
+
+    //get csv from table
     pub fn get_csv(&self, table: &str) -> Option<&String> {
         self.table_to_csv.get(table)
     }
 
+    //get struct from table
     pub fn get_struct(&self, table: &str) -> Option<&IndexMap<String, String>> {
         self.tables_info.get(table)
     }
 
+    //get field from struct
     pub fn get_struct_field(&self, table: &str, field: &str) -> Option<&String> {
         self.tables_info.get(table).and_then(|s| s.get(field))
     }
 
+    //get struct name from table
     pub fn get_struct_name(&self, table: &str) -> Option<&String> {
-        self.table_to_struct_name.get(table)
+        self.table_to_struct_name.get(&(table.to_string()))
     }
 
+    //set renoir string
     pub fn set_renoir_string(&mut self, renoir_string: &String) {
         self.renoir_string = renoir_string.to_string();
     }
 
+    //method to get all the structs
     pub fn get_all_structs(&self) -> Vec<String> {
         self.table_to_struct_name.values().cloned().collect()
     }
 
+    //method to get all the table names
     pub fn get_all_table_names(&self) -> Vec<String> {
-        self.table_to_csv.keys().cloned().collect()
+        self.tables_info.keys().cloned().collect()
     }
 
+    //method to get the type of a column ref
     pub fn get_type(&self, column: &ColumnRef) -> String {
-        let mut tab;
-        match &column.table {
-            Some(table) => tab = table.clone(),
-            None => tab = self.get_all_table_names().first().unwrap().clone(),
-        }
+        let stream_name: String = if column.table.is_some() {
+            self.get_stream_from_alias(&column.table.as_ref().unwrap())
+                .unwrap()
+                .clone()
+        } else {
+            let all_streams = self.streams.keys().cloned().collect::<Vec<_>>();
+            if all_streams.len() == 1 {
+                all_streams[0].clone()
+            } else {
+                panic!("Column reference must have table name in JOIN query");
+            }
+        };
 
-        let table_name = self.get_table_from_alias(&tab);
-
-        match table_name {
-            Some(name) => tab = name.clone(),
-            None => {}
-        }
+        let table_name = self.get_stream(&stream_name).source_table.clone();
 
         let field = &column.column;
-        let str = if self.get_struct_field(&tab, field).is_none() {
+        let str = if self.get_struct_field(&table_name, field).is_none() {
             "f64".to_string()
         } else {
-            self.get_struct_field(&tab, field).unwrap().to_string()
+            self.get_struct_field(&table_name, field)
+                .unwrap()
+                .to_string()
         };
 
         str
     }
 
-    pub fn update_tuple_access(&mut self, map: &IndexMap<String, String>) {
-        self.table_to_tuple_access = map.clone();
-    }
-
+    //method to insert the result column and its type in the result_column_types
     pub fn insert_result_col(&mut self, result_col: &str, result_type: &str) {
         self.result_column_types
             .insert(result_col.to_string(), result_type.to_string());
     }
 
+    //method to populate the QueryObject with the necessary information
     pub fn populate(mut self, ir_ast: &IrAST) -> Self {
         //insert the ir ast
-        self.ir_ast = Some(ir_ast.clone());
+        let mut ir_ast_edit = ir_ast.clone();
         let mut joins_vec: Vec<JoinClause> = Vec::new();
 
         // Check if query has join
-        match &ir_ast.from.joins {
+        match ir_ast.from.joins.clone() {
             Some(joins) => {
                 self.has_join = true;
                 joins_vec = joins.clone();
@@ -165,53 +259,122 @@ impl QueryObject {
             }
         }
 
+        //////////////////////////////
+        // main table focus
+
         // Add main table
         let main_table = ir_ast.from.scan.stream_name.clone();
-        self.table_names_list.push(main_table.clone());
-
-        if let Some(alias) = &ir_ast.from.scan.alias {
-            self.table_to_alias
-                .insert(main_table.clone(), alias.to_string());
+        //check if the table is present in the list
+        if self.tables_info.get(&main_table).is_none() {
+            panic!("Table {} is not present in the list of tables.", main_table);
         }
+
+        let mut main_table_alias = String::new();
+        //check if the alias exists.
+        if let Some(alias) = &ir_ast.from.scan.alias {
+            main_table_alias = alias.clone();
+        }
+
+        let first_stream_name = "stream0".to_string();
+
+        //create the first stream
+        //if there is no join
+        if !self.has_join {
+            self.create_new_stream(&first_stream_name, &main_table, &main_table_alias);
+        } else {
+            //if there is a join, we insert the table alias or table name as alias
+
+            self.create_new_stream(
+                &first_stream_name,
+                &main_table,
+                if main_table_alias.is_empty() {
+                    &main_table
+                } else {
+                    &main_table_alias
+                },
+            );
+
+            //also we update the ir_ast_edit with the correct alias
+            if main_table_alias.is_empty() {
+                ir_ast_edit.from.scan.alias = Some(main_table.clone());
+            } else {
+                ir_ast_edit.from.scan.alias = Some(main_table_alias.clone());
+            }
+        }
+        //now we substitute the main table with the first stream name in the IR AST
+        ir_ast_edit.from.scan.stream_name = first_stream_name.clone();
+
+        //////////////////////////////////////////////
+
+        //now let's start processing the joins
 
         // Add all joined tables
-        for join in &joins_vec {
+        for (i, join) in joins_vec.iter_mut().enumerate() {
             let join_table = join.join_scan.stream_name.clone();
+            let join_alias = if join.join_scan.alias.is_some() {
+                join.join_scan.alias.clone().unwrap()
+            } else {
+                join_table.to_string()
+            };
 
-            //check if the table is already in the list
-            if self.table_names_list.contains(&join_table) {
-                panic!(
-                    "Table {} is already in the list. Please use unique names.",
-                    join_table
-                );
+            //check if the table is in the tables_info
+            if self.tables_info.get(&join_table).is_none() {
+                panic!("Table {} is not present in the list of tables.", join_table);
             }
 
-            //if it is not in the list, add it
-            self.table_names_list.push(join_table.clone());
-            self.joined_tables.push(join_table.clone());
+            //check if the alias is valid
+            if !self.is_alias_valid(&join_alias) {
+                panic!("Alias {} is not valid.", join_alias);
+            }
 
-            if let Some(join_alias) = &join.join_scan.alias {
-                //check if the alias is already in the list
-                for (_, alias) in &self.table_to_alias {
-                    if alias == join_alias {
-                        panic!(
-                            "Alias {} is already in the list. Please use unique alias names.",
-                            join_alias
-                        );
-                    }
-                }
+            //create the stream
+            let stream_name = format!("stream{}", i + 1);
+            self.create_new_stream(&stream_name, &join_table, &join_alias);
 
-                //if it is not in the list, add it
-                self.table_to_alias
-                    .insert(join_table.clone(), join_alias.clone());
+            //now let's substitute the table with the stream name in the IR AST
+            join.join_scan.stream_name = stream_name.clone();
+            //and the alias
+            join.join_scan.alias = Some(join_alias.clone());
+        }
+
+        ir_ast_edit.from.joins = Some(joins_vec.clone());
+
+        //let's update the IR AST after edits
+        self.set_ir_ast(&ir_ast_edit);
+
+        //////////////////////////////////////////////
+        //manipulate the tables_info object.
+        //if a table is not the main one and is not in the joined_tables, remove it from the tables_info object.
+        let tables_info_keys = self.get_all_table_names();
+        let mut temp_tables_info = self.tables_info.clone();
+
+        //now collect in a vec all the table_names from the streams
+        let stream_tables = self
+            .streams
+            .values()
+            .map(|stream| stream.source_table.clone())
+            .collect::<Vec<_>>();
+
+        for table in tables_info_keys.iter() {
+            //if the table is not in the stream_tables, remove it from the tables_info object
+            if table != &main_table && !stream_tables.contains(table) {
+                temp_tables_info.shift_remove(table);
             }
         }
 
-        // Collect all table names in order
-        let mut table_names: Vec<String> = vec![main_table.clone()];
-        for join in &joins_vec {
-            table_names.push(join.join_scan.stream_name.clone());
+        //we also update the table_to_csv object
+        let mut temp_table_to_csv = self.table_to_csv.clone();
+        for (table, _) in self.table_to_csv.iter() {
+            if !stream_tables.contains(table) {
+                temp_table_to_csv.shift_remove(table);
+            }
         }
+
+        //now we update the table_to_csv object and the tables_info object
+        self.set_table_to_csv(temp_table_to_csv.clone());
+        self.set_tables_info(temp_tables_info.clone());
+
+        let all_tables = self.get_all_table_names();
 
         // Process paths
         let paths: Vec<String> = self
@@ -231,17 +394,27 @@ impl QueryObject {
 
         //Replace all the paths in table_to_csv with the processed paths
         for (table, path) in self.table_to_csv.iter_mut() {
-            *path = paths[table_names.iter().position(|x| x == table).unwrap()].clone();
+            *path = paths[all_tables.iter().position(|x| x == table).unwrap()].clone();
         }
 
         // Set up mappings for each table
-        for i in 0..table_names.len() {
-            let table = &table_names[i];
+        for i in 0..all_tables.len() {
+            let name = &all_tables.get(i).unwrap();
             self.table_to_struct_name
-                .insert(table.clone(), format!("StructVar{}", i));
+                .insert(name.to_string(), format!("StructVar{}", i));
         }
 
         //table_to_csv and tables_info are already updated now.
+
+        //let's update every stream with the struct name and first op
+        for (_, stream) in self.streams.clone().iter_mut() {
+            let struct_name = self.get_struct_name(&stream.source_table).unwrap().clone();
+            stream.insert_op(format!(
+                "ctx.stream_csv::<{}>({},)",
+                struct_name,
+                self.get_csv(&stream.source_table).unwrap()
+            ));
+        }
 
         // Populate the result column types based on select clauses
         if let Some(ref ir_ast) = self.ir_ast {
@@ -263,17 +436,24 @@ impl QueryObject {
                                             use crate::dsl::ir::r_utils::check_alias;
                                             check_alias(table_ref, &self)
                                         } else {
-                                            self.table_names_list[0].to_string()
+                                            self.tables_info.first().unwrap().0.clone()
                                         }
                                     } else {
                                         // If table is not specified, use the first table
-                                        self.table_names_list[0].to_string()
+                                        self.tables_info.first().unwrap().0.clone()
                                     };
 
                                     if let Some(struct_map) = self.tables_info.get(&table) {
                                         if let Some(col_type) = struct_map.get(&group_col.column) {
-                                            let suffix =
-                                                self.table_to_alias.get(&table).unwrap_or(&table);
+                                            //build the suffix after checking if the table is an alias
+                                            let checked_table = check_alias(&table, &self);
+                                            let suffix = if checked_table != table {
+                                                //we are in the case where the table is an alias
+                                                table.clone()
+                                            } else {
+                                                //we are in the case where the table is not an alias
+                                                checked_table
+                                            };
 
                                             let full_col_name =
                                                 format!("{}_{}", group_col.column, suffix);
@@ -283,14 +463,27 @@ impl QueryObject {
                                     }
                                 }
                             } else {
+                                //use all the result table names to populate the result_column_types
+                                //get all the tables and alias from all the streams
+                                let final_tables = self
+                                    .streams
+                                    .iter()
+                                    .map(|(_, stream)| {
+                                        (stream.source_table.clone(), stream.alias.clone())
+                                    })
+                                    .collect::<Vec<_>>();
+
+                                let tables_info = self.tables_info.clone();
+
                                 // If no GROUP BY, include all columns from all tables (existing behavior)
-                                for table_name in &self.table_names_list {
-                                    if let Some(struct_map) = self.tables_info.get(table_name) {
+                                for (table_name, table_alias) in final_tables.iter() {
+                                    if let Some(struct_map) = tables_info.get(table_name) {
                                         // Get the suffix (alias or table name)
-                                        let suffix = self
-                                            .table_to_alias
-                                            .get(table_name)
-                                            .unwrap_or(table_name);
+                                        let suffix = if table_alias.is_empty() {
+                                            table_name.clone()
+                                        } else {
+                                            table_alias.clone()
+                                        };
 
                                         // Add each column with the appropriate suffix
                                         for (col_name, col_type) in struct_map {
@@ -303,7 +496,20 @@ impl QueryObject {
                             }
                         } else {
                             //check if the column is valid
-                            self.check_column_validity(col_ref, &String::new());
+                            let stream_name = if col_ref.table.is_some() {
+                                self.get_stream_from_alias(col_ref.table.as_ref().unwrap())
+                                    .unwrap()
+                                    .clone()
+                            } else {
+                                let all_streams =
+                                    self.streams.keys().cloned().collect::<Vec<String>>();
+                                if all_streams.len() == 1 {
+                                    all_streams[0].clone()
+                                } else {
+                                    panic!("Column reference must have table name in JOIN query");
+                                }
+                            };
+                            self.check_column_validity(col_ref, &stream_name);
 
                             // Regular column selection
                             let col_name = alias.clone().unwrap_or_else(|| {
@@ -312,7 +518,14 @@ impl QueryObject {
                                     let table = col_ref.table.as_ref().expect(
                                         "Column reference must have table name in JOIN query",
                                     );
-                                    let suffix = self.table_to_alias.get(table).unwrap_or(table);
+                                    let checked_table = check_alias(table, &self);
+                                    let suffix = if checked_table != *table {
+                                        //we are in the case where the table is an alias
+                                        table
+                                    } else {
+                                        //we are in the case where the table is not an alias
+                                        &checked_table
+                                    };
                                     format!("{}_{}", col_ref.column, suffix)
                                 } else {
                                     col_ref.column.clone()
@@ -327,8 +540,20 @@ impl QueryObject {
 
                     SelectColumn::Aggregate(agg_func, alias) => {
                         //check if the column is valid
+                        let stream_name = if agg_func.column.table.is_some() {
+                            self.get_stream_from_alias(agg_func.column.table.as_ref().unwrap())
+                                .unwrap()
+                                .clone()
+                        } else {
+                            let all_streams = self.streams.keys().cloned().collect::<Vec<String>>();
+                            if all_streams.len() == 1 {
+                                all_streams[0].clone()
+                            } else {
+                                panic!("Column reference must have table name in JOIN query");
+                            }
+                        };
                         if agg_func.column.column != "*" {
-                            self.check_column_validity(&agg_func.column, &String::new());
+                            self.check_column_validity(&agg_func.column, &stream_name);
                         }
 
                         let col_name = if let Some(alias_name) = alias {
@@ -344,8 +569,13 @@ impl QueryObject {
                                         if self.has_join {
                                             let table = agg_func.column.table.as_ref()
                                                 .expect("Column reference must have table name in JOIN query");
-                                            let suffix =
-                                                self.table_to_alias.get(table).unwrap_or(table);
+
+                                            let suffix = if alias.is_some() {
+                                                alias.as_ref().unwrap()
+                                            } else {
+                                                &table
+                                            };
+
                                             format!("count_{}_{}", agg_func.column.column, suffix)
                                         } else {
                                             format!("count_{}", agg_func.column.column)
@@ -357,8 +587,11 @@ impl QueryObject {
                                         let table = agg_func.column.table.as_ref().expect(
                                             "Column reference must have table name in JOIN query",
                                         );
-                                        let suffix =
-                                            self.table_to_alias.get(table).unwrap_or(table);
+                                        let suffix = if alias.is_some() {
+                                            alias.as_ref().unwrap()
+                                        } else {
+                                            &table
+                                        };
                                         format!(
                                             "{}_{}_{}",
                                             other_agg.to_string().to_lowercase(),
@@ -397,7 +630,12 @@ impl QueryObject {
                                     let table = col.table.as_ref().expect(
                                         "Column reference must have table name in JOIN query",
                                     );
-                                    let suffix = self.table_to_alias.get(table).unwrap_or(table);
+                                    let suffix = if alias.is_some() {
+                                        alias.as_ref().unwrap()
+                                    } else {
+                                        &table
+                                    };
+
                                     format!("expr_{}_{}", col.column, suffix)
                                 } else {
                                     format!("expr_{}", used_names.len())
@@ -413,12 +651,12 @@ impl QueryObject {
                     }
                     SelectColumn::StringLiteral(value) => {
                         let col_name = self.get_unique_name(value, &mut used_names);
-                        self.result_column_types.insert(col_name, "String".to_string());
+                        self.result_column_types
+                            .insert(col_name, "String".to_string());
                     }
                 }
             }
         }
-
         self
     }
 
@@ -442,8 +680,20 @@ impl QueryObject {
 
     pub fn get_complex_field_type(&self, field: &ComplexField) -> String {
         if let Some(ref col) = field.column_ref {
+            let stream_name = if col.table.is_some() {
+                self.get_stream_from_alias(col.table.as_ref().unwrap())
+                    .unwrap()
+                    .clone()
+            } else {
+                let all_streams = self.streams.keys().cloned().collect::<Vec<String>>();
+                if all_streams.len() == 1 {
+                    all_streams[0].clone()
+                } else {
+                    panic!("Column reference must have table name in JOIN query");
+                }
+            };
             //check if the column is valid
-            self.check_column_validity(col, &String::new());
+            self.check_column_validity(col, &stream_name);
             self.get_type(col)
         } else if let Some(ref lit) = field.literal {
             match lit {
@@ -465,8 +715,20 @@ impl QueryObject {
                 left_type
             }
         } else if let Some(ref agg) = field.aggregate {
+            let stream_name = if agg.column.table.is_some() {
+                self.get_stream_from_alias(agg.column.table.as_ref().unwrap())
+                    .unwrap()
+                    .clone()
+            } else {
+                let all_streams = self.streams.keys().cloned().collect::<Vec<String>>();
+                if all_streams.len() == 1 {
+                    all_streams[0].clone()
+                } else {
+                    panic!("Column reference must have table name in JOIN query");
+                }
+            };
             //check if the column is valid
-            self.check_column_validity(&agg.column, &String::new());
+            self.check_column_validity(&agg.column, &stream_name);
             match agg.function {
                 AggregateType::Count => "usize".to_string(),
                 AggregateType::Avg => "f64".to_string(),
@@ -477,38 +739,37 @@ impl QueryObject {
         }
     }
 
-    pub fn check_column_validity(&self, col_ref: &ColumnRef, known_table: &String) {
+    pub fn check_column_validity(&self, col_ref: &ColumnRef, stream_name: &String) {
         //check if the col ref corresponds to a real column
         let col_to_check = col_ref.column.clone();
         if col_ref.table.is_some() {
-            let mut table = col_ref.table.as_ref().unwrap();
+            let alias = col_ref.table.as_ref().unwrap();
 
-            //check if the table is an alias. If it is, get the real table name
-            if self.get_table_from_alias(&table).is_some() {
-                table = self.get_table_from_alias(&table).unwrap();
+            //check if the alias corresponds to the actual stream
+            if self.alias_to_stream.contains_key(alias) {
+                if self.alias_to_stream.get(alias).unwrap() != stream_name {
+                    panic!(
+                        "Alias {} does not correspond to the actual stream. Stream name: {}",
+                        alias, stream_name
+                    );
+                }
             }
 
             //get the struct map for the table
-            let struct_map = self.tables_info.get(table).unwrap_or_else(|| {
-                panic!("Error in retrieving struct_map for table {}.", table);
+            let table_name = self.get_stream(stream_name).source_table.clone();
+            let struct_map = self.tables_info.get(&table_name).unwrap_or_else(|| {
+                panic!("Error in retrieving struct_map for table {}.", alias);
             });
             if !struct_map.contains_key(&col_to_check) {
-                panic!("Column {} does not exist in table {}", col_to_check, table);
+                panic!("Column {} does not exist in table {}", col_to_check, alias);
             }
         } else {
             let mut found = false;
-            if !known_table.is_empty() {
-                let struct_map = self.tables_info.get(known_table).unwrap();
+            if !stream_name.is_empty() {
+                let table = self.get_stream(stream_name).source_table.clone();
+                let struct_map = self.tables_info.get(&table).unwrap();
                 if struct_map.contains_key(&col_to_check) {
                     found = true;
-                }
-            } else {
-                for table in &self.table_names_list {
-                    let struct_map = self.tables_info.get(table).unwrap();
-                    if struct_map.contains_key(&col_to_check) {
-                        found = true;
-                        break;
-                    }
                 }
             }
             if !found {

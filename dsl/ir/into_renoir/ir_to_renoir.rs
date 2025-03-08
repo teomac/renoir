@@ -37,7 +37,6 @@ impl IrToRenoir {
             final_string.push_str(&process_projections(&ast.select.select, query_object));
         }
 
-        //println!("Final string: {}", final_string);
         final_string
     }
 }
