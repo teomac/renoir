@@ -1,5 +1,6 @@
 use super::error::SqlParseError;
 use super::sql_ast_structure::*;
+use super::builder::SqlASTBuilder;
 use crate::dsl::languages::sql::ast_parser::Rule;
 use pest::iterators::Pair;
 
@@ -98,68 +99,170 @@ impl ConditionParser {
         }
     }
 
-    fn parse_condition(pair: Pair<Rule>) -> Result<WhereClause, SqlParseError> {
-        let mut inner = pair.into_inner();
 
-        let left = inner.next().ok_or_else(|| {
-            SqlParseError::InvalidInput("Missing left side of condition".to_string())
-        })?;
-
-        let operator = inner
-            .next()
-            .ok_or_else(|| SqlParseError::InvalidInput("Missing operator".to_string()))?;
-
-        match operator.as_rule() {
-            Rule::null_operator => {
-                let op = match operator.as_str().to_uppercase().as_str() {
-                    "IS NULL" => NullOp::IsNull,
-                    "IS NOT NULL" => NullOp::IsNotNull,
-                    _ => {
-                        return Err(SqlParseError::InvalidInput(format!(
-                            "Invalid null operator: {}",
-                            operator.as_str()
-                        )))
-                    }
-                };
-
-                Ok(WhereClause::Base(WhereBaseCondition::NullCheck(
-                    WhereNullCondition {
-                        field: Self::parse_where_field(left)?,
-                        operator: op,
-                    },
-                )))
+fn parse_condition(pair: Pair<Rule>) -> Result<WhereClause, SqlParseError> {
+    // Check the condition type by examining the first child rule
+    let mut check_pairs = pair.clone().into_inner();
+    let first_rule = check_pairs.next();
+    
+    if let Some(first) = first_rule {
+        // Handle EXISTS expression directly
+        if first.as_rule() == Rule::exists_expr {
+            // Get the inner parts of EXISTS expression
+            let mut exists_inner = first.into_inner();
+            
+            // First part is the EXISTS keyword
+            let exists_keyword = exists_inner.next().ok_or_else(|| {
+                SqlParseError::InvalidInput("Missing EXISTS keyword".to_string())
+            })?;
+            
+            // Check if it's negated (NOT EXISTS)
+            let is_negated = exists_keyword.as_str().to_uppercase().contains("NOT");
+            
+            // Next part is the subquery expression
+            let subquery_expr = exists_inner.next().ok_or_else(|| {
+                SqlParseError::InvalidInput("Missing subquery in EXISTS".to_string())
+            })?;
+            
+            // Now parse the subquery from the subquery expression
+            if subquery_expr.as_rule() != Rule::subquery_expr {
+                return Err(SqlParseError::InvalidInput(format!(
+                    "Expected subquery expression after EXISTS, got {:?}",
+                    subquery_expr.as_rule()
+                )));
             }
-            Rule::operator => {
-                let right = inner.next().ok_or_else(|| {
-                    SqlParseError::InvalidInput("Missing right side of condition".to_string())
-                })?;
-
-                let op = match operator.as_str() {
-                    ">" => ComparisonOp::GreaterThan,
-                    "<" => ComparisonOp::LessThan,
-                    ">=" => ComparisonOp::GreaterOrEqualThan,
-                    "<=" => ComparisonOp::LessOrEqualThan,
-                    "=" => ComparisonOp::Equal,
-                    "!=" | "<>" => ComparisonOp::NotEqual,
-                    _ => {
-                        return Err(SqlParseError::InvalidInput(format!(
-                            "Invalid operator: {}",
-                            operator.as_str()
-                        )))
-                    }
-                };
-
-                Ok(WhereClause::Base(WhereBaseCondition::Comparison(
-                    WhereCondition {
-                        left_field: Self::parse_where_field(left)?,
-                        operator: op,
-                        right_field: Self::parse_where_field(right)?,
-                    },
-                )))
+            
+            // Process the subquery
+            let mut inner_pairs = subquery_expr.clone().into_inner();
+            let l_paren = inner_pairs.next().ok_or_else(|| 
+                SqlParseError::InvalidInput("Missing opening parenthesis in subquery".to_string())
+            )?;
+            
+            if l_paren.as_rule() != Rule::l_paren {
+                return Err(SqlParseError::InvalidInput("Expected opening parenthesis".to_string()));
             }
-            _ => Err(SqlParseError::InvalidInput("Expected operator".to_string())),
+            
+            // Extract the subquery content - rebuild the SQL string
+            let mut sql_parts = Vec::new();
+            let mut token_count = 0;
+            
+            while let Some(token) = inner_pairs.next() {
+                if token.as_rule() == Rule::r_paren {
+                    break;
+                }
+                sql_parts.push(token.as_str());
+                token_count += 1;
+            }
+            
+            if token_count == 0 {
+                return Err(SqlParseError::InvalidInput("Empty subquery in EXISTS clause".to_string()));
+            }
+            
+            // Process the subquery
+            let sql_string = sql_parts.join(" ");
+            
+            // Parse the subquery using the SQL parser
+            use crate::dsl::languages::sql::ast_parser::SqlParser;
+            let subquery_ast = SqlParser::parse_query(&sql_string)?;
+            
+            return Ok(WhereClause::Base(WhereBaseCondition::Exists(Box::new(subquery_ast), is_negated)));
         }
     }
+    
+    // If we get here, it's a regular comparison or NULL check
+    let mut inner = pair.into_inner();
+    let left = inner.next().ok_or_else(|| {
+        SqlParseError::InvalidInput("Missing left side of condition".to_string())
+    })?;
+
+    let operator = inner
+        .next()
+        .ok_or_else(|| SqlParseError::InvalidInput("Missing operator".to_string()))?;
+
+    match operator.as_rule() {
+        Rule::null_operator => {
+            let op = match operator.as_str().to_uppercase().as_str() {
+                "IS NULL" => NullOp::IsNull,
+                "IS NOT NULL" => NullOp::IsNotNull,
+                _ => {
+                    return Err(SqlParseError::InvalidInput(format!(
+                        "Invalid null operator: {}",
+                        operator.as_str()
+                    )))
+                }
+            };
+
+            Ok(WhereClause::Base(WhereBaseCondition::NullCheck(
+                WhereNullCondition {
+                    field: Self::parse_where_field(left)?,
+                    operator: op,
+                },
+            )))
+        }
+        Rule::operator => {
+            let right = inner.next().ok_or_else(|| {
+                SqlParseError::InvalidInput("Missing right side of condition".to_string())
+            })?;
+
+            let op = match operator.as_str() {
+                ">" => ComparisonOp::GreaterThan,
+                "<" => ComparisonOp::LessThan,
+                ">=" => ComparisonOp::GreaterOrEqualThan,
+                "<=" => ComparisonOp::LessOrEqualThan,
+                "=" => ComparisonOp::Equal,
+                "!=" | "<>" => ComparisonOp::NotEqual,
+                _ => {
+                    return Err(SqlParseError::InvalidInput(format!(
+                        "Invalid operator: {}",
+                        operator.as_str()
+                    )))
+                }
+            };
+
+            Ok(WhereClause::Base(WhereBaseCondition::Comparison(
+                WhereCondition {
+                    left_field: Self::parse_where_field(left)?,
+                    operator: op,
+                    right_field: Self::parse_where_field(right)?,
+                },
+            )))
+        }
+        _ => Err(SqlParseError::InvalidInput(format!(
+            "Expected operator, got {:?}",
+            operator.as_rule()
+        ))),
+    }
+}
+
+// Modified parse_subquery function to better handle syntax
+fn parse_subquery(pair: Pair<Rule>) -> Result<SqlAST, SqlParseError> {
+    if pair.as_rule() != Rule::subquery_expr {
+        return Err(SqlParseError::InvalidInput(format!(
+            "Expected subquery expression, got {:?}",
+            pair.as_rule()
+        )));
+    }
+    
+    // Extract the inner query from the subquery expression
+    let mut inner_pairs = pair.into_inner();
+    
+    // Skip the left parenthesis if present
+    let first_pair = inner_pairs.next().ok_or_else(|| 
+        SqlParseError::InvalidInput("Empty subquery".to_string())
+    )?;
+    
+    // Depending on grammar structure, this might be the query or the left parenthesis
+    let query_pair = if first_pair.as_rule() == Rule::l_paren {
+        inner_pairs.next().ok_or_else(|| 
+            SqlParseError::InvalidInput("Empty subquery after parenthesis".to_string())
+        )?
+    } else {
+        first_pair
+    };
+    
+    // Use the builder to parse the query
+    SqlASTBuilder::build_ast_from_pairs(query_pair.into_inner())
+}
 
     fn parse_arithmetic_expr(pair: Pair<Rule>) -> Result<ArithmeticExpr, SqlParseError> {
         match pair.as_rule() {
@@ -310,6 +413,11 @@ impl ConditionParser {
 
                 Ok(ArithmeticExpr::Aggregate(func, col_ref))
             }
+            Rule::subquery_expr => {
+                // New: Handle subquery in arithmetic expression
+                let subquery = Self::parse_subquery(factor)?;
+                Ok(ArithmeticExpr::Subquery(Box::new(subquery)))
+            }
             _ => Err(SqlParseError::InvalidInput(format!(
                 "Invalid arithmetic factor: {:?}",
                 factor.as_rule()
@@ -357,7 +465,18 @@ impl ConditionParser {
                 column: None,
                 value: None,
                 arithmetic: Some(Self::parse_arithmetic_expr(pair)?),
+                subquery: None,
             }),
+            Rule::subquery_expr => {
+                // New: Handle subquery in WHERE field
+                let subquery = Self::parse_subquery(pair)?;
+                Ok(WhereField {
+                    column: None,
+                    value: None,
+                    arithmetic: None,
+                    subquery: Some(Box::new(subquery)),
+                })
+            },
             Rule::boolean => {
                 let value = match pair.as_str() {
                     "true" => SqlLiteral::Boolean(true),
@@ -372,6 +491,7 @@ impl ConditionParser {
                     column: None,
                     value: Some(value),
                     arithmetic: None,
+                    subquery: None,
                 })
             }
             Rule::string_literal => {
@@ -382,6 +502,7 @@ impl ConditionParser {
                     column: None,
                     value: Some(SqlLiteral::String(clean_str)),
                     arithmetic: None,
+                    subquery: None,
                 })
             }
             Rule::number => {
@@ -411,6 +532,7 @@ impl ConditionParser {
                     column: None,
                     value: Some(value),
                     arithmetic: None,
+                    subquery: None,
                 })
             }
             Rule::table_column => {
@@ -432,6 +554,7 @@ impl ConditionParser {
                     }),
                     value: None,
                     arithmetic: None,
+                    subquery: None,
                 })
             }
             Rule::variable => Ok(WhereField {
@@ -441,6 +564,7 @@ impl ConditionParser {
                 }),
                 value: None,
                 arithmetic: None,
+                subquery: None,
             }),
             _ => Err(SqlParseError::InvalidInput(format!(
                 "Expected where field, got {:?}",

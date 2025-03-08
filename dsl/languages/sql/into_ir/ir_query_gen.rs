@@ -7,42 +7,7 @@ impl SqlToIr {
         let mut parts = Vec::new();
 
         // FROM clause
-        let mut from_str = match &sql_ast.from.scan.alias {
-            Some(alias) => format!("from {} as {} in input1", sql_ast.from.scan.variable, alias),
-            None => format!("from {} in input1", sql_ast.from.scan.variable),
-        };
-
-        // iterate over join(s)
-        for (i, join) in sql_ast.from.joins.clone().unwrap().iter().enumerate() {
-            let input_num = i + 2;
-            let join_table = match &join.join_scan.alias {
-                Some(alias) => format!("{} as {}", join.join_scan.variable, alias),
-                None => join.join_scan.variable.clone(),
-            };
-
-            // Create all join conditions
-            let conditions: Vec<String> = join
-                .join_expr
-                .conditions
-                .iter()
-                .map(|cond| format!("{} == {}", cond.left_var, cond.right_var))
-                .collect();
-
-            let join_type_str = match join.join_type {
-                JoinType::Inner => "", // Default join is inner, so no prefix needed
-                JoinType::Left => "left ",
-                JoinType::Outer => "outer ",
-            };
-
-            from_str.push_str(&format!(
-                " {}join {} in input{} on {}",
-                join_type_str,
-                join_table,
-                input_num,
-                conditions.join(" && ")
-            ));
-        }
-
+        let from_str = Self::from_clause_to_string(&sql_ast.from);
         parts.push(from_str);
 
         // WHERE clause (if present)
@@ -94,6 +59,8 @@ impl SqlToIr {
                     .trim()
                     .to_string(),
                     SelectType::StringLiteral(val) => format!("'{}'", val),
+                    // Handle subquery in SELECT
+                    SelectType::Subquery(subquery) => format!("({})", Self::convert(subquery)),
                 };
 
                 // Add alias if present
@@ -126,24 +93,69 @@ impl SqlToIr {
         parts.join("\n")
     }
 
+    // Helper method to handle the FROM clause with subqueries
+    fn from_clause_to_string(from_clause: &FromClause) -> String {
+        let mut from_str = match &from_clause.scan {
+            FromSource::Table(scan_clause) => match &scan_clause.alias {
+                Some(alias) => format!("from {} as {} in input1", scan_clause.variable, alias),
+                None => format!("from {} in input1", scan_clause.variable),
+            },
+            FromSource::Subquery(subquery, alias) => {
+                let subquery_str = Self::convert(subquery);
+                match alias {
+                    Some(alias_name) => format!("from ({}) as {} in input1", subquery_str, alias_name),
+                    None => format!("from ({}) in input1", subquery_str),
+                }
+            }
+        };
+
+        // iterate over join(s)
+        if let Some(joins) = &from_clause.joins {
+            for (i, join) in joins.iter().enumerate() {
+                let input_num = i + 2;
+                
+                let join_source = match &join.join_scan {
+                    FromSource::Table(scan_clause) => match &scan_clause.alias {
+                        Some(alias) => format!("{} as {}", scan_clause.variable, alias),
+                        None => scan_clause.variable.clone(),
+                    },
+                    FromSource::Subquery(subquery, alias) => {
+                        let subquery_str = Self::convert(subquery);
+                        match alias {
+                            Some(alias_name) => format!("({}) as {}", subquery_str, alias_name),
+                            None => format!("({})", subquery_str),
+                        }
+                    }
+                };
+
+                // Create all join conditions
+                let conditions: Vec<String> = join
+                    .join_expr
+                    .conditions
+                    .iter()
+                    .map(|cond| format!("{} == {}", cond.left_var, cond.right_var))
+                    .collect();
+
+                let join_type_str = match join.join_type {
+                    JoinType::Inner => "", // Default join is inner, so no prefix needed
+                    JoinType::Left => "left ",
+                    JoinType::Outer => "outer ",
+                };
+
+                from_str.push_str(&format!(
+                    " {}join {} in input{} on {}",
+                    join_type_str,
+                    join_source,
+                    input_num,
+                    conditions.join(" && ")
+                ));
+            }
+        }
+        
+        from_str
+    }
+
     // Converts a WHERE clause from the SQL AST to its equivalent IR string representation.
-    /// This function handles nested expressions, comparison operations, and NULL checks
-    /// while maintaining proper operator precedence.
-    ///
-    /// # Arguments
-    /// * `clause` - The WhereClause AST node to convert
-    ///
-    /// # Returns
-    /// A String containing the IR representation of the WHERE clause
-    ///
-    /// # Examples
-    /// ```text
-    /// SQL Input: "WHERE (a > 10 OR b < 20) AND c = 30"
-    /// IR Output: "a > 10 || b < 20 && c == 30"
-    ///
-    /// SQL Input: "WHERE x IS NULL AND (y > 100 OR z <= 50)"
-    /// IR Output: "x is null && (y > 100 || z <= 50)"
-    /// ```
     fn where_clause_to_string(clause: &WhereClause) -> String {
         match clause {
             WhereClause::Base(base_condition) => match base_condition {
@@ -169,6 +181,25 @@ impl SqlToIr {
                         NullOp::IsNotNull => "is not null",
                     };
                     format!("{} {}", field, op)
+                },
+                // Handle EXISTS subquery
+                WhereBaseCondition::Exists(subquery, negated) => {
+                    let subquery_str = Self::convert(subquery);
+                    if *negated {
+                        format!("not exists({})", subquery_str)
+                    } else {
+                        format!("exists({})", subquery_str)
+                    }
+                },
+                // Handle IN subquery
+                WhereBaseCondition::In(column, subquery, negated) => {
+                    let column_str = column.to_string();
+                    let subquery_str = Self::convert(subquery);
+                    if *negated {
+                        format!("{} not in ({})", column_str, subquery_str)
+                    } else {
+                        format!("{} in ({})", column_str, subquery_str)
+                    }
                 }
             },
             WhereClause::Expression { left, op, right } => {
@@ -211,21 +242,6 @@ impl SqlToIr {
     }
 
     /// Converts a WhereField to its string representation in IR format.
-    /// This function handles fields that can contain column references,
-    /// literal values, or arithmetic expressions.
-    ///
-    /// # Arguments
-    /// * `field` - The WhereField to convert
-    ///
-    /// # Returns
-    /// A String containing the IR representation of the field
-    ///
-    /// # Examples
-    /// ```text
-    /// Column Reference: "table1.column1" -> "table1.column1"
-    /// Literal Value: 42 -> "42"
-    /// Arithmetic: "a + b" -> "a + b"
-    /// ```
     fn convert_where_field(field: &WhereField) -> String {
         if let Some(ref arithmetic) = field.arithmetic {
             match arithmetic {
@@ -244,32 +260,14 @@ impl SqlToIr {
                 SqlLiteral::String(val) => format!("'{}'", val),
                 SqlLiteral::Boolean(val) => val.to_string(),
             }
+        } else if let Some(ref subquery) = field.subquery {
+            format!("({})", Self::convert(subquery))
         } else {
             String::new()
         }
     }
 
     /// Converts an arithmetic expression to its string representation in IR format.
-    /// Handles column references, literals, aggregate functions, and binary operations.
-    ///
-    /// # Arguments
-    /// * `expr` - The ArithmeticExpr to convert
-    ///
-    /// # Returns
-    /// A String containing the IR representation of the arithmetic expression
-    ///
-    /// # Examples
-    /// ```text
-    /// Column: "table1.column1" -> "table1.column1"
-    /// Binary Op: "a + b" -> "a + b"
-    /// Aggregate: "SUM(x)" -> "sum(x)"
-    /// Complex: "(a + b) * c" -> "(a + b) * c"
-    /// ```
-    ///
-    /// # Notes
-    /// - Maintains operator precedence using parentheses where necessary
-    /// - Converts aggregate function names to lowercase as required by IR
-    /// - Preserves spacing around operators for readability
     fn arithmetic_expr_to_string(expr: &ArithmeticExpr) -> String {
         match expr {
             ArithmeticExpr::Column(col_ref) => col_ref.to_string(),
@@ -288,11 +286,15 @@ impl SqlToIr {
                     AggregateFunction::Count => "count",
                 };
                 format!("{}({})", agg, col_ref.to_string())
-            }
+            },
             ArithmeticExpr::BinaryOp(left, op, right) => {
                 let left_str = Self::arithmetic_expr_to_string(left);
                 let right_str = Self::arithmetic_expr_to_string(right);
                 format!("{} {} {}", left_str, op, right_str)
+            },
+            // Handle subquery in arithmetic expression
+            ArithmeticExpr::Subquery(subquery) => {
+                format!("({})", Self::convert(subquery))
             }
         }
     }
@@ -320,7 +322,7 @@ impl SqlToIr {
         group_by_str
     }
 
-    // New method to handle the recursive having clause structure
+    // Updated method to handle the recursive having clause structure with subqueries
     fn having_clause_to_string(clause: &HavingClause) -> String {
         match clause {
             HavingClause::Base(base_condition) => match base_condition {
@@ -342,6 +344,8 @@ impl SqlToIr {
                             aggregate,
                             cond.left_field.aggregate.as_ref().unwrap().1.to_string()
                         )
+                    } else if let Some(ref subquery) = cond.left_field.subquery {
+                        format!("({})", Self::convert(subquery))
                     } else {
                         match &cond.left_field.value {
                             Some(SqlLiteral::Float(val)) => format!("{:.2}", val),
@@ -378,6 +382,8 @@ impl SqlToIr {
                             aggregate,
                             cond.right_field.aggregate.as_ref().unwrap().1.to_string()
                         )
+                    } else if let Some(ref subquery) = cond.right_field.subquery {
+                        format!("({})", Self::convert(subquery))
                     } else {
                         match &cond.right_field.value {
                             Some(SqlLiteral::Float(val)) => format!("{:.2}", val),
@@ -393,14 +399,26 @@ impl SqlToIr {
                 HavingBaseCondition::NullCheck(null_cond) => {
                     let field = if let Some(ref arithmetic) = null_cond.field.arithmetic {
                         Self::arithmetic_expr_to_string(arithmetic)
+                    } else if let Some(ref column) = null_cond.field.column {
+                        column.to_string()
+                    } else if let Some(ref subquery) = null_cond.field.subquery {
+                        format!("({})", Self::convert(subquery))
                     } else {
-                        null_cond.field.column.as_ref().unwrap().to_string()
+                        String::new()
                     };
 
                     match null_cond.operator {
                         NullOp::IsNull => format!("{} is null", field),
                         NullOp::IsNotNull => format!("{} is not null", field),
                     }
+                },
+                // Handle EXISTS in HAVING
+                HavingBaseCondition::Exists(subquery) => {
+                    format!("exists({})", Self::convert(subquery))
+                },
+                // Handle IN in HAVING
+                HavingBaseCondition::In(column, subquery) => {
+                    format!("{} in ({})", column.to_string(), Self::convert(subquery))
                 }
             },
             HavingClause::Expression { left, op, right } => {
@@ -462,7 +480,7 @@ impl SqlToIr {
         items.join(", ")
     }
 
-    //function used to convert complex field to string
+    //function used to convert complex field to string - updated to handle subqueries
     fn convert_complex_field(field: &ComplexField) -> String {
         if let Some(ref nested) = field.nested_expr {
             // Handle nested expression
@@ -493,6 +511,8 @@ impl SqlToIr {
                 AggregateFunction::Count => "count",
             };
             format!("{}({})", agg, col_ref.to_string())
+        } else if let Some(ref subquery) = field.subquery {
+            format!("({})", Self::convert(subquery))
         } else {
             String::new()
         }
