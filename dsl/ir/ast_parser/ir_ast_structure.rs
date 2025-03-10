@@ -1,7 +1,12 @@
 #[derive(Debug, PartialEq, Clone)]
 pub struct IrAST {
-    pub from: FromClause,
-    pub select: SelectClause,
+    pub operations: Vec<Operation>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct  Operation {
+    pub from: Option<FromClause>,
+    pub select: Option<SelectClause>,
     pub filter: Option<WhereClause>,
     pub group_by: Option<Group>,
     pub order_by: Option<OrderByClause>,
@@ -244,6 +249,19 @@ impl ComplexField {
             )
         } else {
             String::new()
+        }
+    }
+}
+
+impl Operation {
+    pub fn new() -> Self {
+        Operation {
+            from: None,
+            select: None,
+            filter: None,
+            group_by: None,
+            order_by: None,
+            limit: None,
         }
     }
 }

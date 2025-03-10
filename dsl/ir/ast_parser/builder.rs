@@ -5,18 +5,16 @@ use super::limit::LimitParser;
 use super::order::OrderParser;
 use super::{condition::ConditionParser, sink::SinkParser, source::SourceParser};
 use crate::dsl::ir::ast_parser::Rule;
+use crate::dsl::languages::sql::ast_parser::from;
 use pest::iterators::Pairs;
 
 pub struct IrASTBuilder;
 
 impl IrASTBuilder {
     pub fn build_ast_from_pairs(pairs: Pairs<Rule>) -> Result<IrAST, IrParseError> {
-        let mut from = None;
-        let mut select = None;
-        let mut filter = None;
-        let mut group_by = None;
-        let mut order_by = None;
-        let mut limit = None;
+        let mut ast: IrAST = IrAST {
+            operations: Vec::new(),
+        };
 
         // Process each clause in the query
         for pair in pairs {
@@ -25,22 +23,40 @@ impl IrASTBuilder {
                     for clause in pair.into_inner() {
                         match clause.as_rule() {
                             Rule::from_clause => {
-                                from = Some(SourceParser::parse(clause)?);
+                                let from_clause = Some(SourceParser::parse(clause)?);
+                                let mut op = Operation::new();
+                                op.from = from_clause;
+                                ast.operations.push(op);
                             }
                             Rule::select_clause => {
-                                select = Some(SinkParser::parse(clause)?);
+                                let select = Some(SinkParser::parse(clause)?);
+                                let mut op = Operation::new();
+                                op.select = select;
+                                ast.operations.push(op);
                             }
                             Rule::where_clause => {
-                                filter = Some(ConditionParser::parse(clause)?);
+                                let filter = Some(ConditionParser::parse(clause)?);
+                                let mut op = Operation::new();
+                                op.filter = filter;
+                                ast.operations.push(op);
                             }
                             Rule::group_clause => {
-                                group_by = Some(GroupParser::parse(clause)?);
+                                let group_by = Some(GroupParser::parse(clause)?);
+                                let mut op = Operation::new();
+                                op.group_by = group_by;
+                                ast.operations.push(op);
                             }
                             Rule::order_clause => {
-                                order_by = Some(OrderParser::parse(clause)?);
+                                let order_by = Some(OrderParser::parse(clause)?);
+                                let mut op = Operation::new();
+                                op.order_by = order_by;
+                                ast.operations.push(op);
                             }
                             Rule::limit_expr => {
-                                limit = Some(LimitParser::parse(clause)?);
+                                let limit = Some(LimitParser::parse(clause)?);
+                                let mut op = Operation::new();
+                                op.limit = limit;
+                                ast.operations.push(op);
                             }
                             Rule::EOI => {}
                             _ => {
@@ -55,18 +71,6 @@ impl IrASTBuilder {
                 _ => return Err(IrParseError::InvalidInput("Expected query".to_string())),
             }
         }
-
-        // Create and validate the AST
-        let ast = IrAST {
-            from: from
-                .ok_or_else(|| IrParseError::InvalidInput("Missing FROM clause".to_string()))?,
-            select: select
-                .ok_or_else(|| IrParseError::InvalidInput("Missing SELECT clause".to_string()))?,
-            filter,
-            group_by,
-            order_by,
-            limit,
-        };
 
         Ok(ast)
     }

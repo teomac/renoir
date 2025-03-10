@@ -102,15 +102,15 @@ pub fn create_template(query_object: &QueryObject) -> String {
             );
             
         stream.push_str(&format!("ctx.execute_blocking();"));
-        if let Some(order_by) = &query_object.ir_ast.as_ref().unwrap().order_by {
+        if let Some(order_by) = &query_object.ir_ast.as_ref().unwrap().operations.order_by {
             stream.push_str(&process_order_by(order_by, query_object));
         }
 
-        if let Some(_limit) = &query_object.ir_ast.as_ref().unwrap().limit {
+        if let Some(_limit) = &query_object.ir_ast.as_ref().unwrap().operations.limit {
             stream.push_str(&process_limit(query_object));
         }
 
-        if query_object.ir_ast.as_ref().unwrap().select.distinct {
+        if query_object.ir_ast.as_ref().unwrap().operations.select.distinct {
             stream.push_str(&process_distinct(query_object));
         }}
 

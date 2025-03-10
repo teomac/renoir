@@ -3,9 +3,12 @@ use crate::dsl::ir::QueryObject;
 pub fn process_limit(query_object: &QueryObject) -> String {
     let csv_path = query_object.output_path.replace("\\", "/");
 
+
+
     // Generate limit/offset handling code if needed
-    if let Some(limit_clause) = &query_object.ir_ast.as_ref().unwrap().limit {
-        let start_index = limit_clause.offset.unwrap_or(0);
+    if let Some(limit_clause) = &query_object.ir_ast.as_ref().unwrap().operations.iter().find(|x| x.limit.is_some()) {
+        let limit = limit_clause.limit.as_ref().unwrap();
+        let start_index = limit.offset.unwrap_or(0);
         return format!(
             r#"
             // Process limit and offset after CSV is written
@@ -35,8 +38,8 @@ pub fn process_limit(query_object: &QueryObject) -> String {
             csv_path,
             csv_path,
             start_index,
-            start_index + limit_clause.limit,
-            start_index + limit_clause.limit,
+            start_index + limit.limit,
+            start_index + limit.limit,
         );
     } else {
         return String::new();

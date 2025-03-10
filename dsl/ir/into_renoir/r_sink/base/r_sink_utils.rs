@@ -67,7 +67,7 @@ pub fn has_aggregate_in_complex_field(field: &ComplexField) -> bool {
 pub fn collect_sink_aggregates(query_object: &QueryObject) -> Vec<AggregateFunction> {
     let mut aggregates = Vec::new();
 
-    for clause in query_object.ir_ast.clone().unwrap().select.select {
+    for clause in query_object.ir_ast.clone().unwrap().operations.select.select {
         match clause {
             SelectColumn::Aggregate(agg, _) => {
                 aggregates.push(AggregateFunction {
