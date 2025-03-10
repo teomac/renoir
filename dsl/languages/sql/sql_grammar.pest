@@ -84,8 +84,14 @@ where_term = {
 }
 where_expr = { where_keyword ~ where_conditions }
 
-//Projections
-column_item = {select_expr | aggregate_expr | table_column | variable | string_literal | subquery_expr }
+column_item = {
+    select_expr | 
+    aggregate_expr | 
+    table_column | 
+    variable | 
+    string_literal | 
+    subquery_expr
+}
 column_with_alias = { column_item ~ (as_keyword ~ variable)? }
 column_list = { (column_with_alias ) ~ ("," ~ (column_with_alias ))* }
 select_expr = { 
@@ -110,8 +116,8 @@ group_by_expr = { group_by_keyword ~ group_by_list ~ ( having_keyword ~ having_e
 
 join_condition = { table_column ~ "=" ~ table_column ~ ("AND" ~ table_column ~ "=" ~ table_column)* }
 
-from_expr = { from ~ (scan_expr | subquery_expr) ~ join_expr* }
-scan_expr = { variable ~ (as_keyword ~ variable)? }
+from_expr = { from ~ scan_expr ~ join_expr* }
+scan_expr = { (variable | subquery_expr) ~ (as_keyword ~ variable)? }
 join_expr = { join_kind? ~ join ~ (scan_expr | subquery_expr) ~ on ~ join_condition }
 join_kind = { ( ^"INNER" | (^"LEFT" ~ (^"OUTER")?) | ^"OUTER") }
 

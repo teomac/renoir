@@ -1,7 +1,6 @@
 use super::error::SqlParseError;
 use super::literal::LiteralParser;
-use super::sql_ast_structure::*;
-use super::builder::SqlASTBuilder;
+use super::{sql_ast_structure::*, SqlParser};
 use crate::dsl::languages::sql::ast_parser::Rule;
 use pest::iterators::Pair;
 
@@ -35,7 +34,6 @@ impl SelectParser {
         }
     }
 
-    // New function to parse column_item
     fn parse_column_item(pair: Pair<Rule>) -> Result<SelectType, SqlParseError> {
         let mut inner = pair.into_inner();
         let item = inner
@@ -54,8 +52,16 @@ impl SelectParser {
             },
             Rule::select_expr => Self::parse_complex_expression(item),
             Rule::subquery_expr => {
-                // New: Handle subquery in SELECT
-                let subquery = Self::parse_subquery(item)?;
+                // Handle subquery in SELECT
+                let subquery = SqlParser::parse_subquery(item)?;
+                
+                // Validate that the subquery only returns one column
+                if subquery.select.select.len() != 1 {
+                    return Err(SqlParseError::InvalidInput(
+                        "Subquery in SELECT must return exactly one column".to_string()
+                    ));
+                }
+                
                 Ok(SelectType::Subquery(Box::new(subquery)))
             },
             _ => Err(SqlParseError::InvalidInput(format!(
@@ -63,17 +69,6 @@ impl SelectParser {
                 item.as_rule()
             ))),
         }
-    }
-
-    // New: Method to parse subqueries
-    fn parse_subquery(pair: Pair<Rule>) -> Result<SqlAST, SqlParseError> {
-        // Extract the query part from the subquery
-        let query = pair.into_inner()
-            .next()
-            .ok_or_else(|| SqlParseError::InvalidInput("Empty subquery".to_string()))?;
-        
-        // Use the builder to parse the query
-        SqlASTBuilder::build_ast_from_pairs(query.into_inner())
     }
 
     //function to parse column references
@@ -187,7 +182,6 @@ impl SelectParser {
                 }
             };
 
-            // Create new ComplexField with nested expression
             left_field = ComplexField {
                 column_ref: None,
                 literal: None,
@@ -286,7 +280,7 @@ impl SelectParser {
             },
             Rule::subquery_expr => {
                 // New: Handle subquery in column operand
-                let subquery = Self::parse_subquery(inner)?;
+                let subquery = SqlParser::parse_subquery(inner)?;
                 Ok(ComplexField {
                     column_ref: None,
                     literal: None,
