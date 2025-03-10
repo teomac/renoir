@@ -23,8 +23,6 @@ pub struct QueryObject {
     pub has_join: bool, // true if the query has a join
     pub output_path: String, //output path
     pub ir_ast: Option<IrAST>, //ir ast
-    pub renoir_string: String, //Renoir final string
-
     pub result_column_types: IndexMap<String, String>, // key: result column name, value: data type
 
     //ex. SELECT power * total_km AS product FROM table1
@@ -60,7 +58,6 @@ impl QueryObject {
             table_to_csv: IndexMap::new(),
             table_to_struct_name: IndexMap::new(),
             result_column_types: IndexMap::new(),
-            renoir_string: String::new(),
             output_path: String::new(),
             ir_ast: None,
         }
@@ -192,12 +189,7 @@ impl QueryObject {
     pub fn get_struct_name(&self, table: &str) -> Option<&String> {
         self.table_to_struct_name.get(&(table.to_string()))
     }
-
-    //set renoir string
-    pub fn set_renoir_string(&mut self, renoir_string: &String) {
-        self.renoir_string = renoir_string.to_string();
-    }
-
+    
     //method to get all the structs
     pub fn get_all_structs(&self) -> Vec<String> {
         self.table_to_struct_name.values().cloned().collect()
@@ -408,12 +400,19 @@ impl QueryObject {
         //table_to_csv and tables_info are already updated now.
 
         //let's update every stream with the struct name and first op
-        for (_, stream) in self.streams.clone().iter_mut() {
-            let struct_name = self.get_struct_name(&stream.source_table).unwrap().clone();
-            stream.insert_op(format!(
-                "ctx.stream_csv::<{}>({},)",
+        let all_stream_names = self.streams.keys().cloned().collect::<Vec<String>>();
+        let all_structs = self.table_to_struct_name.clone();
+        let csvs = self.table_to_csv.clone();
+
+
+        for stream in all_stream_names.iter() {
+            let stream_obj = self.get_mut_stream(stream);
+            let table_name = stream_obj.source_table.clone();
+            let struct_name = all_structs.get(&table_name).unwrap();
+            stream_obj.insert_op(format!(
+                "ctx.stream_csv::<{}>(\"{}\")",
                 struct_name,
-                self.get_csv(&stream.source_table).unwrap()
+                csvs.get(&table_name).unwrap()
             ));
         }
 

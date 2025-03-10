@@ -15,10 +15,9 @@ pub fn query_ir_to_ast(query_str: &str) -> IrAST {
     ast
 }
 
-pub fn ir_ast_to_renoir(query_object: &mut QueryObject) -> String {
+pub fn ir_ast_to_renoir(query_object: &mut QueryObject) -> Result<(), Box<dyn std::error::Error>> {
     let ir_ast = query_object.ir_ast.clone().unwrap();
-    let renoir_string = IrToRenoir::convert(&ir_ast, query_object);
-    //println!("Generated Renoir string:\n{}", renoir_string);
+    let result = IrToRenoir::convert(&ir_ast, query_object);
 
-    renoir_string
+    result
 }

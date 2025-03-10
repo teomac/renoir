@@ -32,15 +32,23 @@ use crate::dsl::ir::r_sink::base::r_sink_base_agg::create_aggregate_map;
 pub fn process_projections(
     select_clauses: &Vec<SelectColumn>,
     query_object: &mut QueryObject,
-) -> String {
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut final_string = String::new();
     // Check for SELECT * case
     if select_clauses.len() == 1 {
         match &select_clauses[0] {
             SelectColumn::Column(col_ref, _) if col_ref.column == "*" => {
-                return create_select_star_map(query_object);
+                final_string = create_select_star_map(query_object);
             }
             _ => {}
         }
+
+        let stream_name = query_object.streams.keys().cloned().collect::<Vec<String>>()[0].clone();
+        let stream = query_object.get_mut_stream(&stream_name);
+
+        stream.insert_op(final_string.clone());
+
+        return Ok(());
     }
     // Check if any aggregations are present using recursive traversal
     let has_aggregates: bool = select_clauses.iter().any(|clause| match clause {
@@ -50,10 +58,17 @@ pub fn process_projections(
     });
 
     if has_aggregates {
-        create_aggregate_map(select_clauses, query_object)
+        final_string = create_aggregate_map(select_clauses, query_object);
     } else {
-        create_simple_map(select_clauses, query_object)
+        final_string = create_simple_map(select_clauses, query_object);
     }
+
+    let stream_name = query_object.streams.keys().cloned().collect::<Vec<String>>()[0].clone();
+    let stream = query_object.get_mut_stream(&stream_name);
+
+    stream.insert_op(final_string.clone());
+
+    Ok(())
 }
 
 

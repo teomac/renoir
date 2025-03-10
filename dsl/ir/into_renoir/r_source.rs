@@ -2,9 +2,9 @@ use crate::dsl::ir::ir_ast_structure::*;
 use crate::dsl::ir::FromClause;
 use crate::dsl::ir::QueryObject;
 
-pub fn process_from_clause(from_clause: &FromClause, query_object: &mut QueryObject) -> String {
+pub fn process_from_clause(from_clause: &FromClause, query_object: &mut QueryObject) -> Result<(), Box<dyn std::error::Error>> {
     if !query_object.has_join {
-        return "".to_string();
+        Ok(())
     }
     //case with at least one join
     else{
@@ -133,9 +133,6 @@ pub fn process_from_clause(from_clause: &FromClause, query_object: &mut QueryObj
             query_object.streams.get_mut(&stream_list_join[0]).unwrap().access.update_base_path(updated_first_access);
             query_object.streams.get_mut(&stream_list_join[1]).unwrap().access.update_base_path(updated_second_access);
 
-            //first_stream.get_access().update_base_path(updated_first_access);
-            //second_stream.get_access().update_base_path(updated_second_access);
-
         } else {
             //this is the case in which we have more than one join
             // After second join: ((t1, t2), t3)
@@ -152,5 +149,5 @@ pub fn process_from_clause(from_clause: &FromClause, query_object: &mut QueryObj
         }
     }
 
-    join_string
+    Ok(())
 }}

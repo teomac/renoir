@@ -84,19 +84,24 @@ pub fn create_template(query_object: &QueryObject) -> String {
 
     let mut stream_declarations: Vec<String> = Vec::new();
 
-    // case 1: no join inside the query
-    if !query_object.has_join {
-        let table_name = table_names.first().unwrap();
-        let mut stream = format!(
-            r#"let stream0 = ctx.stream_csv::<{}>("{}"){}.write_csv(move |_| r"{}.csv".into(), true);
-            ctx.execute_blocking();
-            "#,
-            query_object.get_struct_name(table_name).unwrap(),
-            query_object.get_csv(table_name).unwrap(),
-            query_object.renoir_string,
-            query_object.output_path,
-        );
+    let mut all_stream_names = all_streams.keys().cloned().collect::<Vec<String>>();
+    all_stream_names.reverse();
 
+
+    for (i, stream_name) in all_stream_names.iter().enumerate() {
+        let mut stream ;
+        if i == all_stream_names.len() -1 {
+            let stream_object = all_streams.get(stream_name).unwrap();
+            let stream_op_chain = stream_object.get_op_chain().concat();
+            stream = format!(
+                r#"let {} = {}.write_csv(move |_| r"{}.csv".into(), true);
+                 "#,
+                stream_name,
+                stream_op_chain,
+                query_object.output_path,
+            );
+            
+        stream.push_str(&format!("ctx.execute_blocking();"));
         if let Some(order_by) = &query_object.ir_ast.as_ref().unwrap().order_by {
             stream.push_str(&process_order_by(order_by, query_object));
         }
@@ -107,50 +112,22 @@ pub fn create_template(query_object: &QueryObject) -> String {
 
         if query_object.ir_ast.as_ref().unwrap().select.distinct {
             stream.push_str(&process_distinct(query_object));
+        }}
+
+        else{
+            let stream_object = all_streams.get(stream_name).unwrap();
+        let stream_op_chain = stream_object.get_op_chain().concat();
+        stream = format!(
+            r#"let {} = {};
+             "#,
+            stream_name,
+            stream_op_chain
+        );
+
         }
+        
 
         stream_declarations.push(stream);
-    }
-    // case 2: join inside the query
-    else {
-        for (i, table_name) in table_names.iter().enumerate() {
-            if i == 0 {
-                let mut stream = format!(
-                    r#"let stream{} = ctx.stream_csv::<{}>("{}"){}.write_csv(move |_| r"{}.csv".into(), true);
-                    ctx.execute_blocking();
-                    "#,
-                    i,
-                    query_object.get_struct_name(table_name).unwrap(),
-                    query_object.get_csv(table_name).unwrap(),
-                    query_object.renoir_string,
-                    query_object.output_path,
-                );
-
-                if let Some(order_by) = &query_object.ir_ast.as_ref().unwrap().order_by {
-                    stream.push_str(&process_order_by(order_by, query_object));
-                }
-
-                if let Some(_limit) = &query_object.ir_ast.as_ref().unwrap().limit {
-                    stream.push_str(&process_limit(query_object));
-                }
-
-                if query_object.ir_ast.as_ref().unwrap().select.distinct {
-                    stream.push_str(&process_distinct(query_object));
-                }
-
-                stream_declarations.push(stream);
-            } else {
-                //retrieve alias from joined_tables
-                let stream = format!(
-                    r#"let stream{} = ctx.stream_csv::<{}>("{}");"#,
-                    i,
-                    query_object.get_struct_name(table_name).unwrap(),
-                    query_object.get_csv(table_name).unwrap()
-                );
-                stream_declarations.push(stream);
-            }
-        }
-        stream_declarations.reverse();
     }
 
     // Join all stream declarations with newlines

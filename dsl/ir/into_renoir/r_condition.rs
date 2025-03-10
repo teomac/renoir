@@ -7,21 +7,21 @@ use crate::dsl::ir::QueryObject;
 use crate::dsl::ir::WhereClause;
 use crate::dsl::ir::{ComparisonOp, Condition};
 
-/// Processes a `WhereClause` and generates a string representation of the conditions.
-///
-/// This function recursively processes the conditions in the `WhereClause` and converts them
-/// into a string format that contains renoir operators. It handles both the initial condition
-/// and any subsequent conditions connected by binary operators (AND/OR).
-///
-/// # Arguments
-///
-/// * `clause` - A reference to the `WhereClause` to be processed.
-/// * `query_object` - A reference to the `QueryObject` containing metadata about the query.
-///
-/// # Returns
-///
-/// A `String` representing the processed where clause conditions.
-pub fn process_where_clause(clause: &WhereClause, query_object: &QueryObject) -> String {
+
+pub fn process_filter_clause(clause: &WhereClause, query_object: &mut QueryObject) -> Result<(), Box<dyn std::error::Error>> {
+    let filter_string = process_where_clause(clause, query_object);
+    
+    let final_string = format!(".filter(|x| {})", filter_string);
+
+    let stream_name = query_object.streams.first().unwrap().0.clone();
+    let stream = query_object.get_mut_stream(&stream_name);
+    stream.insert_op(final_string);
+
+    Ok(())
+}
+
+
+pub fn process_where_clause(clause: &WhereClause, query_object: &mut QueryObject) -> String {
     match clause {
         WhereClause::Base(condition) => process_condition(condition, query_object),
         WhereClause::Expression {
@@ -62,7 +62,10 @@ pub fn process_where_clause(clause: &WhereClause, query_object: &QueryObject) ->
                 process_where_clause(right, query_object)
             };
 
-            format!("{} {} {}", left_str, op_str, right_str)
+            return format!(
+                "{} {} {}",
+                left_str, op_str, right_str
+            );
         }
     }
 }
@@ -343,7 +346,6 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
     }
 
     if !query_object.has_join {
-
         // Case with at least one column reference - need null checking
         if has_left_column || has_right_column {
             let mut null_checks = Vec::new();

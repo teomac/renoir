@@ -103,8 +103,10 @@ pub fn query_csv(
     //println!("Ir AST: {:?}", query_object.ir_ast);
 
     // step 4: convert Ir AST to renoir string
-    let renoir_string = ir_ast_to_renoir(&mut query_object);
-    query_object.set_renoir_string(&renoir_string);
+    let result = ir_ast_to_renoir(&mut query_object);
+    if result.is_err() {
+        return Err(io::Error::new(io::ErrorKind::Other, "Error converting IR AST to Renoir"));
+    }
 
     // step 5: generate main.rs and update it in the Rust project
     let main = create_template(&query_object);

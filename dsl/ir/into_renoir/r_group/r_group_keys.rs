@@ -82,7 +82,7 @@ impl GroupAccumulatorInfo {
 /// # Returns
 ///
 /// A String containing the Renoir operator chain for the group by operation
-pub fn process_group_by(group_by: &Group, query_object: &QueryObject) -> String {
+pub fn process_group_by(group_by: &Group, query_object: &mut QueryObject) -> Result<(), Box<dyn std::error::Error>> {
     let mut group_string = String::new();
     let table_names = query_object.get_all_table_names();
 
@@ -166,7 +166,13 @@ pub fn process_group_by(group_by: &Group, query_object: &QueryObject) -> String 
     }
 
     group_string.push_str(".drop_key()");
-    group_string
+
+    let stream_name = query_object.streams.keys().cloned().collect::<Vec<String>>()[0].clone();
+    let stream = query_object.get_mut_stream(&stream_name);
+
+    stream.insert_op(group_string);
+
+    Ok(())
 }
 
 /// Process the group by keys and generate the corresponding tuple of column references.

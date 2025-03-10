@@ -64,6 +64,12 @@ impl SelectParser {
                 
                 Ok(SelectType::Subquery(Box::new(subquery)))
             },
+            Rule::string_literal => {
+                // remove quotes from string
+                let inner_str = item.as_str();
+                let clean_str = inner_str[1..inner_str.len() - 1].to_string();
+                Ok(SelectType::StringLiteral(clean_str))
+            },
             _ => Err(SqlParseError::InvalidInput(format!(
                 "Invalid column item: {:?}",
                 item.as_rule()
