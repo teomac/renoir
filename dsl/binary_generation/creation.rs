@@ -41,6 +41,7 @@ impl RustProject {
                 serde_json = "1.0.133"
                 serde = "1.0.217"
                 csv = "1.2.2"
+                ordered-float = {{version = "5.0.0", features = ["serde"]}}
                 "#,
                 renoir_path
             );
@@ -162,6 +163,7 @@ pub fn create_template(query_object: &QueryObject) -> String {
         use serde_json;
         use std::fs;
         use csv;
+        use ordered_float::OrderedFloat;
 
         {}
 

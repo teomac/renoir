@@ -63,12 +63,16 @@ pub fn process_grouping_projections(
                         .iter()
                         .position(|c| c.column == col_ref.column && c.table == col_ref.table);
 
+                    let needs_casting = query_object
+                        .get_type(&col_ref)
+                        .contains("f64");
+
                     if let Some(pos) = key_position {
                         // Column is in the GROUP BY key
                         let value = if group_by.columns.len() == 1 {
-                            format!("x.0.clone()")
+                            format!("x.0.clone(){}", if needs_casting { ".map(f64::from)" } else { "" })
                         } else {
-                            format!("x.0.{}.clone()", pos)
+                            format!("x.0.{}.clone(){}", pos, if needs_casting { ".map(f64::from)" } else { "" })
                         };
                         result.push_str(&format!("    {}: {},\n", field_name, value));
                     } else {
@@ -352,6 +356,10 @@ fn process_complex_field_for_group(
                 .iter()
                 .position(|c| c.column == col.column && c.table == col.table);
 
+            let needs_casting = query_object
+                .get_type(&col)
+                .contains("f64");
+
             check_list.push(format!(
                 "x.0.{}.is_some()",
                 key_position.expect("Column not in GROUP BY key")
@@ -360,9 +368,9 @@ fn process_complex_field_for_group(
             if let Some(pos) = key_position {
                 // Column is in the GROUP BY key
                 if group_by.columns.len() == 1 {
-                    format!("x.0.unwrap()")
+                    format!("x.0.unwrap(){})", if needs_casting { ".map(f64::from)" } else { "" })
                 } else {
-                    format!("x.0.{}.unwrap()", pos)
+                    format!("x.0.{}.unwrap(){}", pos, if needs_casting { ".map(f64::from)" } else { "" })
                 }
             } else {
                 panic!("Column {} not in GROUP BY clause", col.column);
@@ -471,10 +479,15 @@ fn create_select_star_group(query_object: &QueryObject) -> String {
             // For single column, x.0 directly contains the key value
             let key_col = &group_by.columns[0];
 
+            let needs_casting = result_column_types
+                .get(&key_col.column)
+                .expect("Column not found in result column types")
+                .contains("f64");
+
             // Find the corresponding result column name
             for (key, _) in &result_column_types {
                 if key.contains(&key_col.column) {
-                    result.push_str(&format!("{}: x.0.clone()", key));
+                    result.push_str(&format!("{}: x.0.clone(){}", key, if needs_casting { ".map(f64::from)" } else { "" }));
                     break;
                 }
             }
@@ -490,7 +503,11 @@ fn create_select_star_group(query_object: &QueryObject) -> String {
             for (i, key_col) in group_by.columns.iter().enumerate() {
                 for (key, _) in &result_column_types {
                     if key.contains(&key_col.column) {
-                        field_assignments.push(format!("{}: x.0.{}.clone()", key, i));
+                        let needs_casting = result_column_types
+                            .get(&key.clone())
+                            .expect("Column not found in result column types")
+                            .contains("f64");
+                        field_assignments.push(format!("{}: x.0.{}.clone(){}", key, i, if needs_casting { ".map(f64::from)" } else { "" }));
                         break;
                     }
                 }

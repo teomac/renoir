@@ -131,4 +131,8 @@ impl StreamInfo {
     pub fn get_alias(&self) -> String {
         self.alias.clone()
     }
+
+    pub fn get_field_type(&self, field: &String) -> String {
+        self.columns.get(field).unwrap().clone()
+    }
 }

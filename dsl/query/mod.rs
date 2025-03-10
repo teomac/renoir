@@ -100,6 +100,8 @@ pub fn query_csv(
     let ir_ast = query_ir_to_ast(&ir_query);
     query_object = query_object.populate(&ir_ast);
 
+    //println!("Ir AST: {:?}", query_object.ir_ast);
+
     // step 4: convert Ir AST to renoir string
     let renoir_string = ir_ast_to_renoir(&mut query_object);
     query_object.set_renoir_string(&renoir_string);

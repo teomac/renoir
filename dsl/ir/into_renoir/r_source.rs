@@ -87,8 +87,20 @@ pub fn process_from_clause(from_clause: &FromClause, query_object: &mut QueryObj
                 );
             };
 
-            left_tuple.push(format!("x{}.{}.clone()", left_access, left_field));
-            right_tuple.push(format!("y{}.{}.clone()", right_access, right_field));
+            let left_field_type = left_stream.get_field_type(&left_field);
+            let right_field_type = right_stream.get_field_type(&right_field);
+
+            if left_field_type != right_field_type {
+                panic!(
+                    "Field types do not match for join: {} ({}) and {} ({})",
+                    left_field, left_field_type, right_field, right_field_type
+                );
+            }
+
+            let needs_casting = left_field_type == "f64" || right_field_type == "f64";
+
+            left_tuple.push(format!("x{}.{}.clone() {}", left_access, left_field, if needs_casting { ".map(OrderedFloat)" } else { "" }));
+            right_tuple.push(format!("y{}.{}.clone() {}", right_access, right_field, if needs_casting { ".map(OrderedFloat)" } else { "" }));
         }
 
         // Determine the join method based on the join type

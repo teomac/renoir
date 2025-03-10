@@ -182,12 +182,14 @@ pub fn process_group_by(group_by: &Group, query_object: &QueryObject) -> String 
 fn process_group_by_keys(columns: &Vec<ColumnRef>, query_object: &QueryObject) -> String {
     if !query_object.has_join {
         let stream_name = query_object.streams.keys().cloned().collect::<Vec<String>>()[0].clone();
+        let stream = query_object.get_stream(&stream_name);
         // No joins - simple reference to columns
         columns
             .iter()
             .map(|col| {
                 query_object.check_column_validity(col, &stream_name);
-                format!("x.{}.clone()", col.column)
+                let needs_casting = stream.get_field_type(&col.column) == "f64";
+                format!("x.{}.clone(){}", col.column, if needs_casting { ".map(OrderedFloat)" } else { "" })
             })
             .collect::<Vec<_>>()
             .join(", ")
@@ -212,11 +214,14 @@ fn process_group_by_keys(columns: &Vec<ColumnRef>, query_object: &QueryObject) -
                 let stream = query_object.get_stream(stream_name);
 
                 stream.check_if_column_exists(&col.column);
+
+                let needs_casting = stream.get_field_type(&col.column) == "f64";
                 
                 format!(
-                    "x{}.{}.clone()",
+                    "x{}.{}.clone(){}",
                     stream.get_access().get_base_path(),
-                    col.column
+                    col.column,
+                    if needs_casting { ".map(OrderedFloat)" } else { "" }
                 )
             })
             .collect::<Vec<_>>()

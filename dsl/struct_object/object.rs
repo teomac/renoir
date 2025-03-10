@@ -23,8 +23,9 @@ pub struct QueryObject {
     pub has_join: bool, // true if the query has a join
     pub output_path: String, //output path
     pub ir_ast: Option<IrAST>, //ir ast
-    pub result_column_types: IndexMap<String, String>, // key: result column name, value: data type
     pub renoir_string: String, //Renoir final string
+
+    pub result_column_types: IndexMap<String, String>, // key: result column name, value: data type
 
     //ex. SELECT power * total_km AS product FROM table1
     //this indexMap will be filled with:
