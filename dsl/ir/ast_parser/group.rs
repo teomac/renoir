@@ -6,7 +6,7 @@ use pest::iterators::Pair;
 pub struct GroupParser;
 
 impl GroupParser {
-    pub fn parse(pair: Pair<Rule>) -> Result<Group, IrParseError> {
+    pub fn parse(pair: Pair<Rule>) -> Result<(Vec<ColumnRef>, Option<GroupClause>), IrParseError> {
         let mut inner = pair.into_inner();
 
         inner
@@ -35,10 +35,7 @@ impl GroupParser {
             group_condition = Some(Self::parse_group_conditions(condition)?);
         }
 
-        Ok(Group {
-            columns,
-            group_condition,
-        })
+        Ok((columns, group_condition))
     }
 
     //////////////////////////////////////////////////////////////////////////////////

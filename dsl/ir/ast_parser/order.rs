@@ -6,7 +6,7 @@ use pest::iterators::Pair;
 pub struct OrderParser;
 
 impl OrderParser {
-    pub fn parse(pair: Pair<Rule>) -> Result<OrderByClause, IrParseError> {
+    pub fn parse(pair: Pair<Rule>) -> Result<Vec<OrderByItem>, IrParseError> {
         let mut inner = pair.into_inner();
 
         inner
@@ -83,7 +83,7 @@ impl OrderParser {
             return Err(IrParseError::InvalidInput("Empty order clause".to_string()));
         }
 
-        Ok(OrderByClause { items })
+        Ok(items)
     }
 
     fn parse_qualified_column(pair: Pair<Rule>) -> Result<ColumnRef, IrParseError> {

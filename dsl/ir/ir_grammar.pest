@@ -31,17 +31,17 @@ null_op = @{ "is null" | "is not null" }
 
 query = {
     SOI ~
-    from_clause  ~
-    where_clause?  ~
+    scan_clause  ~
+    filter_clause?  ~
     group_clause?  ~
-    select_clause  ~
+    projection_clause  ~
     order_clause? ~
     limit_expr? ~
     EOI
 }
 
 // Basic clauses
-from_clause = { 
+scan_clause = { 
     "from" ~ 
     scan_expr ~
     (join_type? ~ join ~ scan_expr ~ on ~ join_condition)*
@@ -83,24 +83,24 @@ arithmetic_factor = {
     
 }
 
-// Conditions for WHERE clause
+// Conditions for FILTER clause
 condition = { 
     arithmetic_expr ~ comparison_op ~ arithmetic_expr | 
     (qualified_column | identifier) ~ null_op
 }
 
 comparison_op = @{ ">=" | "<=" | "!=" | ">" | "<" | "==" | "="}
-where_term = {
-    left_parenthesis ~ where_condition ~ right_parenthesis |
+filter_term = {
+    left_parenthesis ~ filter_condition ~ right_parenthesis |
     condition
 }
-where_condition = { where_term ~ (binary_op ~ where_term)* }
-where_clause = { "where" ~ where_condition }
+filter_condition = { filter_term ~ (binary_op ~ filter_term)* }
+filter_clause = { "where" ~ filter_condition }
 
-// Select clause expressions
-select_expr = { complex_op | aggregate_expr | qualified_column | identifier }
+// Projection clause expressions
+projection_expr = { complex_op | aggregate_expr | qualified_column | identifier }
 column_operand = { aggregate_expr | qualified_column | identifier | number }
-parenthesized_expr = { left_parenthesis ~ select_expr ~ right_parenthesis }
+parenthesized_expr = { left_parenthesis ~ projection_expr ~ right_parenthesis }
 
 complex_op = { 
     (parenthesized_expr | column_operand) ~ 
@@ -120,7 +120,7 @@ column_item = {
     (as_keyword ~ identifier)?
 }
 
-select_clause = { "select" ~ distinct_keyword? ~ (asterisk | column_list) }
+projection_clause = { "select" ~ distinct_keyword? ~ (asterisk | column_list) }
 
 // Binary logical operators
 binary_op = { 

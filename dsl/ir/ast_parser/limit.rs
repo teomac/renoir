@@ -1,12 +1,11 @@
 use super::error::IrParseError;
-use super::ir_ast_structure::*;
 use crate::dsl::ir::ast_parser::Rule;
 use pest::iterators::Pair;
 
 pub struct LimitParser;
 
 impl LimitParser {
-    pub fn parse(pair: Pair<Rule>) -> Result<LimitClause, IrParseError> {
+    pub fn parse(pair: Pair<Rule>) -> Result<(i64, Option<i64>), IrParseError> {
         let mut inner = pair.into_inner();
 
         // Parse LIMIT clause
@@ -22,7 +21,7 @@ impl LimitParser {
             None
         };
 
-        Ok(LimitClause { limit, offset })
+        Ok( (limit, offset ))
     }
 
     fn parse_limit(pair: Pair<Rule>) -> Result<i64, IrParseError> {

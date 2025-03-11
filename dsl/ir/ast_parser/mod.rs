@@ -6,13 +6,10 @@ pub mod ir_ast_structure;
 pub mod limit;
 pub mod literal;
 pub mod order;
-pub mod sink;
+pub mod projection;
 pub mod source;
 
-pub use ir_ast_structure::{
-    AggregateFunction, AggregateType, BinaryOp, ColumnRef, ComparisonOp, Condition, FromClause,
-    IrAST, IrLiteral, SelectClause, WhereClause,
-};
+pub use ir_ast_structure::*;
 
 use crate::dsl::ir::ast_parser::builder::IrASTBuilder;
 use crate::dsl::ir::ast_parser::error::IrParseError;

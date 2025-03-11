@@ -6,7 +6,7 @@ use pest::iterators::Pair;
 pub struct ConditionParser;
 
 impl ConditionParser {
-    pub fn parse(pair: Pair<Rule>) -> Result<WhereClause, IrParseError> {
+    pub fn parse(pair: Pair<Rule>) -> Result<FilterClause, IrParseError> {
         let mut inner = pair.into_inner();
 
         // Skip 'where' keyword if present
@@ -16,12 +16,12 @@ impl ConditionParser {
 
         let conditions = inner
             .next()
-            .ok_or_else(|| IrParseError::InvalidInput("Missing where conditions".to_string()))?;
+            .ok_or_else(|| IrParseError::InvalidInput("Missing filter conditions".to_string()))?;
 
         Self::parse_conditions(conditions)
     }
 
-    pub fn parse_conditions(conditions_pair: Pair<Rule>) -> Result<WhereClause, IrParseError> {
+    pub fn parse_conditions(conditions_pair: Pair<Rule>) -> Result<FilterClause, IrParseError> {
         let mut pairs = conditions_pair.into_inner().peekable();
 
         let first = pairs
@@ -29,7 +29,7 @@ impl ConditionParser {
             .ok_or_else(|| IrParseError::InvalidInput("Expected condition".to_string()))?;
 
         let mut left = match first.as_rule() {
-            Rule::where_term => Self::parse_term(first)?,
+            Rule::filter_term => Self::parse_term(first)?,
             Rule::condition => Self::parse_single_condition(first)?,
             _ => {
                 return Err(IrParseError::InvalidInput(format!(
@@ -57,7 +57,7 @@ impl ConditionParser {
             })?;
 
             let right = match right_term.as_rule() {
-                Rule::where_term => Self::parse_term(right_term)?,
+                Rule::filter_term => Self::parse_term(right_term)?,
                 Rule::condition => Self::parse_single_condition(right_term)?,
                 _ => {
                     return Err(IrParseError::InvalidInput(format!(
@@ -67,7 +67,7 @@ impl ConditionParser {
                 }
             };
 
-            left = WhereClause::Expression {
+            left = FilterClause::Expression {
                 left: Box::new(left),
                 binary_op: op,
                 right: Box::new(right),
@@ -77,7 +77,7 @@ impl ConditionParser {
         Ok(left)
     }
 
-    fn parse_term(pair: Pair<Rule>) -> Result<WhereClause, IrParseError> {
+    fn parse_term(pair: Pair<Rule>) -> Result<FilterClause, IrParseError> {
         let mut inner = pair.into_inner();
 
         let first = inner
@@ -100,7 +100,7 @@ impl ConditionParser {
         }
     }
 
-    fn parse_single_condition(condition_pair: Pair<Rule>) -> Result<WhereClause, IrParseError> {
+    fn parse_single_condition(condition_pair: Pair<Rule>) -> Result<FilterClause, IrParseError> {
         let mut inner = condition_pair.into_inner();
 
         // Get the first field
@@ -133,7 +133,7 @@ impl ConditionParser {
                     }
                 };
 
-                Ok(WhereClause::Base(WhereConditionType::Comparison(
+                Ok(FilterClause::Base(FilterConditionType::Comparison(
                     Condition {
                         left_field: Self::parse_arithmetic_expr(first)?,
                         operator,
@@ -159,7 +159,7 @@ impl ConditionParser {
                         }
                     };
 
-                    Ok(WhereClause::Base(WhereConditionType::NullCheck(
+                    Ok(FilterClause::Base(FilterConditionType::NullCheck(
                         NullCondition {
                             field: Self::parse_field_reference(first)?,
                             operator,

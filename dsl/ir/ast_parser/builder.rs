@@ -3,60 +3,99 @@ use super::group::GroupParser;
 use super::ir_ast_structure::*;
 use super::limit::LimitParser;
 use super::order::OrderParser;
-use super::{condition::ConditionParser, sink::SinkParser, source::SourceParser};
+use super::{condition::ConditionParser, projection::ProjectionParser, source::SourceParser};
 use crate::dsl::ir::ast_parser::Rule;
-use crate::dsl::languages::sql::ast_parser::from;
 use pest::iterators::Pairs;
 
 pub struct IrASTBuilder;
 
 impl IrASTBuilder {
-    pub fn build_ast_from_pairs(pairs: Pairs<Rule>) -> Result<IrAST, IrParseError> {
-        let mut ast: IrAST = IrAST {
-            operations: Vec::new(),
-        };
-
+    pub fn build_ast_from_pairs(pairs: Pairs<Rule>) -> Result<Arc<IrPlan>, IrParseError> {
+        let mut current_plan: Option<Arc<IrPlan>> = None;
+        
         // Process each clause in the query
         for pair in pairs {
             match pair.as_rule() {
                 Rule::query => {
                     for clause in pair.into_inner() {
                         match clause.as_rule() {
-                            Rule::from_clause => {
-                                let from_clause = Some(SourceParser::parse(clause)?);
-                                let mut op = Operation::new();
-                                op.from = from_clause;
-                                ast.operations.push(op);
+                            Rule::scan_clause => {
+                                // Parse scan and joins from scan clause
+                                let scan_plan = SourceParser::parse(clause)?;
+                                current_plan = Some(scan_plan);
                             }
-                            Rule::select_clause => {
-                                let select = Some(SinkParser::parse(clause)?);
-                                let mut op = Operation::new();
-                                op.select = select;
-                                ast.operations.push(op);
-                            }
-                            Rule::where_clause => {
-                                let filter = Some(ConditionParser::parse(clause)?);
-                                let mut op = Operation::new();
-                                op.filter = filter;
-                                ast.operations.push(op);
+                            Rule::filter_clause => {
+                                // Build filter on top of current plan
+                                let filter_predicate = ConditionParser::parse(clause)?;
+                                if let Some(input) = current_plan {
+                                    current_plan = Some(Arc::new(IrPlan::filter(
+                                        input, 
+                                        filter_predicate
+                                    )));
+                                } else {
+                                    return Err(IrParseError::InvalidInput(
+                                        "Filter clause before scan clause".to_string()
+                                    ));
+                                }
                             }
                             Rule::group_clause => {
-                                let group_by = Some(GroupParser::parse(clause)?);
-                                let mut op = Operation::new();
-                                op.group_by = group_by;
-                                ast.operations.push(op);
+                                // Build group by on top of current plan  
+                                let group = GroupParser::parse(clause)?;
+                                if let Some(input) = current_plan {
+                                    current_plan = Some(Arc::new(IrPlan::group_by(
+                                        input,
+                                        group.0,
+                                        group.1
+                                    )));
+                                } else {
+                                    return Err(IrParseError::InvalidInput(
+                                        "Group clause before scan clause".to_string()
+                                    ));
+                                }
+                            }
+                            Rule::projection_clause => {
+                                // Build projection on top of current plan
+                                let project = ProjectionParser::parse(clause)?;
+                                if let Some(input) = current_plan {
+                                    current_plan = Some(Arc::new(IrPlan::project(
+                                        input,
+                                        project.0,
+                                        project.1
+                                    )));
+                                } else {
+                                    return Err(IrParseError::InvalidInput(
+                                        "Projection clause before scan clause".to_string()
+                                    ));
+                                }
                             }
                             Rule::order_clause => {
-                                let order_by = Some(OrderParser::parse(clause)?);
-                                let mut op = Operation::new();
-                                op.order_by = order_by;
-                                ast.operations.push(op);
+                                // Build order by on top of current plan
+                                let order = OrderParser::parse(clause)?;
+                                if let Some(input) = current_plan {
+                                    current_plan = Some(Arc::new(IrPlan::order_by(
+                                        input,
+                                        order
+                                    )));
+                                } else {
+                                    return Err(IrParseError::InvalidInput(
+                                        "Order clause before scan clause".to_string()
+                                    ));
+                                }
                             }
                             Rule::limit_expr => {
-                                let limit = Some(LimitParser::parse(clause)?);
-                                let mut op = Operation::new();
-                                op.limit = limit;
-                                ast.operations.push(op);
+                                // Build limit on top of current plan
+                                let limit = LimitParser::parse(clause)?;
+                                if let Some(input) = current_plan {
+                                    current_plan = Some(Arc::new(IrPlan::limit(
+                                        input,
+                                        limit.0,
+                                        limit.1
+                                    )));
+                                } else {
+                                    return Err(IrParseError::InvalidInput(
+                                        "Limit clause before scan clause".to_string()
+                                    ));
+                                }
                             }
                             Rule::EOI => {}
                             _ => {
@@ -72,6 +111,7 @@ impl IrASTBuilder {
             }
         }
 
-        Ok(ast)
+        // Ensure we built a complete plan
+        current_plan.ok_or_else(|| IrParseError::InvalidInput("Empty query".to_string()))
     }
 }

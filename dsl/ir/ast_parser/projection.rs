@@ -4,10 +4,10 @@ use super::literal::LiteralParser;
 use crate::dsl::ir::ast_parser::Rule;
 use pest::iterators::Pair;
 
-pub struct SinkParser;
+pub struct ProjectionParser;
 
-impl SinkParser {
-    pub fn parse(pair: Pair<Rule>) -> Result<SelectClause, IrParseError> {
+impl ProjectionParser {
+    pub fn parse(pair: Pair<Rule>) -> Result<(Vec<ProjectionColumn>, bool), IrParseError> {
         let mut inner = pair.into_inner();
         let mut distinct = false;
 
@@ -29,8 +29,8 @@ impl SinkParser {
             .next()
             .ok_or_else(|| IrParseError::InvalidInput("Missing sink expression".to_string()))?;
 
-        let select_columns = match sink_expr.as_rule() {
-            Rule::asterisk => vec![SelectColumn::Column(
+        let proj_columns = match sink_expr.as_rule() {
+            Rule::asterisk => vec![ProjectionColumn::Column(
                 ColumnRef {
                     table: None,
                     column: "*".to_string(),
@@ -64,14 +64,14 @@ impl SinkParser {
                         // Process the main expression based on its type
                         match expr.as_rule() {
                             Rule::complex_op => Self::parse_complex_operation(expr, alias),
-                            Rule::aggregate_expr => Ok(SelectColumn::Aggregate(
+                            Rule::aggregate_expr => Ok(ProjectionColumn::Aggregate(
                                 Self::parse_aggregate_function(expr)?,
                                 alias,
                             )),
                             Rule::qualified_column => {
-                                Ok(SelectColumn::Column(Self::parse_column_ref(expr)?, alias))
+                                Ok(ProjectionColumn::Column(Self::parse_column_ref(expr)?, alias))
                             }
-                            Rule::identifier => Ok(SelectColumn::Column(
+                            Rule::identifier => Ok(ProjectionColumn::Column(
                                 ColumnRef {
                                     table: None,
                                     column: expr.as_str().to_string(),
@@ -82,7 +82,7 @@ impl SinkParser {
                                 // remove quotes from string
                                 let inner_str = expr.as_str();
                                 let clean_str = inner_str[1..inner_str.len() - 1].to_string();
-                                Ok(SelectColumn::StringLiteral(clean_str))
+                                Ok(ProjectionColumn::StringLiteral(clean_str))
                             }
                             _ => Err(IrParseError::InvalidInput(format!(
                                 "Invalid column expression: {:?}",
@@ -100,10 +100,7 @@ impl SinkParser {
             }
         };
 
-        Ok(SelectClause {
-            distinct,
-            select: select_columns,
-        })
+        Ok((columns, distinct))
     }
 
     fn parse_column_ref(pair: Pair<Rule>) -> Result<ColumnRef, IrParseError> {
@@ -136,7 +133,6 @@ impl SinkParser {
         }
     }
 
-    // Modified to return AggregateFunction directly instead of SelectClause
     fn parse_aggregate_function(pair: Pair<Rule>) -> Result<AggregateFunction, IrParseError> {
         let mut agg = pair.into_inner();
 
@@ -171,11 +167,10 @@ impl SinkParser {
         })
     }
 
-    // Modified to return tuple of components instead of SelectClause
     fn parse_complex_operation(
         pair: Pair<Rule>,
         alias: Option<String>,
-    ) -> Result<SelectColumn, IrParseError> {
+    ) -> Result<ProjectionColumn, IrParseError> {
         let mut pairs = pair.into_inner().peekable();
 
         // Parse first operand
@@ -226,7 +221,7 @@ impl SinkParser {
             };
         }
 
-        Ok(SelectColumn::ComplexValue(left_field, alias))
+        Ok(ProjectionColumn::ComplexValue(left_field, alias))
     }
 
     fn parse_parenthesized_expr(pair: Pair<Rule>) -> Result<ComplexField, IrParseError> {
@@ -240,7 +235,7 @@ impl SinkParser {
             .ok_or_else(|| IrParseError::InvalidInput("Empty parentheses".to_string()))?;
 
         match expr.as_rule() {
-            Rule::select_expr => {
+            Rule::projection_expr => {
                 let inner_expr = expr
                     .into_inner()
                     .next()
@@ -248,7 +243,7 @@ impl SinkParser {
 
                 match inner_expr.as_rule() {
                     Rule::complex_op => {
-                        if let SelectColumn::ComplexValue(left_field, _) =
+                        if let ProjectionColumn::ComplexValue(left_field, _) =
                             Self::parse_complex_operation(inner_expr, None)?
                         {
                             Ok(left_field)

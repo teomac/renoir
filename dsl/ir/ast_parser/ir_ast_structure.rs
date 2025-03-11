@@ -1,119 +1,67 @@
+// New IrAST structure following Polars approach
+use std::sync::Arc;
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum IrPlan {
+    // Source operations
+    Scan {
+        stream_name: String,
+        alias: Option<String>,
+        input_source: String,
+    },
+    
+    // Transformation operations
+    Filter {
+        input: Arc<IrPlan>,
+        predicate: FilterClause,
+    },
+    
+    Project {
+        input: Arc<IrPlan>,
+        columns: Vec<ProjectionColumn>,
+        distinct: bool,
+    },
+    
+    GroupBy {
+        input: Arc<IrPlan>,
+        keys: Vec<ColumnRef>,
+        group_condition: Option<GroupClause>,
+    },
+    
+    Join {
+        left: Arc<IrPlan>,
+        right: Arc<IrPlan>,
+        condition: Vec<JoinCondition>,
+        join_type: JoinType,
+    },
+    
+    OrderBy {
+        input: Arc<IrPlan>,
+        items: Vec<OrderByItem>,
+    },
+    
+    Limit {
+        input: Arc<IrPlan>,
+        limit: i64,
+        offset: Option<i64>,
+    },
+}
+
+// Supporting structures
 #[derive(Debug, PartialEq, Clone)]
-pub struct IrAST {
-    pub operations: Vec<Operation>,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct  Operation {
-    pub from: Option<FromClause>,
-    pub select: Option<SelectClause>,
-    pub filter: Option<WhereClause>,
-    pub group_by: Option<Group>,
-    pub order_by: Option<OrderByClause>,
-    pub limit: Option<LimitClause>,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct FromClause {
-    pub scan: ScanClause,
-    pub joins: Option<Vec<JoinClause>>,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct ScanClause {
-    pub stream_name: String,
-    pub alias: Option<String>,
-    pub input_source: String,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct JoinClause {
-    pub join_type: JoinType,
-    pub join_scan: ScanClause,
-    pub condition: JoinCondition,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum JoinType {
-    Inner,
-    Left,
-    Outer,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct JoinCondition {
-    pub conditions: Vec<JoinPair>,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct JoinPair {
-    pub left_col: ColumnRef,
-    pub right_col: ColumnRef,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct SelectClause {
-    pub distinct: bool,
-    pub select: Vec<SelectColumn>,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum SelectColumn {
-    Column(ColumnRef, Option<String>), // Added Option<String> for alias
-    Aggregate(AggregateFunction, Option<String>), // Added Option<String> for alias
-    ComplexValue(ComplexField, Option<String>), // Added Option<String> for alias
-    StringLiteral(String),
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct ComplexField {
-    pub column_ref: Option<ColumnRef>,
-    pub literal: Option<IrLiteral>,
-    pub aggregate: Option<AggregateFunction>,
-    pub nested_expr: Option<Box<(ComplexField, String, ComplexField)>>,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct AggregateFunction {
-    pub function: AggregateType,
-    pub column: ColumnRef,
-}
-
-#[derive(Debug, PartialEq, Clone, Eq, Hash)]
-pub struct ColumnRef {
-    pub table: Option<String>,
-    pub column: String,
-}
-
-#[derive(Debug, PartialEq, Clone, Eq, Hash)]
-pub enum AggregateType {
-    Max,
-    Min,
-    Avg,
-    Count,
-    Sum,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum WhereClause {
-    Base(WhereConditionType),
+pub enum FilterClause {
+    Base(FilterConditionType),
     Expression {
-        left: Box<WhereClause>,
+        left: Box<FilterClause>,
         binary_op: BinaryOp,
-        right: Box<WhereClause>,
+        right: Box<FilterClause>,
     },
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum WhereConditionType {
+pub enum FilterConditionType {
     Comparison(Condition),
     NullCheck(NullCondition),
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct Group {
-    pub columns: Vec<ColumnRef>,
-    pub group_condition: Option<GroupClause>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -132,6 +80,78 @@ pub enum GroupBaseCondition {
     NullCheck(NullCondition),
 }
 
+#[derive(Debug, PartialEq, Clone)]
+pub struct JoinCondition {
+    pub left_col: ColumnRef,
+    pub right_col: ColumnRef,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum JoinType {
+    Inner,
+    Left,
+    Outer,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum ProjectionColumn {
+    Column(ColumnRef, Option<String>),
+    Aggregate(AggregateFunction, Option<String>),
+    ComplexValue(ComplexField, Option<String>),
+    StringLiteral(String),
+}
+
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
+pub struct ColumnRef {
+    pub table: Option<String>,
+    pub column: String,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct AggregateFunction {
+    pub function: AggregateType,
+    pub column: ColumnRef,
+}
+
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
+pub enum AggregateType {
+    Max,
+    Min,
+    Avg,
+    Count,
+    Sum,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct ComplexField {
+    pub column_ref: Option<ColumnRef>,
+    pub literal: Option<IrLiteral>,
+    pub aggregate: Option<AggregateFunction>,
+    pub nested_expr: Option<Box<(ComplexField, String, ComplexField)>>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum IrLiteral {
+    Integer(i64),
+    Float(f64),
+    String(String),
+    Boolean(bool),
+    ColumnRef(ColumnRef),
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct OrderByItem {
+    pub column: ColumnRef,
+    pub direction: OrderDirection,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum OrderDirection {
+    Asc,
+    Desc,
+}
+
+// Additional structures for conditions
 #[derive(Debug, PartialEq, Clone)]
 pub struct Condition {
     pub left_field: ComplexField,
@@ -156,47 +176,50 @@ pub enum ComparisonOp {
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum BinaryOp {
-    And,
-    Or,
-}
-
-#[derive(Debug, PartialEq, Clone)]
 pub enum NullOp {
     IsNull,
     IsNotNull,
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum IrLiteral {
-    Integer(i64),
-    Float(f64),
-    String(String),
-    Boolean(bool),
-    ColumnRef(ColumnRef),
+pub enum BinaryOp {
+    And,
+    Or,
 }
 
-#[derive(Debug, PartialEq, Clone)]
-pub struct LimitClause {
-    pub limit: i64,
-    pub offset: Option<i64>,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct OrderByClause {
-    pub items: Vec<OrderByItem>,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct OrderByItem {
-    pub column: ColumnRef,
-    pub direction: OrderDirection,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum OrderDirection {
-    Asc,
-    Desc,
+// Implementation of helper methods for the new structure
+impl IrPlan {
+    // Convenience method to create a scan operation
+    pub fn scan(stream_name: String, alias: Option<String>, input_source: String) -> Self {
+        IrPlan::Scan { stream_name, alias, input_source }
+    }
+    
+    // Convenience method to create a filter operation
+    pub fn filter(input: Arc<IrPlan>, predicate: FilterClause) -> Self {
+        IrPlan::Filter { input, predicate }
+    }
+    
+    // Convenience method to create a project operation
+    pub fn project(input: Arc<IrPlan>, columns: Vec<ProjectionColumn>, distinct: bool) -> Self {
+        IrPlan::Project { input, columns, distinct }
+    }
+    
+    // Similar convenience methods for other operations
+    pub fn group_by(input: Arc<IrPlan>, keys: Vec<ColumnRef>, group_condition: Option<GroupClause>) -> Self {
+        IrPlan::GroupBy { input, keys, group_condition }
+    }
+    
+    pub fn order_by(input: Arc<IrPlan>, items: Vec<OrderByItem>) -> Self {
+        IrPlan::OrderBy { input, items }
+    }
+    
+    pub fn limit(input: Arc<IrPlan>, limit: i64, offset: Option<i64>) -> Self {
+        IrPlan::Limit { input, limit, offset }
+    }
+    
+    pub fn join(left: Arc<IrPlan>, right: Arc<IrPlan>, condition: Vec<JoinCondition>, join_type: JoinType) -> Self {
+        IrPlan::Join { left, right, condition, join_type }
+    }
 }
 
 impl ColumnRef {

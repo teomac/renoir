@@ -50,11 +50,11 @@ impl LiteralParser {
     pub fn parse_column_ref(column_ref: &str) -> Result<IrLiteral, IrParseError> {
         let parts: Vec<&str> = column_ref.split('.').collect();
         match parts.len() {
-            1 => Ok(IrLiteral::ColumnRef(super::ir_ast_structure::ColumnRef {
+            1 => Ok(IrLiteral::ColumnRef(super::ir_ast_structure_old::ColumnRef {
                 table: None,
                 column: parts[0].to_string(),
             })),
-            2 => Ok(IrLiteral::ColumnRef(super::ir_ast_structure::ColumnRef {
+            2 => Ok(IrLiteral::ColumnRef(super::ir_ast_structure_old::ColumnRef {
                 table: Some(parts[0].to_string()),
                 column: parts[1].to_string(),
             })),
