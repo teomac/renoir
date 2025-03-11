@@ -16,12 +16,14 @@ use crate::dsl::ir::ast_parser::error::IrParseError;
 use pest::Parser;
 use pest_derive::Parser;
 
+use std::sync::Arc;
+
 #[derive(Parser)]
 #[grammar = "dsl/ir/ir_grammar.pest"]
 pub struct IrParser;
 
 impl IrParser {
-    pub fn parse_query(input: &str) -> Result<IrAST, IrParseError> {
+    pub fn parse_query(input: &str) -> Result<Arc<IrPlan>, IrParseError> {
         let pairs = Self::parse(Rule::query, input).map_err(|e| IrParseError::PestError(e))?;
 
         let ast = IrASTBuilder::build_ast_from_pairs(pairs)?;

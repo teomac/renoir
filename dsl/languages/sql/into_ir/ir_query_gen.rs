@@ -95,25 +95,27 @@ impl SqlToIr {
 
     // Helper method to handle the FROM clause with subqueries
     fn from_clause_to_string(from_clause: &FromClause) -> String {
+        let mut stream_index = 0;
         let mut from_str = match &from_clause.scan {
             FromSource::Table(scan_clause) => match &scan_clause.alias {
-                Some(alias) => format!("from {} as {} in input1", scan_clause.variable, alias),
-                None => format!("from {} in input1", scan_clause.variable),
+                Some(alias) => format!("from {} as {} in stream{}", scan_clause.variable, alias, stream_index),
+                None => format!("from {} in stream{}", scan_clause.variable, stream_index),
             },
             FromSource::Subquery(subquery, alias) => {
                 let subquery_str = Self::convert(subquery);
                 match alias {
-                    Some(alias_name) => format!("from ({}) as {} in input1", subquery_str, alias_name),
-                    None => format!("from ({}) in input1", subquery_str),
+                    Some(alias_name) => format!("from ({}) as {} in stream{}", subquery_str, alias_name, stream_index),
+                    None => format!("from ({}) in stream{}", subquery_str, stream_index),
                 }
             }
         };
 
+        stream_index += 1;
+
         // iterate over join(s)
         if let Some(joins) = &from_clause.joins {
-            for (i, join) in joins.iter().enumerate() {
-                let input_num = i + 2;
-                
+            for join in joins.iter() {
+               
                 let join_source = match &join.join_scan {
                     FromSource::Table(scan_clause) => match &scan_clause.alias {
                         Some(alias) => format!("{} as {}", scan_clause.variable, alias),
@@ -143,12 +145,14 @@ impl SqlToIr {
                 };
 
                 from_str.push_str(&format!(
-                    " {}join {} in input{} on {}",
+                    " {}join {} in stream{} on {}",
                     join_type_str,
                     join_source,
-                    input_num,
+                    stream_index,
                     conditions.join(" && ")
                 ));
+
+                stream_index += 1;
             }
         }
         

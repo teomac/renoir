@@ -6,6 +6,7 @@ use super::order::OrderParser;
 use super::{condition::ConditionParser, projection::ProjectionParser, source::SourceParser};
 use crate::dsl::ir::ast_parser::Rule;
 use pest::iterators::Pairs;
+use std::sync::Arc;
 
 pub struct IrASTBuilder;
 

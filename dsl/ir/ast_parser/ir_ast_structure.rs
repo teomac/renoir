@@ -275,16 +275,3 @@ impl ComplexField {
         }
     }
 }
-
-impl Operation {
-    pub fn new() -> Self {
-        Operation {
-            from: None,
-            select: None,
-            filter: None,
-            group_by: None,
-            order_by: None,
-            limit: None,
-        }
-    }
-}

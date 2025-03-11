@@ -1,9 +1,11 @@
 use crate::dsl::ir::{
-    ir_ast_structure::{AggregateType, ComplexField, JoinClause, SelectColumn},
+    ir_ast_structure::{AggregateType, ComplexField, ProjectionColumn},
     r_utils::check_alias,
-    ColumnRef, IrAST, IrLiteral,
+    ColumnRef, IrPlan, IrLiteral,
 };
 use indexmap::IndexMap;
+use core::panic;
+use std::sync::Arc;
 
 use super::support_structs::StreamInfo;
 
@@ -22,7 +24,7 @@ pub struct QueryObject {
 
     pub has_join: bool, // true if the query has a join
     pub output_path: String, //output path
-    pub ir_ast: Option<IrAST>, //ir ast
+    pub ir_ast: Option<Arc<IrPlan>>, //ir ast
     pub result_column_types: IndexMap<String, String>, // key: result column name, value: data type
 
     //ex. SELECT power * total_km AS product FROM table1
@@ -122,7 +124,7 @@ impl QueryObject {
     }
 
     // setter for ir_ast
-    pub fn set_ir_ast(&mut self, ir_ast: &IrAST) {
+    pub fn set_ir_ast(&mut self, ir_ast: &Arc<IrPlan>) {
         self.ir_ast = Some(ir_ast.clone());
     }
 
@@ -236,104 +238,60 @@ impl QueryObject {
     }
 
     //method to populate the QueryObject with the necessary information
-    pub fn populate(mut self, ir_ast: &IrAST) -> Self {
-        //insert the ir ast
-        let mut ir_ast_edit = ir_ast.clone();
-        let mut joins_vec: Vec<JoinClause> = Vec::new();
-
-        // Check if query has join
-        match ir_ast.from.joins.clone() {
-            Some(joins) => {
-                self.has_join = true;
-                joins_vec = joins.clone();
-            }
-            None => {
-                self.has_join = false;
-            }
-        }
+    pub fn populate(mut self, ir_ast: &Arc<IrPlan>) -> Self {      
+        self.set_ir_ast(ir_ast);  
+        // Collect all Scan and Join nodes
+        let mut scans = Self::collect_scan_nodes(&ir_ast);
+        scans.reverse();
 
         //////////////////////////////
         // main table focus
 
         // Add main table
-        let main_table = ir_ast.from.scan.stream_name.clone();
+        let main_scan: &Arc<IrPlan> = scans.first().unwrap();
+
+        let (main_table, main_stream, main_alias) = match &**main_scan {
+            IrPlan::Scan {
+                input_source,
+                stream_name,
+                alias,
+            } => (input_source, stream_name, alias),
+            _ => panic!("Error: this is not a scan node"),
+        };
+
         //check if the table is present in the list
-        if self.tables_info.get(&main_table).is_none() {
+        if self.tables_info.get(main_table).is_none() {
             panic!("Table {} is not present in the list of tables.", main_table);
         }
-
-        let mut main_table_alias = String::new();
-        //check if the alias exists.
-        if let Some(alias) = &ir_ast.from.scan.alias {
-            main_table_alias = alias.clone();
-        }
-
-        let first_stream_name = "stream0".to_string();
+    
 
         //create the first stream
         //if there is no join
-        if !self.has_join {
-            self.create_new_stream(&first_stream_name, &main_table, &main_table_alias);
-        } else {
-            //if there is a join, we insert the table alias or table name as alias
-
-            self.create_new_stream(
-                &first_stream_name,
-                &main_table,
-                if main_table_alias.is_empty() {
-                    &main_table
-                } else {
-                    &main_table_alias
-                },
-            );
-
-            //also we update the ir_ast_edit with the correct alias
-            if main_table_alias.is_empty() {
-                ir_ast_edit.from.scan.alias = Some(main_table.clone());
-            } else {
-                ir_ast_edit.from.scan.alias = Some(main_table_alias.clone());
-            }
-        }
-        //now we substitute the main table with the first stream name in the IR AST
-        ir_ast_edit.from.scan.stream_name = first_stream_name.clone();
+  
+        self.create_new_stream(&main_stream, &main_table, &main_alias.clone().unwrap_or(String::new()));
 
         //////////////////////////////////////////////
 
         //now let's start processing the joins
+        for scan in scans.iter().skip(1) {
 
-        // Add all joined tables
-        for (i, join) in joins_vec.iter_mut().enumerate() {
-            let join_table = join.join_scan.stream_name.clone();
-            let join_alias = if join.join_scan.alias.is_some() {
-                join.join_scan.alias.clone().unwrap()
-            } else {
-                join_table.to_string()
+            let (join_table, join_stream, join_alias) = match &**scan {
+                IrPlan::Scan {
+                    input_source,
+                    stream_name,
+                    alias,
+                } => (input_source, stream_name, alias),
+                _ => panic!("Error: this is not a scan node"),
             };
 
             //check if the table is in the tables_info
-            if self.tables_info.get(&join_table).is_none() {
+            if self.tables_info.get(join_table).is_none() {
                 panic!("Table {} is not present in the list of tables.", join_table);
             }
 
-            //check if the alias is valid
-            if !self.is_alias_valid(&join_alias) {
-                panic!("Alias {} is not valid.", join_alias);
-            }
-
             //create the stream
-            let stream_name = format!("stream{}", i + 1);
-            self.create_new_stream(&stream_name, &join_table, &join_alias);
-
-            //now let's substitute the table with the stream name in the IR AST
-            join.join_scan.stream_name = stream_name.clone();
-            //and the alias
-            join.join_scan.alias = Some(join_alias.clone());
+            self.create_new_stream(&join_stream, &join_table, &join_alias.clone().unwrap_or_else(|| panic!("Alias not found for table {}", join_table)));
         }
-
-        ir_ast_edit.from.joins = Some(joins_vec.clone());
-
-        //let's update the IR AST after edits
-        self.set_ir_ast(&ir_ast_edit);
 
         //////////////////////////////////////////////
         //manipulate the tables_info object.
@@ -350,7 +308,7 @@ impl QueryObject {
 
         for table in tables_info_keys.iter() {
             //if the table is not in the stream_tables, remove it from the tables_info object
-            if table != &main_table && !stream_tables.contains(table) {
+            if table != main_table && !stream_tables.contains(table) {
                 temp_tables_info.shift_remove(table);
             }
         }
@@ -416,13 +374,20 @@ impl QueryObject {
             ));
         }
 
+        self
+    }
+
+        ////////////////////////////////////////////////////////////////
+
+        /*
+
         // Populate the result column types based on select clauses
         if let Some(ref ir_ast) = self.ir_ast {
             let mut used_names = std::collections::HashSet::new();
 
             for select_clause in &ir_ast.select.select {
                 match select_clause {
-                    SelectColumn::Column(col_ref, alias) => {
+                    ProjectionColumn::Column(col_ref, alias) => {
                         // Handle SELECT * case
                         if col_ref.column == "*" {
                             // Check if there's a GROUP BY clause
@@ -538,7 +503,7 @@ impl QueryObject {
                         }
                     }
 
-                    SelectColumn::Aggregate(agg_func, alias) => {
+                    ProjectionColumn::Aggregate(agg_func, alias) => {
                         //check if the column is valid
                         let stream_name = if agg_func.column.table.is_some() {
                             self.get_stream_from_alias(agg_func.column.table.as_ref().unwrap())
@@ -619,7 +584,7 @@ impl QueryObject {
                         self.result_column_types.insert(col_name, col_type);
                     }
 
-                    SelectColumn::ComplexValue(col_ref, alias) => {
+                    ProjectionColumn::ComplexValue(col_ref, alias) => {
                         let result_type = self.get_complex_field_type(col_ref);
                         let col_name = if let Some(alias_name) = alias {
                             self.get_unique_name(alias_name, &mut used_names)
@@ -649,7 +614,7 @@ impl QueryObject {
 
                         self.result_column_types.insert(col_name, result_type);
                     }
-                    SelectColumn::StringLiteral(value) => {
+                    ProjectionColumn::StringLiteral(value) => {
                         let col_name = self.get_unique_name(value, &mut used_names);
                         self.result_column_types
                             .insert(col_name, "String".to_string());
@@ -658,7 +623,7 @@ impl QueryObject {
             }
         }
         self
-    }
+    }*/
 
     // Helper method to generate unique column names
     fn get_unique_name(
@@ -776,5 +741,47 @@ impl QueryObject {
                 panic!("Column {} does not exist in any table", col_to_check);
             }
         }
+    }
+
+    fn collect_scan_nodes(plan: &Arc<IrPlan>) -> Vec<Arc<IrPlan>> {
+        let mut scans = Vec::new();
+        
+        match &**plan {
+            IrPlan::Scan { .. } => {
+                scans.push(plan.clone());
+            }
+            IrPlan::Join { left, right, .. } => {
+                // Recursively check both sides of join
+                let left_scans = Self::collect_scan_nodes(left);
+                let right_scans = Self::collect_scan_nodes(right);
+                scans.extend(left_scans);
+                scans.extend(right_scans);
+            }
+            IrPlan::Filter { input, .. } |
+            IrPlan::Project { input, .. } |
+            IrPlan::GroupBy { input, .. } |
+            IrPlan::OrderBy { input, .. } |
+            IrPlan::Limit { input, .. } => {
+                // Recursively check input
+                let mut input_scans = Self::collect_scan_nodes(input);
+                scans.extend(input_scans);
+            }
+        }
+        
+
+
+        //SELECT name, (SELECT name FROM table4)
+        // FROM TABLE 1 JOIN TABLE2 ON ...
+        // JOIN TABLE3 ON ..
+
+
+
+
+
+
+
+
+
+        scans
     }
 }

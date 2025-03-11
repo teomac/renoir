@@ -2,11 +2,14 @@ use super::error::IrParseError;
 use super::ir_ast_structure::*;
 use crate::dsl::ir::ast_parser::Rule;
 use pest::iterators::Pair;
-
+use std::sync::Arc;
 pub struct SourceParser;
 
 impl SourceParser {
     pub fn parse(pair: Pair<Rule>) -> Result<Arc<IrPlan>, IrParseError> {
+        let has_join = pair.as_str().contains("join");
+
+
         let mut inner = pair.into_inner();
 
         // Skip 'scan' keyword if present
@@ -18,7 +21,7 @@ impl SourceParser {
         let scan_expr = inner
             .next()
             .ok_or_else(|| IrParseError::InvalidInput("Missing source expression".to_string()))?;
-        let mut current_plan = Arc::new(Self::parse_scan(scan_expr)?);
+        let mut current_plan = Arc::new(Self::parse_scan(scan_expr, has_join)?);
 
         // Process any joins
         while let Some(pair) = inner.next() {
@@ -50,7 +53,7 @@ impl SourceParser {
             let join_scan_expr = inner
                 .next()
                 .ok_or_else(|| IrParseError::InvalidInput("Missing join stream".to_string()))?;
-            let right_plan = Arc::new(Self::parse_scan(join_scan_expr)?);
+            let right_plan = Arc::new(Self::parse_scan(join_scan_expr, has_join)?);
 
             // Expect and skip 'on' keyword
             if inner.next().map_or(true, |p| p.as_str() != "on") {
@@ -75,16 +78,16 @@ impl SourceParser {
         Ok(current_plan)
     }
 
-    fn parse_scan(pair: Pair<Rule>) -> Result<IrPlan, IrParseError> {
+    fn parse_scan(pair: Pair<Rule>, has_join: bool) -> Result<IrPlan, IrParseError> {
         let mut inner = pair.into_inner();
-        let stream_name = inner
+        let table_name = inner
             .next()
             .ok_or_else(|| IrParseError::InvalidInput("Missing stream name".to_string()))?
             .as_str()
             .to_string();
 
         let mut alias = None;
-        let mut input_source = None;
+        let mut stream_input = None;
 
         while let Some(pair) = inner.next() {
             match pair.as_rule() {
@@ -94,21 +97,27 @@ impl SourceParser {
                     }
                 }
                 Rule::stream_input => {
-                    input_source = Some(pair.as_str().to_string());
+                    stream_input = Some(pair.as_str().to_string());
                 }
                 _ => {} // Skip other tokens
             }
         }
 
         // Input source is required
-        let input_source = input_source.ok_or_else(|| {
-            IrParseError::InvalidInput("Missing input source".to_string())
-        })?;
+        if stream_input.is_none() {
+            return Err(IrParseError::InvalidInput(
+                "Missing input source for stream".to_string(),
+            ));
+        }
+
+        if alias.is_none() && has_join{
+            alias = Some(table_name.clone());
+        }
 
         Ok(IrPlan::Scan {
-            stream_name,
+            stream_name: stream_input.unwrap(),
             alias,
-            input_source,
+            input_source: table_name, 
         })
     }
 

@@ -100,7 +100,7 @@ impl ProjectionParser {
             }
         };
 
-        Ok((columns, distinct))
+        Ok((proj_columns, distinct))
     }
 
     fn parse_column_ref(pair: Pair<Rule>) -> Result<ColumnRef, IrParseError> {
