@@ -1,5 +1,5 @@
 use core::panic;
-use crate::dsl::ir::ir_ast_structure_old::{ComplexField, SelectColumn};
+use crate::dsl::ir::ir_ast_structure::{ComplexField, ProjectionColumn};
 use crate::dsl::ir::IrLiteral;
 use crate::dsl::struct_object::object::QueryObject;
 use crate::dsl::ir::r_sink::base::r_sink_utils::*;
@@ -30,14 +30,16 @@ use crate::dsl::ir::r_sink::base::r_sink_base_agg::create_aggregate_map;
 ///
 
 pub fn process_projections(
-    select_clauses: &Vec<SelectColumn>,
+    projections: &Vec<ProjectionColumn>,
+    distinct: &bool,
+    stream_name: &String,
     query_object: &mut QueryObject,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut final_string = String::new();
     // Check for SELECT * case
-    if select_clauses.len() == 1 {
-        match &select_clauses[0] {
-            SelectColumn::Column(col_ref, _) if col_ref.column == "*" => {
+    if projections.len() == 1 {
+        match &projections[0] {
+            ProjectionColumn::Column(col_ref, _) if col_ref.column == "*" => {
                 final_string = create_select_star_map(query_object);
             }
             _ => {}
@@ -51,16 +53,16 @@ pub fn process_projections(
         return Ok(());
     }
     // Check if any aggregations are present using recursive traversal
-    let has_aggregates: bool = select_clauses.iter().any(|clause| match clause {
-        SelectColumn::Aggregate(_, _) => true,
-        SelectColumn::ComplexValue(field, _) => has_aggregate_in_complex_field(field),
+    let has_aggregates: bool = projections.iter().any(|clause| match clause {
+        ProjectionColumn::Aggregate(_, _) => true,
+        ProjectionColumn::ComplexValue(field, _) => has_aggregate_in_complex_field(field),
         _ => false,
     });
 
     if has_aggregates {
-        final_string = create_aggregate_map(select_clauses, query_object);
+        final_string = create_aggregate_map(projections, query_object);
     } else {
-        final_string = create_simple_map(select_clauses, query_object);
+        final_string = create_simple_map(projections, query_object);
     }
 
     let stream_name = query_object.streams.keys().cloned().collect::<Vec<String>>()[0].clone();

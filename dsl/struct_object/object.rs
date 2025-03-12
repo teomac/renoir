@@ -1,6 +1,6 @@
 use crate::dsl::ir::{
     ir_ast_structure::{AggregateType, ComplexField},
-    ColumnRef, IrPlan, IrLiteral,
+    ColumnRef, IrPlan, IrLiteral, ProjectionColumn
 };
 use indexmap::IndexMap;
 use core::panic;
@@ -49,6 +49,9 @@ pub struct QueryObject {
 
     pub order_by_string: String, //order by string
     pub limit_string: String, //limit string
+
+    pub projection_agg: Vec<ProjectionColumn>, //projection aggregates. 
+    //Here we store ONLY the aggregates in the final projection, that we will need to generate the fold in case of a group by 
    
 }
 
@@ -66,6 +69,7 @@ impl QueryObject {
             ir_ast: None,
             order_by_string: String::new(),
             limit_string: String::new(),
+            projection_agg: Vec::new(),
         }
     }
 
@@ -377,6 +381,73 @@ impl QueryObject {
 
         self
     }
+
+/// Collects ONLY aggregates from the final projection
+/// This is Phase 1 of result mapping population, focusing only on gathering aggregates
+/// before AST parsing for GROUP BY processing
+pub fn collect_projection_aggregates(&mut self, ir_ast: &Arc<IrPlan>) {
+        match &**ir_ast {
+            IrPlan::Project { columns, .. } => {
+                self.projection_agg.clear(); // Ensure we start with empty vec
+
+                // If this is a SELECT *, we don't need to process as it won't contain aggregates
+                if columns.len() == 1 {
+                    if let ProjectionColumn::Column(col_ref, _) = &columns[0] {
+                        if col_ref.column == "*" {
+                            return;
+                        }
+                    }
+                }
+
+                // Process each projection to find and collect aggregates
+                for projection in columns {
+                    match projection {
+                        ProjectionColumn::Aggregate(ref agg, ref alias) => {
+                            // Direct aggregate in projection - add it
+                            self.projection_agg.push(ProjectionColumn::Aggregate(
+                                agg.clone(), 
+                                alias.clone()
+                            ));
+                        }
+                        ProjectionColumn::ComplexValue(ref field, ref alias) => {
+                            // Find all aggregates in complex expressions
+                            self.collect_aggregates_from_complex_field(
+                                field, 
+                                alias.clone()
+                            );
+                        }
+                        _ => continue, // Other projection types don't contain aggregates
+                    }
+                }
+            }
+            _ => panic!("Expected Project node at the root of the AST"),
+        
+    }
+}
+
+// Helper function to collect aggregates from complex fields
+fn collect_aggregates_from_complex_field(
+    &mut self,
+    field: &ComplexField,
+    alias: Option<String>
+) {
+    if let Some(ref agg) = field.aggregate {
+        // Found an aggregate, add it
+        self.projection_agg.push(ProjectionColumn::Aggregate(
+            agg.clone(), 
+            alias.clone()
+        ));
+    }
+
+    // Check nested expressions recursively
+    if let Some(ref nested) = field.nested_expr {
+        let (left, _, right) = &**nested;
+        self.collect_aggregates_from_complex_field(left, alias.clone());
+        self.collect_aggregates_from_complex_field(right, alias.clone());
+    }
+}
+
+
 
         ////////////////////////////////////////////////////////////////
 
@@ -705,45 +776,6 @@ impl QueryObject {
         }
     }
 
-    pub fn check_column_validity(&self, col_ref: &ColumnRef, stream_name: &String) {
-        //check if the col ref corresponds to a real column
-        let col_to_check = col_ref.column.clone();
-        if col_ref.table.is_some() {
-            let alias = col_ref.table.as_ref().unwrap();
-
-            //check if the alias corresponds to the actual stream
-            if self.alias_to_stream.contains_key(alias) {
-                if self.alias_to_stream.get(alias).unwrap() != stream_name {
-                    panic!(
-                        "Alias {} does not correspond to the actual stream. Stream name: {}",
-                        alias, stream_name
-                    );
-                }
-            }
-
-            //get the struct map for the table
-            let table_name = self.get_stream(stream_name).source_table.clone();
-            let struct_map = self.tables_info.get(&table_name).unwrap_or_else(|| {
-                panic!("Error in retrieving struct_map for table {}.", alias);
-            });
-            if !struct_map.contains_key(&col_to_check) {
-                panic!("Column {} does not exist in table {}", col_to_check, alias);
-            }
-        } else {
-            let mut found = false;
-            if !stream_name.is_empty() {
-                let table = self.get_stream(stream_name).source_table.clone();
-                let struct_map = self.tables_info.get(&table).unwrap();
-                if struct_map.contains_key(&col_to_check) {
-                    found = true;
-                }
-            }
-            if !found {
-                panic!("Column {} does not exist in any table", col_to_check);
-            }
-        }
-    }
-
     fn collect_scan_nodes(plan: &Arc<IrPlan>) -> Vec<Arc<IrPlan>> {
         let mut scans = Vec::new();
         
@@ -764,7 +796,7 @@ impl QueryObject {
             IrPlan::OrderBy { input, .. } |
             IrPlan::Limit { input, .. } => {
                 // Recursively check input
-                let mut input_scans = Self::collect_scan_nodes(input);
+                let input_scans = Self::collect_scan_nodes(input);
                 scans.extend(input_scans);
             }
         }

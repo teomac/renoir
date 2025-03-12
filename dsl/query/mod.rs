@@ -99,6 +99,7 @@ pub fn query_csv(
     let ir_query = sql_to_ir(query_str);
     let ir_ast = query_ir_to_ast(&ir_query);
     query_object = query_object.populate(&ir_ast);
+    query_object.collect_projection_aggregates(&ir_ast);
 
     //println!("Ir AST: {:?}", query_object.ir_ast);
 

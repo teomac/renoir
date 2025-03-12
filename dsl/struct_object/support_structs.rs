@@ -1,6 +1,6 @@
 use indexmap::IndexMap;
 use crate::dsl::struct_object::object::QueryObject;
-use crate::dsl::ir::JoinType;
+use crate::dsl::ir::{ColumnRef, JoinType};
 
 #[derive(Debug, Clone)]
 pub struct StreamInfo {
@@ -10,7 +10,7 @@ pub struct StreamInfo {
     pub columns: IndexMap<String, String>,    // Column name → type mappings
     pub access: AccessPath,                   // Access path for tuple
     pub is_keyed: bool,                        // Whether the stream is keyed
-    pub key_columns: Vec<String>,              // Key columns
+    pub key_columns: Vec<ColumnRef>,              // Key columns
     pub op_chain: Vec<String>,                  // Operator chain
     pub final_struct: IndexMap<String, String>, // Final structure of the stream
     pub final_struct_name: String,              // Name of the final structure
@@ -80,7 +80,7 @@ impl StreamInfo {
         self.is_keyed = is_keyed;
     }
 
-    pub fn update_key_columns(&mut self, key_columns: Vec<String>) {
+    pub fn update_key_columns(&mut self, key_columns: Vec<ColumnRef>) {
         self.key_columns = key_columns;
     }
 

@@ -1,7 +1,8 @@
 use crate::dsl::{
     ir::{
         ast_parser::ir_ast_structure::IrPlan,
-        into_renoir::{r_condition::process_filter_clause, r_group::r_group_keys::process_group_by, r_sink::base::r_sink_base::process_projections, r_join::*, r_limit::*, r_order::*}, ir_ast_structure_old::Operation
+        into_renoir::{r_condition::process_filter_clause, r_group::r_group_keys::process_group_by, 
+            r_sink::base::r_sink_base::process_projections, r_join::*, r_limit::*, r_order::*}, 
     },
     struct_object::object::QueryObject,
 };
@@ -25,7 +26,7 @@ impl IrToRenoir {
             },
             IrPlan::Project { input, columns, distinct } => {
                 let stream_name = Self::convert(input, query_object)?;
-                process_projections(columns, &stream_name, query_object)?;
+                process_projections(columns, distinct, &stream_name, query_object)?;
                 Ok(stream_name)
             },
             IrPlan::GroupBy { input, keys, group_condition } => {
@@ -64,7 +65,7 @@ impl IrToRenoir {
             IrPlan::Limit { input, limit, offset } => {
                 let stream_name = Self::convert(input, query_object)?;
                 // Store for output phase
-                process_limit(offset, *limit, query_object);
+                process_limit(*offset, *limit, query_object);
                 Ok(stream_name)
             }
         }
