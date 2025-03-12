@@ -31,7 +31,6 @@ use crate::dsl::ir::r_sink::base::r_sink_base_agg::create_aggregate_map;
 
 pub fn process_projections(
     projections: &Vec<ProjectionColumn>,
-    distinct: &bool,
     stream_name: &String,
     query_object: &mut QueryObject,
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -40,7 +39,7 @@ pub fn process_projections(
     if projections.len() == 1 {
         match &projections[0] {
             ProjectionColumn::Column(col_ref, _) if col_ref.column == "*" => {
-                final_string = create_select_star_map(query_object);
+                final_string = create_select_star_map(stream_name, query_object);
             }
             _ => {}
         }
@@ -75,15 +74,15 @@ pub fn process_projections(
 
 
 
-fn create_select_star_map(query_object: &QueryObject) -> String {
+fn create_select_star_map(stream_name: &String, query_object: &QueryObject) -> String {
     let mut result = String::from(".map(|x| OutputStruct { ");
-
-    let all_streams = query_object.streams.keys().collect::<Vec<&String>>();
-
+    let stream = query_object.get_stream(stream_name);
+    
     if query_object.has_join {
         // Handle joined case - need to use tuple access
         //for stream in all_streams, build all the columns mapping in the .map
         let mut offset: usize = 0;
+        let all_streams = stream.join_tree.clone().unwrap().get_involved_streams();
 
         for stream in all_streams.iter() {
 
@@ -131,7 +130,7 @@ fn create_select_star_map(query_object: &QueryObject) -> String {
     result
 }
 
-fn create_simple_map(select_clauses: &Vec<SelectColumn>, query_object: &QueryObject) -> String {
+fn create_simple_map(projection_clauses: &Vec<ProjectionColumn>, query_object: &QueryObject) -> String {
     let mut map_string = String::from(".map(|x| OutputStruct { ");
     let empty_string = "".to_string();
     let all_streams = query_object.streams.keys().collect::<Vec<&String>>();
@@ -139,12 +138,12 @@ fn create_simple_map(select_clauses: &Vec<SelectColumn>, query_object: &QueryObj
 
     let mut check_list = Vec::new();
 
-    let fields: Vec<String> = select_clauses
+    let fields: Vec<String> = projection_clauses
         .iter()
         .enumerate() // Add enumerate to track position
         .map(|(i, clause)| {
             match clause {
-                SelectColumn::Column(col_ref, _) => {
+                ProjectionColumn::Column(col_ref, _) => {
                     let field_name = query_object
                         .result_column_types
                         .get_index(i)
@@ -169,7 +168,7 @@ fn create_simple_map(select_clauses: &Vec<SelectColumn>, query_object: &QueryObj
                     ;
                     format!("{}: {}", field_name, value)
                 }
-                SelectColumn::ComplexValue(complex_field, alias) => {
+                ProjectionColumn::ComplexValue(complex_field, alias) => {
                     let field_name = alias.as_ref().unwrap_or_else(|| {
                         query_object
                             .result_column_types
@@ -194,7 +193,7 @@ fn create_simple_map(select_clauses: &Vec<SelectColumn>, query_object: &QueryObj
                         )
                     }
                 }
-                SelectColumn::StringLiteral(value) => format!("{}: Some(\"{}\".to_string())", value, value),
+                ProjectionColumn::StringLiteral(value) => format!("{}: Some(\"{}\".to_string())", value, value),
                 _ => unreachable!("Should not have aggregates in simple map"),
             }
         })

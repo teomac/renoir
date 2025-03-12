@@ -1,8 +1,8 @@
 use core::panic;
-use crate::dsl::ir::ir_ast_structure_old::{ComplexField, SelectColumn};
+use crate::dsl::ir::ir_ast_structure::ComplexField;
 use crate::dsl::ir::r_group::r_group_keys::{GroupAccumulatorInfo, 
     GroupAccumulatorValue};
-use crate::dsl::ir::{AggregateType, IrLiteral};
+use crate::dsl::ir::{AggregateType, IrLiteral, ProjectionColumn};
 use crate::dsl::struct_object::object::QueryObject;
 
 /// /// Processes projections in the context of a GROUP BY operation.
@@ -50,7 +50,7 @@ pub fn process_grouping_projections(
         let field_name = query_object.result_column_types.get_index(i).unwrap().0;
 
         match clause {
-            SelectColumn::Column(col_ref, _) => {
+            ProjectionColumn::Column(col_ref, _) => {
                 //case select *, we call the create_select_star_group function
                 if col_ref.column == "*" {
                     return create_select_star_group(query_object);
@@ -83,7 +83,7 @@ pub fn process_grouping_projections(
                     panic!("GROUP BY clause missing but process_grouping_projections was called");
                 }
             }
-            SelectColumn::Aggregate(agg, _) => {
+            ProjectionColumn::Aggregate(agg, _) => {
                 // For aggregates, access them from the accumulator
                 let value = match agg.function {
                     AggregateType::Avg => {
@@ -170,7 +170,7 @@ pub fn process_grouping_projections(
                 };
                 result.push_str(&format!("    {}: {},\n", field_name, value));
             }
-            SelectColumn::ComplexValue(field, _) => {
+            ProjectionColumn::ComplexValue(field, _) => {
                 let temp = process_complex_field_for_group(
                     &field,
                     query_object,
@@ -199,7 +199,7 @@ pub fn process_grouping_projections(
 
                 result.push_str(&format!("    {}: {},\n", field_name, value));
             }
-            SelectColumn::StringLiteral(value) => {
+            ProjectionColumn::StringLiteral(value) => {
                 result.push_str(&format!("    {}: Some(\"{}\".to_string()),\n", field_name, value));
             },
         }

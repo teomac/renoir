@@ -28,8 +28,10 @@ impl IrToRenoir {
             },
             IrPlan::Project { input, columns, distinct } => {
                 let stream_name = Self::convert(input, query_object)?;
-                process_projections(columns, distinct, &stream_name, query_object)?;
-                process_distinct(query_object);
+                process_projections(columns, &stream_name, query_object)?;
+                if *distinct {
+                    process_distinct(query_object);
+                }
                 Ok(stream_name)
             },
             IrPlan::GroupBy { input, keys, group_condition } => {

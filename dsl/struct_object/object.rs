@@ -1,12 +1,12 @@
+use super::support_structs::StreamInfo;
 use crate::dsl::ir::{
     ir_ast_structure::{AggregateType, ComplexField},
-    ColumnRef, IrPlan, IrLiteral, ProjectionColumn
+    ColumnRef, IrLiteral, IrPlan, ProjectionColumn,
 };
-use indexmap::IndexMap;
-use core::panic;
-use std::sync::Arc;
 use crate::dsl::struct_object::utils::check_column_validity;
-use super::support_structs::StreamInfo;
+use core::panic;
+use indexmap::IndexMap;
+use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 pub struct QueryObject {
@@ -21,8 +21,8 @@ pub struct QueryObject {
 
     pub streams: IndexMap<String, StreamInfo>, // key: stream name, value: StreamInfo
 
-    pub has_join: bool, // true if the query has a join
-    pub output_path: String, //output path
+    pub has_join: bool,              // true if the query has a join
+    pub output_path: String,         //output path
     pub ir_ast: Option<Arc<IrPlan>>, //ir ast
     pub result_column_types: IndexMap<String, String>, // key: result column name, value: data type
 
@@ -46,14 +46,12 @@ pub struct QueryObject {
     //this indexMap will be filled with:
     //"power" -> f64 || i64
     //"power_1" -> f64 || i64
-
     pub order_by_string: String, //order by string
-    pub limit_string: String, //limit string
+    pub limit_string: String,    //limit string
     pub distinct_string: String, //distinct string
 
-    pub projection_agg: Vec<ProjectionColumn>, //projection aggregates. 
-    //Here we store ONLY the aggregates in the final projection, that we will need to generate the fold in case of a group by 
-   
+    pub projection_agg: Vec<ProjectionColumn>, //projection aggregates.
+                                               //Here we store ONLY the aggregates in the final projection, that we will need to generate the fold in case of a group by
 }
 
 impl QueryObject {
@@ -201,7 +199,7 @@ impl QueryObject {
     pub fn get_struct_name(&self, table: &str) -> Option<&String> {
         self.table_to_struct_name.get(&(table.to_string()))
     }
-    
+
     //method to get all the structs
     pub fn get_all_structs(&self) -> Vec<String> {
         self.table_to_struct_name.values().cloned().collect()
@@ -248,8 +246,8 @@ impl QueryObject {
     }
 
     //method to populate the QueryObject with the necessary information
-    pub fn populate(mut self, ir_ast: &Arc<IrPlan>) -> Self {      
-        self.set_ir_ast(ir_ast);  
+    pub fn populate(mut self, ir_ast: &Arc<IrPlan>) -> Self {
+        self.set_ir_ast(ir_ast);
         // Collect all Scan and Join nodes
         let mut scans = Self::collect_scan_nodes(&ir_ast);
         scans.reverse();
@@ -273,15 +271,18 @@ impl QueryObject {
         if self.tables_info.get(main_table).is_none() {
             panic!("Table {} is not present in the list of tables.", main_table);
         }
-    
+
         //create the first stream
-        self.create_new_stream(&main_stream, &main_table, &main_alias.clone().unwrap_or(String::new()));
+        self.create_new_stream(
+            &main_stream,
+            &main_table,
+            &main_alias.clone().unwrap_or(String::new()),
+        );
 
         //////////////////////////////////////////////
 
         //now let's start processing the joins
         for scan in scans.iter().skip(1) {
-
             let (join_table, join_stream, join_alias) = match &**scan {
                 IrPlan::Scan {
                     input_source,
@@ -297,7 +298,13 @@ impl QueryObject {
             }
 
             //create the stream
-            self.create_new_stream(&join_stream, &join_table, &join_alias.clone().unwrap_or_else(|| panic!("Alias not found for table {}", join_table)));
+            self.create_new_stream(
+                &join_stream,
+                &join_table,
+                &join_alias
+                    .clone()
+                    .unwrap_or_else(|| panic!("Alias not found for table {}", join_table)),
+            );
         }
 
         //////////////////////////////////////////////
@@ -369,7 +376,6 @@ impl QueryObject {
         let all_structs = self.table_to_struct_name.clone();
         let csvs = self.table_to_csv.clone();
 
-
         for stream in all_stream_names.iter() {
             let stream_obj = self.get_mut_stream(stream);
             let table_name = stream_obj.source_table.clone();
@@ -384,10 +390,10 @@ impl QueryObject {
         self
     }
 
-/// Collects ONLY aggregates from the final projection
-/// This is Phase 1 of result mapping population, focusing only on gathering aggregates
-/// before AST parsing for GROUP BY processing
-pub fn collect_projection_aggregates(&mut self, ir_ast: &Arc<IrPlan>) {
+    /// Collects ONLY aggregates from the final projection
+    /// This is Phase 1 of result mapping population, focusing only on gathering aggregates
+    /// before AST parsing for GROUP BY processing
+    pub fn collect_projection_aggregates(&mut self, ir_ast: &Arc<IrPlan>) {
         match &**ir_ast {
             IrPlan::Project { columns, .. } => {
                 self.projection_agg.clear(); // Ensure we start with empty vec
@@ -406,54 +412,223 @@ pub fn collect_projection_aggregates(&mut self, ir_ast: &Arc<IrPlan>) {
                     match projection {
                         ProjectionColumn::Aggregate(ref agg, ref alias) => {
                             // Direct aggregate in projection - add it
-                            self.projection_agg.push(ProjectionColumn::Aggregate(
-                                agg.clone(), 
-                                alias.clone()
-                            ));
+                            self.projection_agg
+                                .push(ProjectionColumn::Aggregate(agg.clone(), alias.clone()));
                         }
                         ProjectionColumn::ComplexValue(ref field, ref alias) => {
                             // Find all aggregates in complex expressions
-                            self.collect_aggregates_from_complex_field(
-                                field, 
-                                alias.clone()
-                            );
+                            self.collect_aggregates_from_complex_field(field, alias.clone());
                         }
                         _ => continue, // Other projection types don't contain aggregates
                     }
                 }
             }
             _ => panic!("Expected Project node at the root of the AST"),
-        
-    }
-}
-
-// Helper function to collect aggregates from complex fields
-fn collect_aggregates_from_complex_field(
-    &mut self,
-    field: &ComplexField,
-    alias: Option<String>
-) {
-    if let Some(ref agg) = field.aggregate {
-        // Found an aggregate, add it
-        self.projection_agg.push(ProjectionColumn::Aggregate(
-            agg.clone(), 
-            alias.clone()
-        ));
+        }
     }
 
-    // Check nested expressions recursively
-    if let Some(ref nested) = field.nested_expr {
-        let (left, _, right) = &**nested;
-        self.collect_aggregates_from_complex_field(left, alias.clone());
-        self.collect_aggregates_from_complex_field(right, alias.clone());
+    // Helper function to collect aggregates from complex fields
+    fn collect_aggregates_from_complex_field(
+        &mut self,
+        field: &ComplexField,
+        alias: Option<String>,
+    ) {
+        if let Some(ref agg) = field.aggregate {
+            // Found an aggregate, add it
+            self.projection_agg
+                .push(ProjectionColumn::Aggregate(agg.clone(), alias.clone()));
+        }
+
+        // Check nested expressions recursively
+        if let Some(ref nested) = field.nested_expr {
+            let (left, _, right) = &**nested;
+            self.collect_aggregates_from_complex_field(left, alias.clone());
+            self.collect_aggregates_from_complex_field(right, alias.clone());
+        }
     }
-}
 
+    pub fn populate_result_mappings(
+        &mut self,
+        columns: &Vec<ProjectionColumn>,
+        stream_name: &String,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let mut used_names = std::collections::HashSet::new();
+        let all_streams = self.streams.keys().cloned().collect::<Vec<String>>();
+        let stream = self.get_stream(stream_name).clone();
 
+        for clause in columns {
+            match clause {
+                ProjectionColumn::Column(col_ref, alias) => {
+                    // Handle SELECT * case
+                    if col_ref.column == "*" {
+                        
 
-        ////////////////////////////////////////////////////////////////
+                        if stream.is_keyed {
+                            // If stream is keyed, only include GROUP BY keys
+                            for key_col in &stream.key_columns {
+                                let stream_name = if key_col.table.is_some() {
+                                    self.get_stream_from_alias(key_col.table.as_ref().unwrap())
+                                        .unwrap()
+                                } else {
+                                    if all_streams.len() == 1 {
+                                        &all_streams[0]
+                                    } else {
+                                        panic!(
+                                            "Column reference must have table name in JOIN query"
+                                        );
+                                    }
+                                };
 
-        /*
+                                let table = self.get_stream(stream_name).source_table.clone();
+                                let col_type = self
+                                    .get_struct_field(&table, &key_col.column)
+                                    .expect("Column not found in table structure")
+                                    .clone();
+
+                                let suffix = if self.has_join {
+                                    if key_col.table.is_some() {
+                                        key_col.table.as_ref().unwrap().clone()
+                                    } else {
+                                        stream_name.clone()
+                                    }
+                                } else {
+                                    stream_name.clone()
+                                };
+
+                                let col_name = format!("{}_{}", key_col.column, suffix);
+                                self.result_column_types.insert(col_name, col_type);
+                            }
+                        } else {
+                            // Not keyed - include all columns from all streams
+                            let final_tables = if let Some(ref join_tree) = stream.join_tree {
+                                // Use join tree to get all involved streams
+                                join_tree.get_involved_streams()
+                            } else {
+                                vec![stream_name.clone()]
+                            };
+
+                            for stream_name in final_tables {
+                                let stream = self.get_stream(&stream_name);
+                                let table = &stream.source_table;
+                                let alias = if stream.alias.is_empty() {
+                                    table.clone()
+                                } else {
+                                    stream.alias.clone()
+                                };
+
+                                if let Some(struct_map) = self.tables_info.get(table) {
+                                    for (col_name, col_type) in struct_map {
+                                        let full_col_name = format!("{}_{}", col_name, alias);
+                                        self.result_column_types
+                                            .insert(full_col_name, col_type.clone());
+                                    }
+                                }
+                            }
+                        }
+                    } else {
+                        // Regular column
+                        let col_name = alias.clone().unwrap_or_else(|| {
+                            if self.has_join {
+                                let table = col_ref
+                                    .table
+                                    .as_ref()
+                                    .expect("Column reference must have table name in JOIN query");
+                                format!("{}_{}", col_ref.column, table)
+                            } else {
+                                col_ref.column.clone()
+                            }
+                        });
+
+                        let col_name = self.get_unique_name(&col_name, &mut used_names);
+                        let col_type = self.get_type(col_ref);
+                        self.result_column_types.insert(col_name, col_type);
+                    }
+                }
+                ProjectionColumn::Aggregate(agg_func, alias) => {
+                    let col_name = if let Some(alias_name) = alias {
+                        self.get_unique_name(alias_name, &mut used_names)
+                    } else {
+                        let base_name = match &agg_func.function {
+                            AggregateType::Count => {
+                                if agg_func.column.column == "*" {
+                                    "count_star".to_string()
+                                } else if self.has_join {
+                                    let table = agg_func.column.table.as_ref().expect(
+                                        "Column reference must have table name in JOIN query",
+                                    );
+                                    format!("count_{}_{}", agg_func.column.column, table)
+                                } else {
+                                    format!("count_{}", agg_func.column.column)
+                                }
+                            }
+                            other_agg => {
+                                if self.has_join {
+                                    let table = agg_func.column.table.as_ref().expect(
+                                        "Column reference must have table name in JOIN query",
+                                    );
+                                    format!(
+                                        "{}_{}_{}",
+                                        other_agg.to_string().to_lowercase(),
+                                        agg_func.column.column,
+                                        table
+                                    )
+                                } else {
+                                    format!(
+                                        "{}_{}",
+                                        other_agg.to_string().to_lowercase(),
+                                        agg_func.column.column
+                                    )
+                                }
+                            }
+                        };
+                        self.get_unique_name(&base_name, &mut used_names)
+                    };
+
+                    let col_type = match agg_func.function {
+                        AggregateType::Count => "usize".to_string(),
+                        AggregateType::Avg => "f64".to_string(),
+                        _ => self.get_type(&agg_func.column),
+                    };
+
+                    self.result_column_types.insert(col_name, col_type);
+                }
+                ProjectionColumn::ComplexValue(col_ref, alias) => {
+                    let result_type = self.get_complex_field_type(col_ref);
+                    let col_name = if let Some(alias_name) = alias {
+                        self.get_unique_name(alias_name, &mut used_names)
+                    } else {
+                        let base_name = if self.has_join {
+                            if let Some(ref col) = col_ref.column_ref {
+                                let table = col
+                                    .table
+                                    .as_ref()
+                                    .expect("Column reference must have table name in JOIN query");
+                                format!("expr_{}_{}", col.column, table)
+                            } else {
+                                format!("expr_{}", used_names.len())
+                            }
+                        } else {
+                            format!("expr_{}", used_names.len())
+                        };
+                        self.get_unique_name(&base_name, &mut used_names)
+                    };
+
+                    self.result_column_types.insert(col_name, result_type);
+                }
+                ProjectionColumn::StringLiteral(value) => {
+                    let col_name = self.get_unique_name(value, &mut used_names);
+                    self.result_column_types
+                        .insert(col_name, "String".to_string());
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    ////////////////////////////////////////////////////////////////
+
+    /*
 
         // Populate the result column types based on select clauses
         if let Some(ref ir_ast) = self.ir_ast {
@@ -780,7 +955,7 @@ fn collect_aggregates_from_complex_field(
 
     fn collect_scan_nodes(plan: &Arc<IrPlan>) -> Vec<Arc<IrPlan>> {
         let mut scans = Vec::new();
-        
+
         match &**plan {
             IrPlan::Scan { .. } => {
                 scans.push(plan.clone());
@@ -792,11 +967,11 @@ fn collect_aggregates_from_complex_field(
                 scans.extend(left_scans);
                 scans.extend(right_scans);
             }
-            IrPlan::Filter { input, .. } |
-            IrPlan::Project { input, .. } |
-            IrPlan::GroupBy { input, .. } |
-            IrPlan::OrderBy { input, .. } |
-            IrPlan::Limit { input, .. } => {
+            IrPlan::Filter { input, .. }
+            | IrPlan::Project { input, .. }
+            | IrPlan::GroupBy { input, .. }
+            | IrPlan::OrderBy { input, .. }
+            | IrPlan::Limit { input, .. } => {
                 // Recursively check input
                 let input_scans = Self::collect_scan_nodes(input);
                 scans.extend(input_scans);
