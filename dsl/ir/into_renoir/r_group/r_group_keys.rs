@@ -117,12 +117,12 @@ pub fn process_group_by(
             parse_group_conditions(condition, query_object, &mut acc_info, keys);
     
             //collect all the aggregates from the sink
-            let sink_agg = query_object.projection_agg;
+            let sink_agg = &query_object.projection_agg;
     
             //insert all the aggregates from the sink into the accumulator
             for agg in sink_agg {
                 match agg {
-                    ProjectionColumn::Aggregate(agg, alias ) => {
+                    ProjectionColumn::Aggregate(agg, _ ) => {
                         let col_type = query_object.get_type(&agg.column);
                         let agg_value = GroupAccumulatorValue::Aggregate(agg.function.clone(), agg.column.clone());
                         if agg.function == AggregateType::Avg {
@@ -139,7 +139,9 @@ pub fn process_group_by(
             }
     
             // Generate operations using the collected information
-            group_string_condition.push_str(&create_fold_operation(&acc_info, keys, query_object));
+            if !acc_info.agg_positions.is_empty(){
+                group_string_condition.push_str(&create_fold_operation(&acc_info, &stream_name, query_object));
+            }
             group_string_condition.push_str(&create_filter_operation(condition, keys, query_object, &acc_info));
         }
     

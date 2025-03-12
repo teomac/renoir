@@ -2,14 +2,14 @@ use crate::dsl::ir::ir_ast_structure::{
     AggregateType, ComplexField, GroupBaseCondition, GroupClause,
 };
 use crate::dsl::ir::r_group::r_group_keys::{GroupAccumulatorInfo, GroupAccumulatorValue};
-use crate::dsl::ir::QueryObject;
+use crate::dsl::ir::{ColumnRef, QueryObject};
 
 // Function to parse group conditions and collect necessary information
 pub fn parse_group_conditions(
     condition: &GroupClause,
     query_object: &QueryObject,
     acc_info: &mut GroupAccumulatorInfo,
-    group_by: &Group,
+    keys: &Vec<ColumnRef>,
 ) {
     // Collect and validate aggregates in the condition
     match condition {
@@ -17,8 +17,8 @@ pub fn parse_group_conditions(
             match base_cond {
                 GroupBaseCondition::Comparison(comp) => {
                     // Process both sides of comparison
-                    collect_field_aggregates(&comp.left_field, acc_info, query_object, group_by);
-                    collect_field_aggregates(&comp.right_field, acc_info, query_object, group_by);
+                    collect_field_aggregates(&comp.left_field, acc_info, query_object, keys);
+                    collect_field_aggregates(&comp.right_field, acc_info, query_object, keys);
 
                     // Type check the comparison
                     let left_type = query_object.get_complex_field_type(&comp.left_field);
@@ -39,14 +39,14 @@ pub fn parse_group_conditions(
                     }
                 }
                 GroupBaseCondition::NullCheck(null_check) => {
-                    collect_field_aggregates(&null_check.field, acc_info, query_object, group_by);
+                    collect_field_aggregates(&null_check.field, acc_info, query_object, keys);
                 }
             }
         }
         GroupClause::Expression { left, op: _, right } => {
             // Recursively process both sides of the expression
-            parse_group_conditions(left, query_object, acc_info, group_by);
-            parse_group_conditions(right, query_object, acc_info, group_by);
+            parse_group_conditions(left, query_object, acc_info, keys);
+            parse_group_conditions(right, query_object, acc_info, keys);
         }
     }
 }
@@ -58,7 +58,7 @@ fn collect_field_aggregates(
     field: &ComplexField,
     acc_info: &mut GroupAccumulatorInfo,
     query_object: &QueryObject,
-    group_by: &Group,
+    keys: &Vec<ColumnRef>,
 ) {
     match field {
         ComplexField {
@@ -66,7 +66,7 @@ fn collect_field_aggregates(
             ..
         } => {
             // Validate that the column is either in GROUP BY or used in aggregate
-            if !group_by.columns.iter().any(|c| c.column == col.column) {
+            if !keys.iter().any(|c| c.column == col.column) {
                 panic!(
                     "Column {} must appear in GROUP BY or be used in aggregate function",
                     col.column
@@ -104,8 +104,8 @@ fn collect_field_aggregates(
             // Process nested expressions recursively
             let (left, op, right) = &**nested;
 
-            collect_field_aggregates(left, acc_info, query_object, group_by);
-            collect_field_aggregates(right, acc_info, query_object, group_by);
+            collect_field_aggregates(left, acc_info, query_object, keys);
+            collect_field_aggregates(right, acc_info, query_object, keys);
 
             // Validate operation types
             let left_type = query_object.get_complex_field_type(left);

@@ -1,6 +1,6 @@
 use crate::dsl::ir::QueryObject;
 
-pub fn process_distinct(query_object: &QueryObject) -> String {
+pub fn process_distinct(query_object: &mut QueryObject) {
     let csv_path = query_object.output_path.replace("\\", "/");
 
     // Generate code to remove duplicates from the CSV
@@ -40,5 +40,5 @@ pub fn process_distinct(query_object: &QueryObject) -> String {
         csv_path, csv_path, csv_path, csv_path
     );
 
-    distinct_code
+    query_object.distinct_string = distinct_code;
 }

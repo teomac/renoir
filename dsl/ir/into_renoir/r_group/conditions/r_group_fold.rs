@@ -1,25 +1,23 @@
-use crate::dsl::ir::ir_ast_structure::{AggregateType, Group};
+use indexmap::IndexMap;
+use crate::dsl::ir::ir_ast_structure::AggregateType;
 use crate::dsl::ir::r_group::r_group_keys::{GroupAccumulatorInfo, GroupAccumulatorValue};
-use crate::dsl::ir::QueryObject;
+use crate::dsl::ir::{AggregateFunction, QueryObject};
 
 // Function to create fold operation if needed
 pub fn create_fold_operation(
     acc_info: &GroupAccumulatorInfo,
-    _group_by: &Group,
-    query_object: &QueryObject,
-) -> String {
+    stream_name : &String,
+    query_object: &mut QueryObject,
+)-> String{
     let mut tuple_types = Vec::new();
     let mut tuple_inits = Vec::new();
     let mut update_code = String::new();
 
-    //if there are no aggregates, return empty string
-    if acc_info.agg_positions.is_empty() {
-        return "".to_string();
-    }
-
     let single_agg = acc_info.agg_positions.len() == 1;
-    
-    // First add types and initializers for regular columns and aggregates
+
+    let mut agg_map: IndexMap<AggregateFunction, String> = IndexMap::new();
+
+    // First add types and initializers for aggregates
     for (value, (pos, val_type)) in &acc_info.agg_positions {
         match value {
             GroupAccumulatorValue::Aggregate(agg_type, _) => {
@@ -55,23 +53,24 @@ pub fn create_fold_operation(
                 match value {
                     GroupAccumulatorValue::Aggregate(agg_type, col) => {
                         let col_access = {
-
                             let stream_name = if col.table.is_some() {
-                                query_object.get_stream_from_alias(col.table.as_ref().unwrap()).unwrap()
+                                query_object
+                                    .get_stream_from_alias(col.table.as_ref().unwrap())
+                                    .unwrap()
                             } else {
-                                let all_streams = query_object.streams.keys().cloned().collect::<Vec<String>>();
+                                let all_streams = query_object
+                                    .streams
+                                    .keys()
+                                    .cloned()
+                                    .collect::<Vec<String>>();
                                 if all_streams.len() > 1 {
                                     panic!("Missing stream reference: {}", col.column);
                                 }
                                 &all_streams[0].clone()
                             };
 
-                            let stream = query_object.get_stream(stream_name);    
-                            format!(
-                                "x{}.{}",
-                                stream.get_access().get_base_path(),
-                                col.column
-                            )
+                            let stream = query_object.get_stream(stream_name);
+                            format!("x{}.{}", stream.get_access().get_base_path(), col.column)
                         };
 
                         match agg_type {
@@ -90,6 +89,20 @@ pub fn create_fold_operation(
                                             format!(".{}", pos)
                                         }
                                     ));
+                                    agg_map.insert(
+                                        AggregateFunction {
+                                            column: col.clone(),
+                                            function: AggregateType::Count,
+                                        },
+                                        format!(
+                                            "acc{}",
+                                            if single_agg {
+                                                String::from("")
+                                            } else {
+                                                format!(".{}", pos)
+                                            }
+                                        ),
+                                    );
                                 } else {
                                     update_code.push_str(&format!(
                                         "if {}.is_some() {{ {}acc{} += 1; }}\n",
@@ -105,6 +118,21 @@ pub fn create_fold_operation(
                                             format!(".{}", pos)
                                         }
                                     ));
+
+                                    agg_map.insert(
+                                        AggregateFunction {
+                                            column: col.clone(),
+                                            function: AggregateType::Count,
+                                        },
+                                        format!(
+                                            "x.1{}",
+                                            if single_agg {
+                                                String::from("")
+                                            } else {
+                                                format!(".{}", pos)
+                                            }
+                                        ),
+                                    );
                                 }
                             }
                             AggregateType::Sum => {
@@ -132,6 +160,21 @@ pub fn create_fold_operation(
                                         format!(".{}", pos)
                                     }
                                 ));
+
+                                agg_map.insert(
+                                    AggregateFunction {
+                                        column: col.clone(),
+                                        function: AggregateType::Sum,
+                                    },
+                                    format!(
+                                        "x.1{}",
+                                        if single_agg {
+                                            String::from("")
+                                        } else {
+                                            format!(".{}", pos)
+                                        }
+                                    ),
+                                );
                             }
                             AggregateType::Max => {
                                 update_code.push_str(&format!(
@@ -162,6 +205,21 @@ pub fn create_fold_operation(
                                         format!(".{}", pos)
                                     }
                                 ));
+
+                                agg_map.insert(
+                                    AggregateFunction {
+                                        column: col.clone(),
+                                        function: AggregateType::Max,
+                                    },
+                                    format!(
+                                        "x.1{}",
+                                        if single_agg {
+                                            String::from("")
+                                        } else {
+                                            format!(".{}", pos)
+                                        }
+                                    ),
+                                );
                             }
                             AggregateType::Min => {
                                 update_code.push_str(&format!(
@@ -192,6 +250,21 @@ pub fn create_fold_operation(
                                         format!(".{}", pos)
                                     }
                                 ));
+
+                                agg_map.insert(
+                                    AggregateFunction {
+                                        column: col.clone(),
+                                        function: AggregateType::Min,
+                                    },
+                                    format!(
+                                        "x.1{}",
+                                        if single_agg {
+                                            String::from("")
+                                        } else {
+                                            format!(".{}", pos)
+                                        }
+                                    ),
+                                );
                             }
                             AggregateType::Avg => {} // Handled through Sum and Count
                         }
@@ -209,5 +282,9 @@ pub fn create_fold_operation(
     fold_str.push_str(&update_code);
     fold_str.push_str("\n})\n");
 
+    let stream = query_object.get_mut_stream(stream_name);
+    stream.update_agg_position(agg_map);
+    
     fold_str
+
 }

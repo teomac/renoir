@@ -1,14 +1,14 @@
 use crate::dsl::ir::ir_ast_structure::{
-    AggregateType, ComplexField, Group, GroupBaseCondition, GroupClause, NullOp,
+    AggregateType, ComplexField, GroupBaseCondition, GroupClause, NullOp,
 };
 use crate::dsl::ir::r_group::r_group_keys::GroupAccumulatorInfo;
-use crate::dsl::ir::QueryObject;
+use crate::dsl::ir::{ColumnRef, QueryObject};
 use crate::dsl::ir::{AggregateFunction, BinaryOp, ComparisonOp, IrLiteral};
 
 // Function to create the filter operation
 pub fn create_filter_operation(
     condition: &GroupClause,
-    group_by: &Group,
+    keys: &Vec<ColumnRef>,
     query_object: &QueryObject,
     acc_info: &GroupAccumulatorInfo,
 ) -> String {
@@ -18,19 +18,20 @@ pub fn create_filter_operation(
     // Process the conditions recursively
     filter_str.push_str(&process_filter_condition(
         condition,
-        group_by,
+        keys,
         query_object,
         acc_info,
     ));
 
     filter_str.push_str(")");
+
     filter_str
 }
 
 // Function to process filter conditions recursively
 fn process_filter_condition(
     condition: &GroupClause,
-    group_by: &Group,
+    keys: &Vec<ColumnRef>,
     query_object: &QueryObject,
     acc_info: &GroupAccumulatorInfo,
 ) -> String {
@@ -55,14 +56,14 @@ fn process_filter_condition(
                     // Process left and right expressions
                     let left_expr = process_filter_field(
                         &comp.left_field,
-                        group_by,
+                        keys,
                         query_object,
                         acc_info,
                         &mut check_list,
                     );
                     let right_expr = process_filter_field(
                         &comp.right_field,
-                        group_by,
+                        keys,
                         query_object,
                         acc_info,
                         &mut check_list,
@@ -131,7 +132,7 @@ fn process_filter_condition(
                     };
 
                     // Check if this column is part of the GROUP BY key
-                    let is_key_field = group_by.columns.iter().any(|c| {
+                    let is_key_field = keys.iter().any(|c| {
                         c.column == col_ref.column
                             && (c.table.is_none()
                                 || col_ref.table.is_none()
@@ -141,8 +142,8 @@ fn process_filter_condition(
                     // Get column access based on whether it's a key field
                     let col_access = if is_key_field {
                         // Get the position in the group by key tuple
-                        let key_position = group_by
-                            .columns
+                        let key_position = keys
+                            
                             .iter()
                             .position(|c| {
                                 c.column == col_ref.column
@@ -152,7 +153,7 @@ fn process_filter_condition(
                             })
                             .unwrap();
 
-                        if group_by.columns.len() == 1 {
+                        if keys.len() == 1 {
                             // Single key column
                             "x.0".to_string()
                         } else {
@@ -204,9 +205,9 @@ fn process_filter_condition(
 
             format!(
                 "({} {} {})",
-                process_filter_condition(left, group_by, query_object, acc_info),
+                process_filter_condition(left, keys, query_object, acc_info),
                 op_str,
-                process_filter_condition(right, group_by, query_object, acc_info)
+                process_filter_condition(right, keys, query_object, acc_info)
             )
         }
     }
@@ -215,7 +216,7 @@ fn process_filter_condition(
 // Helper function to process fields in filter conditions
 fn process_filter_field(
     field: &ComplexField,
-    group_by: &Group,
+    keys: &Vec<ColumnRef>,
     query_object: &QueryObject,
     acc_info: &GroupAccumulatorInfo,
     mut check_list: &mut Vec<String>, // Added parameter
@@ -227,9 +228,9 @@ fn process_filter_field(
         let right_type = query_object.get_complex_field_type(right);
 
         let left_expr =
-            process_filter_field(left, group_by, query_object, acc_info, &mut check_list);
+            process_filter_field(left, keys, query_object, acc_info, &mut check_list);
         let right_expr =
-            process_filter_field(right, group_by, query_object, acc_info, &mut check_list);
+            process_filter_field(right, keys, query_object, acc_info, &mut check_list);
 
         // Improved type handling for arithmetic operations
         if left_type != right_type {
@@ -289,9 +290,9 @@ fn process_filter_field(
             ""
         };
         // Handle column reference - check if it's a key or not
-        if let Some(key_position) = group_by.columns.iter().position(|c| c.column == col.column) {
+        if let Some(key_position) = keys.iter().position(|c| c.column == col.column) {
             // It's a key - use its position in the group by tuple
-            if group_by.columns.len() == 1 {
+            if keys.len() == 1 {
                 check_list.push(format!("x.0{}.is_some()", as_ref));
                 format!("x.0{}.unwrap()", as_ref)
             } else {

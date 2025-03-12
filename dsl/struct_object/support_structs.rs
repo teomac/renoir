@@ -121,6 +121,11 @@ impl StreamInfo {
     pub fn insert_agg_position(&mut self, agg: AggregateFunction, position: String) {
         self.agg_position.insert(agg, position);
     }
+
+    pub fn update_agg_position(&mut self, agg: IndexMap<AggregateFunction, String>) {
+        self.agg_position = agg;
+    }
+
 }
 
 #[derive(Debug, Clone)]

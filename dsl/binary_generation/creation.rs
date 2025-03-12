@@ -1,10 +1,6 @@
 use std::fs;
 use std::io;
 use std::path::PathBuf;
-
-use crate::dsl::ir::r_distinct::process_distinct;
-use crate::dsl::ir::r_limit::process_limit;
-use crate::dsl::ir::r_order::process_order_by;
 use crate::dsl::struct_object::object::QueryObject;
 
 pub struct RustProject {
@@ -102,17 +98,17 @@ pub fn create_template(query_object: &QueryObject) -> String {
             );
             
         stream.push_str(&format!("ctx.execute_blocking();"));
-        if let Some(order_by) = &query_object.ir_ast.as_ref().unwrap().operations.order_by {
-            stream.push_str(&process_order_by(order_by, query_object));
-        }
+        
+        //insert order by string
+        stream.push_str(&query_object.order_by_string);
+        
+        //insert limit string
+        stream.push_str(&query_object.limit_string);
+        
 
-        if let Some(_limit) = &query_object.ir_ast.as_ref().unwrap().operations.limit {
-            stream.push_str(&process_limit(query_object));
+        //insert distinct string
+        stream.push_str(&query_object.distinct_string);
         }
-
-        if query_object.ir_ast.as_ref().unwrap().operations.select.distinct {
-            stream.push_str(&process_distinct(query_object));
-        }}
 
         else{
             let stream_object = all_streams.get(stream_name).unwrap();

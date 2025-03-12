@@ -49,6 +49,7 @@ pub struct QueryObject {
 
     pub order_by_string: String, //order by string
     pub limit_string: String, //limit string
+    pub distinct_string: String, //distinct string
 
     pub projection_agg: Vec<ProjectionColumn>, //projection aggregates. 
     //Here we store ONLY the aggregates in the final projection, that we will need to generate the fold in case of a group by 
@@ -70,6 +71,7 @@ impl QueryObject {
             order_by_string: String::new(),
             limit_string: String::new(),
             projection_agg: Vec::new(),
+            distinct_string: String::new(),
         }
     }
 
@@ -800,21 +802,6 @@ fn collect_aggregates_from_complex_field(
                 scans.extend(input_scans);
             }
         }
-        
-
-
-        //SELECT name, (SELECT name FROM table4)
-        // FROM TABLE 1 JOIN TABLE2 ON ...
-        // JOIN TABLE3 ON ..
-
-
-
-
-
-
-
-
-
         scans
     }
 }
