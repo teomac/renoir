@@ -1,5 +1,5 @@
-use crate::dsl::ir::ir_ast_structure::{OrderByClause, OrderDirection};
-use crate::dsl::ir::QueryObject;
+use crate::dsl::ir::ir_ast_structure::OrderDirection;
+use crate::dsl::ir::{OrderByItem, QueryObject};
 
 use super::r_utils::find_matching_result_column;
 
@@ -12,7 +12,7 @@ use super::r_utils::find_matching_result_column;
 ///
 /// # Returns
 /// A String containing the Rust code to sort the CSV
-pub fn process_order_by(order_by: &OrderByClause, query_object: &QueryObject) -> String {
+pub fn process_order_by(order_by: &Vec<OrderByItem>, query_object: &mut QueryObject) -> String {
     let mut order_string = String::new();
 
     let csv_path = query_object.output_path.replace("\\", "/");
@@ -30,7 +30,7 @@ pub fn process_order_by(order_by: &OrderByClause, query_object: &QueryObject) ->
         csv_path
     ));
 
-    let mut order_by_items = order_by.items.clone();
+    let mut order_by_items = order_by.clone();
 
     for item in &mut order_by_items {
         // Find the matching result column that correctly corresponds to this ORDER BY item
@@ -132,5 +132,6 @@ pub fn process_order_by(order_by: &OrderByClause, query_object: &QueryObject) ->
         .to_string(),
     );
 
+    query_object.order_by_string = order_string.clone();
     order_string
 }

@@ -1,38 +1,72 @@
 use crate::dsl::{
     ir::{
-        ast_parser::ir_ast_structure::IrAST,
-        into_renoir::{r_condition::process_filter_clause, r_group::r_group_keys::process_group_by, r_sink::base::r_sink_base::process_projections, r_source::*, r_limit::*, r_order::*}, ir_ast_structure::Operation
+        ast_parser::ir_ast_structure::IrPlan,
+        into_renoir::{r_condition::process_filter_clause, r_group::r_group_keys::process_group_by, r_sink::base::r_sink_base::process_projections, r_join::*, r_limit::*, r_order::*}, ir_ast_structure_old::Operation
     },
     struct_object::object::QueryObject,
 };
+use std::sync::Arc;
 
 pub struct IrToRenoir;
 
 impl IrToRenoir {
-    pub fn convert(ast: &IrAST, query_object: &mut QueryObject) -> Result<(), Box<dyn std::error::Error>> {
-
-        let mut result_vec = Vec::new();
-        
-        for operation in ast.operations.iter() {
-                if operation.from.is_some()  {
-                    result_vec.push(process_from_clause(&operation.from.clone().unwrap(), query_object)?);
-                } else if  operation.select.is_some() {
-                    result_vec.push(process_projections(&operation.select.clone().unwrap().select, query_object)?);
-                } else if operation.filter.is_some() {
-                    result_vec.push(process_filter_clause(&operation.filter.clone().unwrap(), query_object)?);
-                } else if operation.group_by.is_some() {
-                    result_vec.push(process_group_by(&operation.group_by.clone().unwrap(), query_object)?);
-                } else if operation.order_by.is_some() {
-                    //todo
-                } else if operation.limit.is_some() {
-                    //todo
-                } else {
-                    panic!("Unknown operation in IR AST");
-                }
+    pub fn convert(ast: &Arc<IrPlan>, query_object: &mut QueryObject) -> Result<String, Box<dyn std::error::Error>> {
+        match &**ast {
+            IrPlan::Scan { stream_name, .. } => {
+                // For Scan, we already have the stream_name
+                Ok(stream_name.clone())
+            },
+            IrPlan::Filter { input, predicate } => {
+                // Get the stream from processing the input
+                let stream_name = Self::convert(input, query_object)?;
+                // Pass both predicate and stream name
+                process_filter_clause(predicate, &stream_name, query_object)?;
+                Ok(stream_name)
+            },
+            IrPlan::Project { input, columns, distinct } => {
+                let stream_name = Self::convert(input, query_object)?;
+                process_projections(columns, &stream_name, query_object)?;
+                Ok(stream_name)
+            },
+            IrPlan::GroupBy { input, keys, group_condition } => {
+                let stream_name = Self::convert(input, query_object)?;
+                process_group_by(
+                    keys,
+                    group_condition,
+                    &stream_name,
+                    query_object
+                )?;
+                Ok(stream_name)
+            },
+            IrPlan::Join { left, right, condition, join_type } => {
+                // For joins we need both stream names
+                let left_stream = Self::convert(left, query_object)?;
+                let right_stream = Self::convert(right, query_object)?;
                 
-            
+                // The join will create/modify operations on the left stream
+                process_join(
+                    &left_stream,
+                    &right_stream,
+                    condition,
+                    join_type,
+                    query_object
+                )?;
+                
+                // After join we continue with left stream
+                Ok(left_stream)
+            },
+            IrPlan::OrderBy { input, items } => {
+                let stream_name = Self::convert(input, query_object)?;
+                // Store for output phase
+                process_order_by(items, query_object);
+                Ok(stream_name)
+            },
+            IrPlan::Limit { input, limit, offset } => {
+                let stream_name = Self::convert(input, query_object)?;
+                // Store for output phase
+                process_limit(offset, *limit, query_object);
+                Ok(stream_name)
+            }
         }
-        
-        Ok(())
-    }
+}
 }

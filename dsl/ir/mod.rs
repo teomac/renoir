@@ -16,9 +16,9 @@ pub fn query_ir_to_ast(query_str: &str) -> Arc<IrPlan> {
     ast
 }
 
-pub fn ir_ast_to_renoir(query_object: &mut QueryObject) -> Result<(), Box<dyn std::error::Error>> {
+pub fn ir_ast_to_renoir(query_object: &mut QueryObject) -> Result<String, Box<dyn std::error::Error>> {
     let ir_ast = query_object.ir_ast.clone().unwrap();
     let result = IrToRenoir::convert(&ir_ast, query_object);
 
-    result
+    Ok(result.unwrap())
 }

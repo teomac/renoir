@@ -1,15 +1,11 @@
 use crate::dsl::ir::QueryObject;
 
-pub fn process_limit(query_object: &QueryObject) -> String {
+pub fn process_limit(offset: Option<i64>, limit: i64,query_object: &mut QueryObject) -> String {
     let csv_path = query_object.output_path.replace("\\", "/");
 
-
-
     // Generate limit/offset handling code if needed
-    if let Some(limit_clause) = &query_object.ir_ast.as_ref().unwrap().operations.iter().find(|x| x.limit.is_some()) {
-        let limit = limit_clause.limit.as_ref().unwrap();
-        let start_index = limit.offset.unwrap_or(0);
-        return format!(
+        let start_index = offset.unwrap_or(0);
+        let final_string = format!(
             r#"
             // Process limit and offset after CSV is written
             let mut rdr = csv::Reader::from_path(format!("{}.csv")).unwrap();
@@ -38,10 +34,12 @@ pub fn process_limit(query_object: &QueryObject) -> String {
             csv_path,
             csv_path,
             start_index,
-            start_index + limit.limit,
-            start_index + limit.limit,
+            start_index + limit,
+            start_index + limit,
         );
-    } else {
-        return String::new();
-    };
+
+        query_object.limit_string = final_string.clone();
+        final_string
+
+
 }

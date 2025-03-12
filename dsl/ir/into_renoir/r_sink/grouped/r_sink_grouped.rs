@@ -1,5 +1,5 @@
 use core::panic;
-use crate::dsl::ir::ir_ast_structure::{ComplexField, SelectColumn};
+use crate::dsl::ir::ir_ast_structure_old::{ComplexField, SelectColumn};
 use crate::dsl::ir::r_group::r_group_keys::{GroupAccumulatorInfo, 
     GroupAccumulatorValue};
 use crate::dsl::ir::{AggregateType, IrLiteral};

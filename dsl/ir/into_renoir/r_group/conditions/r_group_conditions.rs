@@ -1,5 +1,5 @@
 use crate::dsl::ir::ir_ast_structure::{
-    AggregateType, ComplexField, Group, GroupBaseCondition, GroupClause,
+    AggregateType, ComplexField, GroupBaseCondition, GroupClause,
 };
 use crate::dsl::ir::r_group::r_group_keys::{GroupAccumulatorInfo, GroupAccumulatorValue};
 use crate::dsl::ir::QueryObject;

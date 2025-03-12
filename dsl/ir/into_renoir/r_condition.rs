@@ -1,19 +1,18 @@
 use crate::dsl::ir::ir_ast_structure::ComplexField;
 use crate::dsl::ir::ir_ast_structure::{
-    ColumnRef, IrLiteral, NullCondition, NullOp, WhereConditionType,
+    ColumnRef, IrLiteral, NullCondition, NullOp, FilterConditionType,
 };
 use crate::dsl::ir::BinaryOp;
 use crate::dsl::ir::QueryObject;
-use crate::dsl::ir::WhereClause;
+use crate::dsl::ir::FilterClause;
 use crate::dsl::ir::{ComparisonOp, Condition};
 
 
-pub fn process_filter_clause(clause: &WhereClause, query_object: &mut QueryObject) -> Result<(), Box<dyn std::error::Error>> {
-    let filter_string = process_where_clause(clause, query_object);
+pub fn process_filter_clause(clause: &FilterClause, stream_name: &String, query_object: &mut QueryObject) -> Result<(), Box<dyn std::error::Error>> {
+    let filter_string = process_filter(clause, query_object);
     
     let final_string = format!(".filter(|x| {})", filter_string);
 
-    let stream_name = query_object.streams.first().unwrap().0.clone();
     let stream = query_object.get_mut_stream(&stream_name);
     stream.insert_op(final_string);
 
@@ -21,10 +20,10 @@ pub fn process_filter_clause(clause: &WhereClause, query_object: &mut QueryObjec
 }
 
 
-pub fn process_where_clause(clause: &WhereClause, query_object: &mut QueryObject) -> String {
+pub fn process_filter(clause: &FilterClause, query_object: &mut QueryObject) -> String {
     match clause {
-        WhereClause::Base(condition) => process_condition(condition, query_object),
-        WhereClause::Expression {
+        FilterClause::Base(condition) => process_condition(condition, query_object),
+        FilterClause::Expression {
             left,
             binary_op,
             right,
@@ -37,29 +36,29 @@ pub fn process_where_clause(clause: &WhereClause, query_object: &mut QueryObject
             // Look for the specific patterns that need parentheses
             let left_needs_parens = matches!(
                 **left,
-                WhereClause::Expression {
+                FilterClause::Expression {
                     binary_op: BinaryOp::Or,
                     ..
                 }
             );
             let right_needs_parens = matches!(
                 **right,
-                WhereClause::Expression {
+                FilterClause::Expression {
                     binary_op: BinaryOp::Or,
                     ..
                 }
             );
 
             let left_str = if left_needs_parens {
-                format!("({})", process_where_clause(left, query_object))
+                format!("({})", process_filter(left, query_object))
             } else {
-                process_where_clause(left, query_object)
+                process_filter(left, query_object)
             };
 
             let right_str = if right_needs_parens {
-                format!("({})", process_where_clause(right, query_object))
+                format!("({})", process_filter(right, query_object))
             } else {
-                process_where_clause(right, query_object)
+                process_filter(right, query_object)
             };
 
             return format!(
@@ -237,12 +236,12 @@ fn process_arithmetic_expression(field: &ComplexField, query_object: &QueryObjec
 }
 
 /// Process a condition which can be either a comparison or a null check
-fn process_condition(condition: &WhereConditionType, query_object: &QueryObject) -> String {
+fn process_condition(condition: &FilterConditionType, query_object: &QueryObject) -> String {
     match condition {
-        WhereConditionType::Comparison(comparison) => {
+        FilterConditionType::Comparison(comparison) => {
             process_comparison_condition(comparison, query_object)
         }
-        WhereConditionType::NullCheck(null_check) => {
+        FilterConditionType::NullCheck(null_check) => {
             process_null_check_condition(null_check, query_object)
         }
     }

@@ -1,5 +1,5 @@
 use core::panic;
-use crate::dsl::ir::ir_ast_structure::{ComplexField, SelectColumn};
+use crate::dsl::ir::ir_ast_structure_old::{ComplexField, SelectColumn};
 use crate::dsl::ir::IrLiteral;
 use crate::dsl::struct_object::object::QueryObject;
 use crate::dsl::ir::r_sink::base::r_sink_utils::*;

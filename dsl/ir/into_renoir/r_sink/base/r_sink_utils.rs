@@ -1,4 +1,4 @@
-use crate::dsl::ir::ir_ast_structure::{ComplexField, SelectColumn};
+use crate::dsl::ir::ir_ast_structure_old::{ComplexField, SelectColumn};
 use crate::dsl::ir::AggregateFunction;
 use crate::dsl::ir::{AggregateType, ColumnRef};
 use crate::dsl::struct_object::object::QueryObject;

@@ -1,4 +1,6 @@
 use indexmap::IndexMap;
+use crate::dsl::struct_object::object::QueryObject;
+use crate::dsl::ir::JoinType;
 
 #[derive(Debug, Clone)]
 pub struct StreamInfo {
@@ -11,7 +13,8 @@ pub struct StreamInfo {
     pub key_columns: Vec<String>,              // Key columns
     pub op_chain: Vec<String>,                  // Operator chain
     pub final_struct: IndexMap<String, String>, // Final structure of the stream
-    pub final_struct_name: String              // Name of the final structure
+    pub final_struct_name: String,              // Name of the final structure
+    pub join_tree :Option<JoinTree>            // Join tree
 }
 
 
@@ -60,7 +63,8 @@ impl StreamInfo {
             key_columns: Vec::new(),
             op_chain: Vec::new(),
             final_struct: IndexMap::new(),
-            final_struct_name: String::new()
+            final_struct_name: String::new(),
+            join_tree: None
         }
     }
 
@@ -134,5 +138,59 @@ impl StreamInfo {
 
     pub fn get_field_type(&self, field: &String) -> String {
         self.columns.get(field).unwrap().clone()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum JoinTree {
+    Leaf(String),  // Stream name
+    Join {
+        left: Box<JoinTree>,
+        right: Box<JoinTree>,
+        join_type: JoinType
+    }
+}
+
+impl JoinTree {
+    // Helper method to get all streams involved in this join tree
+    pub fn get_involved_streams(&self) -> Vec<String> {
+        match self {
+            JoinTree::Leaf(stream) => vec![stream.clone()],
+            JoinTree::Join { left, right, .. } => {
+                let mut streams = left.get_involved_streams();
+                streams.extend(right.get_involved_streams());
+                streams
+            }
+        }
+    }
+
+    // Helper method to update access paths based on the join tree
+    pub fn update_access_paths(&self, query_object: &mut QueryObject) {
+        match self {
+            JoinTree::Leaf(_) => {},
+            JoinTree::Join { left, right, .. } => {
+                // First update any nested joins
+                left.update_access_paths(query_object);
+                right.update_access_paths(query_object);
+
+                // Then update the access paths for this join
+                let left_streams = left.get_involved_streams();
+                let right_streams = right.get_involved_streams();
+
+                // Update all streams on the left side with .0
+                for stream in left_streams {
+                    let current_path = query_object.get_stream(&stream).get_access().get_base_path();
+                    let new_path = format!(".0{}", current_path);
+                    query_object.get_mut_stream(&stream).access.update_base_path(new_path);
+                }
+
+                // Update all streams on the right side with .1
+                for stream in right_streams {
+                    let current_path = query_object.get_stream(&stream).get_access().get_base_path();
+                    let new_path = format!(".1{}", current_path);
+                    query_object.get_mut_stream(&stream).access.update_base_path(new_path);
+                }
+            }
+        }
     }
 }

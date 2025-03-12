@@ -1,5 +1,5 @@
 use crate::dsl::ir::ir_ast_structure::{
-    AggregateType, Group
+    AggregateType, GroupClause
 };
 use crate::dsl::ir::r_sink::{base::r_sink_utils::collect_sink_aggregates, grouped::r_sink_grouped::process_grouping_projections};
 use crate::dsl::ir::r_utils::check_alias;
@@ -82,97 +82,84 @@ impl GroupAccumulatorInfo {
 /// # Returns
 ///
 /// A String containing the Renoir operator chain for the group by operation
-pub fn process_group_by(group_by: &Group, query_object: &mut QueryObject) -> Result<(), Box<dyn std::error::Error>> {
-    let mut group_string = String::new();
-    let table_names = query_object.get_all_table_names();
+pub fn process_group_by(
+    keys: &Vec<ColumnRef>,
+    group_condition: &Option<GroupClause>, 
+    stream_name: &String,
+    query_object: &mut QueryObject) -> Result<(), Box<dyn std::error::Error>> {
 
-    // Validate GROUP BY columns
-    for col in &group_by.columns {
-        if query_object.has_join {
-            let table = col
-                .table
-                .as_ref()
-                .expect("Column in GROUP BY must have table reference in JOIN query");
-            let table_name = check_alias(table, query_object);
-            query_object.check_column_validity(col, &table_name);
-        } else {
-            let table_name = table_names
-                .first()
-                .expect("No tables found in query object");
-            query_object.check_column_validity(col, table_name);
+        let mut group_string = String::new();
+
+        // Validate GROUP BY columns
+        for col in keys {
+            if query_object.has_join {
+                let table = col
+                    .table
+                    .as_ref()
+                    .expect("Column in GROUP BY must have table reference in JOIN query");
+                let table_name = check_alias(table, query_object);
+                query_object.check_column_validity(col, &table_name);
+            } else {
+                query_object.check_column_validity(col, stream_name);
+            }
         }
-    }
-
-    // Generate GROUP BY operation
-    let group_by_keys = process_group_by_keys(&group_by.columns, query_object);
-    group_string.push_str(&format!(".group_by(|x| ({}))", group_by_keys));
-
-    // Process having conditions if present
-    let mut acc_info = GroupAccumulatorInfo::new();
-    if let Some(ref group_condition) = group_by.group_condition {
-        // First parse conditions and collect information
-        parse_group_conditions(group_condition, query_object, &mut acc_info, group_by);
-
-        //now collect all the aggregates from the sink. We need to add them to the fold
-        let sink_agg = collect_sink_aggregates(query_object);
-
-        //insert all the aggregates from the sink into the accumulator
-        sink_agg.iter().for_each(|agg| {
-            let col_type = query_object.get_type(&agg.column);
-            let agg_value =
-                GroupAccumulatorValue::Aggregate(agg.function.clone(), agg.column.clone());
-            if agg.function == AggregateType::Avg {
-                acc_info.add_avg(agg.column.clone(), col_type);
-            } else if agg.function == AggregateType::Count {
-                acc_info.add_aggregate(agg_value, "usize".to_string());
-            } else {
-                acc_info.add_aggregate(agg_value, col_type);
+    
+        // Generate GROUP BY operation
+        let group_by_keys = process_group_by_keys(keys, query_object);
+        group_string.push_str(&format!(".group_by(|x| ({}))", group_by_keys));
+    
+        // Process having conditions if present
+        let mut acc_info = GroupAccumulatorInfo::new();
+        if let Some(ref condition) = group_condition {
+            // First parse conditions and collect information
+            parse_group_conditions(condition, query_object, &mut acc_info, keys);
+    
+            //collect all the aggregates from the sink
+            let sink_agg = collect_sink_aggregates(query_object);
+    
+            //insert all the aggregates from the sink into the accumulator
+            for agg in sink_agg {
+                let col_type = query_object.get_type(&agg.column);
+                let agg_value = GroupAccumulatorValue::Aggregate(agg.function.clone(), agg.column.clone());
+                if agg.function == AggregateType::Avg {
+                    acc_info.add_avg(agg.column.clone(), col_type);
+                } else if agg.function == AggregateType::Count {
+                    acc_info.add_aggregate(agg_value, "usize".to_string());
+                } else {
+                    acc_info.add_aggregate(agg_value, col_type);
+                }
             }
-        });
-
-        // Then generate operations using the collected information
-        group_string.push_str(&create_fold_operation(&acc_info, group_by, query_object));
-
-        group_string.push_str(&create_filter_operation(
-            group_condition,
-            group_by,
-            query_object,
-            &acc_info,
-        ));
-
-        // Process select clauses, keeping in mind the grouping
-        group_string.push_str(&process_grouping_projections(query_object, &acc_info));
-    } else {
-        //now collect all the aggregates from the sink. We need to add them to the fold
-        let sink_agg = collect_sink_aggregates(query_object);
-
-        //insert all the aggregates from the sink into the accumulator
-        sink_agg.iter().for_each(|agg| {
-            let col_type = query_object.get_type(&agg.column);
-            let agg_value =
-                GroupAccumulatorValue::Aggregate(agg.function.clone(), agg.column.clone());
-            if agg.function == AggregateType::Avg {
-                let _ = acc_info.add_avg(agg.column.clone(), col_type);
-            } else if agg.function == AggregateType::Count {
-                let _ = acc_info.add_aggregate(agg_value, "usize".to_string());
-            } else {
-                let _ = acc_info.add_aggregate(agg_value, col_type);
+    
+            // Generate operations using the collected information
+            group_string.push_str(&create_fold_operation(&acc_info, keys, query_object));
+            group_string.push_str(&create_filter_operation(condition, keys, query_object, &acc_info));
+            group_string.push_str(&process_grouping_projections(query_object, &acc_info));
+        } else {
+            // Handle case without conditions - same aggregate collection code
+            let sink_agg = collect_sink_aggregates(query_object);
+            for agg in sink_agg {
+                let col_type = query_object.get_type(&agg.column);
+                let agg_value = GroupAccumulatorValue::Aggregate(agg.function.clone(), agg.column.clone());
+                if agg.function == AggregateType::Avg {
+                    acc_info.add_avg(agg.column.clone(), col_type);
+                } else if agg.function == AggregateType::Count {
+                    acc_info.add_aggregate(agg_value, "usize".to_string());
+                } else {
+                    acc_info.add_aggregate(agg_value, col_type);
+                }
             }
-        });
-        // Then generate operations using the collected information
-        group_string.push_str(&create_fold_operation(&acc_info, group_by, query_object));
-        // Process select clauses, keeping in mind the grouping
-        group_string.push_str(&process_grouping_projections(query_object, &acc_info));
-    }
-
-    group_string.push_str(".drop_key()");
-
-    let stream_name = query_object.streams.keys().cloned().collect::<Vec<String>>()[0].clone();
-    let stream = query_object.get_mut_stream(&stream_name);
-
-    stream.insert_op(group_string);
-
-    Ok(())
+    
+            group_string.push_str(&create_fold_operation(&acc_info, keys, query_object));
+            group_string.push_str(&process_grouping_projections(query_object, &acc_info));
+        }
+    
+        group_string.push_str(".drop_key()");
+    
+        // Store the operation in the correct stream
+        let stream = query_object.get_mut_stream(stream_name);
+        stream.insert_op(group_string);
+    
+        Ok(())
 }
 
 /// Process the group by keys and generate the corresponding tuple of column references.

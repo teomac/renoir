@@ -1,11 +1,11 @@
 use core::panic;
-use crate::dsl::ir::ir_ast_structure::{ComplexField, SelectColumn};
+use crate::dsl::ir::ir_ast_structure::{ComplexField, ProjectionColumn};
 use crate::dsl::ir::{AggregateType, IrLiteral};
 use crate::dsl::struct_object::object::QueryObject;
 use crate::dsl::ir::r_sink::base::r_sink_utils::{AccumulatorInfo, AccumulatorValue};
 
 // function to create aggregate fold and map
-pub fn create_aggregate_map(select_clauses: &Vec<SelectColumn>, query_object: &QueryObject) -> String {
+pub fn create_aggregate_map(select_clauses: &Vec<ProjectionColumn>, query_object: &QueryObject) -> String {
     let mut acc_info = AccumulatorInfo::new();
     let mut result = String::new();
 
@@ -15,7 +15,7 @@ pub fn create_aggregate_map(select_clauses: &Vec<SelectColumn>, query_object: &Q
     for (i, clause) in select_clauses.iter().enumerate() {
         let result_type = query_object.result_column_types.get_index(i).unwrap().1;
         match clause {
-            SelectColumn::Aggregate(agg, _) => match agg.function {
+            ProjectionColumn::Aggregate(agg, _) => match agg.function {
                 AggregateType::Avg => {
                     acc_info.add_avg(agg.column.clone(), result_type.clone());
                 }
@@ -32,7 +32,7 @@ pub fn create_aggregate_map(select_clauses: &Vec<SelectColumn>, query_object: &Q
                     );
                 }
             },
-            SelectColumn::ComplexValue(field, _) => {
+            ProjectionColumn::ComplexValue(field, _) => {
                 process_complex_field_for_accumulator(
                     field,
                     &mut acc_info,
@@ -40,10 +40,10 @@ pub fn create_aggregate_map(select_clauses: &Vec<SelectColumn>, query_object: &Q
                     &mut check_list,
                 );
             }
-            SelectColumn::Column(col, _) => {
+            ProjectionColumn::Column(col, _) => {
                 acc_info.add_value(AccumulatorValue::Column(col.clone()), result_type.clone());
             }
-            SelectColumn::StringLiteral(value) => {
+            ProjectionColumn::StringLiteral(value) => {
                 acc_info.add_value(
                     AccumulatorValue::Literal(value.clone()),
                     "String".to_string(),
@@ -239,7 +239,7 @@ pub fn create_aggregate_map(select_clauses: &Vec<SelectColumn>, query_object: &Q
         check_list.clear();
         let field_name = query_object.result_column_types.get_index(i).unwrap().0;
         let value = match clause {
-            SelectColumn::Aggregate(agg, _) => {
+            ProjectionColumn::Aggregate(agg, _) => {
                 match agg.function {
                     AggregateType::Avg => {
                         let (sum_pos, count_pos) = (
@@ -301,7 +301,7 @@ pub fn create_aggregate_map(select_clauses: &Vec<SelectColumn>, query_object: &Q
                     }
                 }
             }
-            SelectColumn::ComplexValue(field, _) => {
+            ProjectionColumn::ComplexValue(field, _) => {
                 let temp = process_complex_field_for_accumulator(
                     field,
                     &mut acc_info,
@@ -321,7 +321,7 @@ pub fn create_aggregate_map(select_clauses: &Vec<SelectColumn>, query_object: &Q
                     )
                 }
             }
-            SelectColumn::Column(col, _) => {
+            ProjectionColumn::Column(col, _) => {
                 let pos = acc_info
                     .value_positions
                     .get(&AccumulatorValue::Column(col.clone()))
@@ -329,7 +329,7 @@ pub fn create_aggregate_map(select_clauses: &Vec<SelectColumn>, query_object: &Q
                     .0;
                 format!("Some(acc.{})", pos)
             }
-            SelectColumn::StringLiteral(value) => {
+            ProjectionColumn::StringLiteral(value) => {
                 format!("Some(\"{}\".to_string())", value)
             }
         };

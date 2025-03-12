@@ -1,6 +1,5 @@
 use crate::dsl::ir::{
-    ir_ast_structure::{AggregateType, ComplexField, ProjectionColumn},
-    r_utils::check_alias,
+    ir_ast_structure::{AggregateType, ComplexField},
     ColumnRef, IrPlan, IrLiteral,
 };
 use indexmap::IndexMap;
@@ -47,6 +46,9 @@ pub struct QueryObject {
     //this indexMap will be filled with:
     //"power" -> f64 || i64
     //"power_1" -> f64 || i64
+
+    pub order_by_string: String, //order by string
+    pub limit_string: String, //limit string
    
 }
 
@@ -62,6 +64,8 @@ impl QueryObject {
             result_column_types: IndexMap::new(),
             output_path: String::new(),
             ir_ast: None,
+            order_by_string: String::new(),
+            limit_string: String::new(),
         }
     }
 
@@ -264,10 +268,7 @@ impl QueryObject {
             panic!("Table {} is not present in the list of tables.", main_table);
         }
     
-
         //create the first stream
-        //if there is no join
-  
         self.create_new_stream(&main_stream, &main_table, &main_alias.clone().unwrap_or(String::new()));
 
         //////////////////////////////////////////////
