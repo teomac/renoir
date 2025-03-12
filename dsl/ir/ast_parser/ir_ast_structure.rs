@@ -107,7 +107,7 @@ pub struct ColumnRef {
     pub column: String,
 }
 
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
 pub struct AggregateFunction {
     pub function: AggregateType,
     pub column: ColumnRef,
@@ -231,7 +231,26 @@ impl ColumnRef {
     }
 }
 
+impl AggregateFunction{
+    pub fn equals(&self, other: &AggregateFunction) -> bool {
+        self.function.equals(&other.function) && self.column == other.column
+    }
+}
+
 impl AggregateType {
+    pub fn equals(&self, other: &AggregateType) -> bool {
+        match (self, other) {
+            (AggregateType::Max, AggregateType::Max) => true,
+            (AggregateType::Min, AggregateType::Min) => true,
+            (AggregateType::Avg, AggregateType::Avg) => true,
+            (AggregateType::Sum, AggregateType::Sum) => true,
+            (AggregateType::Count, AggregateType::Count) => true,
+            _ => false,
+        }
+    }
+
+
+
     pub fn to_string(&self) -> String {
         match self {
             AggregateType::Max => "max".to_string(),

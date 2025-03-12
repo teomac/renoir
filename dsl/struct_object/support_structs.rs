@@ -1,20 +1,21 @@
 use indexmap::IndexMap;
 use crate::dsl::struct_object::object::QueryObject;
-use crate::dsl::ir::{ColumnRef, JoinType};
+use crate::dsl::ir::{AggregateFunction, ColumnRef, JoinType};
 
 #[derive(Debug, Clone)]
 pub struct StreamInfo {
     pub id: String,                           // Unique stream identifier
     pub source_table: String,                 // Original table/CSV source
     pub alias: String,                // Single, unique alias. If my query does not have a join, this is empty. Otherwise it is the alias of the table or the table name.
-    pub columns: IndexMap<String, String>,    // Column name → type mappings
+    pub initial_columns: IndexMap<String, String>,    // Column name → type mappings
     pub access: AccessPath,                   // Access path for tuple
     pub is_keyed: bool,                        // Whether the stream is keyed
     pub key_columns: Vec<ColumnRef>,              // Key columns
     pub op_chain: Vec<String>,                  // Operator chain
     pub final_struct: IndexMap<String, String>, // Final structure of the stream
     pub final_struct_name: String,              // Name of the final structure
-    pub join_tree :Option<JoinTree>            // Join tree
+    pub join_tree :Option<JoinTree>,            // Join tree
+    pub agg_position: IndexMap<AggregateFunction, String> // Aggregate function → position mappings
 }
 
 
@@ -54,7 +55,7 @@ impl StreamInfo {
             id,
             source_table,
             alias,
-            columns: IndexMap::new(),
+            initial_columns: IndexMap::new(),
             access: AccessPath {
                 base_path: String::new(),
                 null_check_required: false
@@ -64,12 +65,13 @@ impl StreamInfo {
             op_chain: Vec::new(),
             final_struct: IndexMap::new(),
             final_struct_name: String::new(),
-            join_tree: None
+            join_tree: None,
+            agg_position: IndexMap::new()
         }
     }
 
     pub fn update_columns(&mut self, columns: IndexMap<String, String>) {
-        self.columns = columns;
+        self.initial_columns = columns;
     }
 
     pub fn update_access(&mut self, access: AccessPath) {
@@ -88,14 +90,6 @@ impl StreamInfo {
         self.op_chain.push(op);
     }
 
-    pub fn get_op_chain(&self) -> Vec<String> {
-        self.op_chain.clone()
-    }
-    
-    pub fn get_source_table(&self) -> String {
-        self.source_table.clone()
-    }
-
     pub fn equals(&self, other: &StreamInfo) -> bool {
         self.id == other.id
     }
@@ -112,32 +106,20 @@ impl StreamInfo {
         self.final_struct_name = final_struct_name;
     }
 
-    pub fn get_final_struct(&self) -> IndexMap<String, String> {
-        self.final_struct.clone()
-    }
-
-    pub fn get_final_struct_name(&self) -> String {
-        self.final_struct_name.clone()
-    }
-
     pub fn get_access(&self) -> AccessPath {
         self.access.clone()
     }
 
-    pub fn get_columns (&self) -> IndexMap<String, String> {
-        self.columns.clone()
-    }
-
     pub fn check_if_column_exists(&self, column: &String) -> bool {
-        self.columns.get(column).is_some()
-    }
-
-    pub fn get_alias(&self) -> String {
-        self.alias.clone()
+        self.initial_columns.get(column).is_some()
     }
 
     pub fn get_field_type(&self, field: &String) -> String {
-        self.columns.get(field).unwrap().clone()
+        self.initial_columns.get(field).unwrap().clone()
+    }
+
+    pub fn insert_agg_position(&mut self, agg: AggregateFunction, position: String) {
+        self.agg_position.insert(agg, position);
     }
 }
 

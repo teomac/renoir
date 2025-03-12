@@ -1,7 +1,6 @@
 use crate::dsl::ir::ir_ast_structure::{
     AggregateType, GroupClause
 };
-use crate::dsl::ir::r_sink::grouped::r_sink_grouped::process_grouping_projections;
 use crate::dsl::ir::r_utils::check_alias;
 use crate::dsl::ir::{AggregateFunction, ProjectionColumn};
 use crate::dsl::ir::{ColumnRef, QueryObject};
@@ -90,7 +89,8 @@ pub fn process_group_by(
     stream_name: &String,
     query_object: &mut QueryObject) -> Result<(), Box<dyn std::error::Error>> {
 
-        let mut group_string = String::new();
+        let mut group_string_keys = String::new();
+        let mut group_string_condition = String::new();
 
         // Validate GROUP BY columns
         for col in keys {
@@ -108,7 +108,7 @@ pub fn process_group_by(
     
         // Generate GROUP BY operation
         let group_by_keys = process_group_by_keys(keys, query_object);
-        group_string.push_str(&format!(".group_by(|x| ({}))", group_by_keys));
+        group_string_keys.push_str(&format!(".group_by(|x| ({}))", group_by_keys));
     
         // Process having conditions if present
         let mut acc_info = GroupAccumulatorInfo::new();
@@ -139,38 +139,14 @@ pub fn process_group_by(
             }
     
             // Generate operations using the collected information
-            group_string.push_str(&create_fold_operation(&acc_info, keys, query_object));
-            group_string.push_str(&create_filter_operation(condition, keys, query_object, &acc_info));
-            group_string.push_str(&process_grouping_projections(query_object, &acc_info));
-        } else {
-            // Handle case without conditions - same aggregate collection code
-            let sink_agg = query_object.projection_agg;
-            for agg in sink_agg {
-                match agg {
-                    ProjectionColumn::Aggregate(agg, alias ) => {
-                        let col_type = query_object.get_type(&agg.column);
-                        let agg_value = GroupAccumulatorValue::Aggregate(agg.function.clone(), agg.column.clone());
-                        if agg.function == AggregateType::Avg {
-                            acc_info.add_avg(agg.column.clone(), col_type);
-                        } else if agg.function == AggregateType::Count {
-                            acc_info.add_aggregate(agg_value, "usize".to_string());
-                        } else {
-                            acc_info.add_aggregate(agg_value, col_type);
-                        }
-                    }
-                    _ => panic!("Unexpected ProjectionColumn type in sink"),
-                }
-            }
-    
-            group_string.push_str(&create_fold_operation(&acc_info, keys, query_object));
-            group_string.push_str(&process_grouping_projections(query_object, &acc_info));
+            group_string_condition.push_str(&create_fold_operation(&acc_info, keys, query_object));
+            group_string_condition.push_str(&create_filter_operation(condition, keys, query_object, &acc_info));
         }
-    
-        group_string.push_str(".drop_key()");
     
         // Store the operation in the correct stream
         let stream = query_object.get_mut_stream(stream_name);
-        stream.insert_op(group_string);
+        stream.insert_op(group_string_keys);
+        if !group_string_condition.is_empty() {stream.insert_op(group_string_condition);}
     
         Ok(())
 }

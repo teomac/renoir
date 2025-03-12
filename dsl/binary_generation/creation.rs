@@ -92,7 +92,7 @@ pub fn create_template(query_object: &QueryObject) -> String {
         let mut stream ;
         if i == all_stream_names.len() -1 {
             let stream_object = all_streams.get(stream_name).unwrap();
-            let stream_op_chain = stream_object.get_op_chain().concat();
+            let stream_op_chain = stream_object.op_chain.concat();
             stream = format!(
                 r#"let {} = {}.write_csv(move |_| r"{}.csv".into(), true);
                  "#,
@@ -116,7 +116,7 @@ pub fn create_template(query_object: &QueryObject) -> String {
 
         else{
             let stream_object = all_streams.get(stream_name).unwrap();
-        let stream_op_chain = stream_object.get_op_chain().concat();
+        let stream_op_chain = stream_object.op_chain.concat();
         stream = format!(
             r#"let {} = {};
              "#,
