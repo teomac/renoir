@@ -5,7 +5,7 @@ use crate::dsl::ir::{
 use indexmap::IndexMap;
 use core::panic;
 use std::sync::Arc;
-
+use crate::dsl::struct_object::utils::check_column_validity;
 use super::support_structs::StreamInfo;
 
 #[derive(Clone, Debug)]
@@ -730,7 +730,7 @@ fn collect_aggregates_from_complex_field(
                 }
             };
             //check if the column is valid
-            self.check_column_validity(col, &stream_name);
+            check_column_validity(col, &stream_name, &self);
             self.get_type(col)
         } else if let Some(ref lit) = field.literal {
             match lit {
@@ -765,7 +765,7 @@ fn collect_aggregates_from_complex_field(
                 }
             };
             //check if the column is valid
-            self.check_column_validity(&agg.column, &stream_name);
+            check_column_validity(&agg.column, &stream_name, &self);
             match agg.function {
                 AggregateType::Count => "usize".to_string(),
                 AggregateType::Avg => "f64".to_string(),

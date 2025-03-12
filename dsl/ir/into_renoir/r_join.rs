@@ -1,6 +1,7 @@
 use crate::dsl::ir::ir_ast_structure::*;
 use crate::dsl::ir::QueryObject;
 use crate::dsl::struct_object::support_structs::JoinTree;
+use crate::dsl::struct_object::utils::*;
 
 pub fn process_join(
     left_stream: &String,
@@ -29,8 +30,8 @@ pub fn process_join(
         let mut right_stream_name = query_object.get_stream_from_alias(&right_col.table.as_ref().unwrap()).unwrap().clone();
 
         // Validate columns
-        query_object.check_column_validity(&left_col, &left_stream_name);
-        query_object.check_column_validity(&right_col, &right_stream_name);
+        check_column_validity(&left_col, &left_stream_name, query_object);
+        check_column_validity(&right_col, &right_stream_name, query_object);
 
         // Check if columns need to be swapped
         if left_stream_name == *right_stream {

@@ -6,6 +6,7 @@ use crate::dsl::ir::BinaryOp;
 use crate::dsl::ir::QueryObject;
 use crate::dsl::ir::FilterClause;
 use crate::dsl::ir::{ComparisonOp, Condition};
+use crate::dsl::struct_object::utils::*;
 
 
 pub fn process_filter_clause(clause: &FilterClause, stream_name: &String, query_object: &mut QueryObject) -> Result<(), Box<dyn std::error::Error>> {
@@ -210,7 +211,7 @@ fn process_arithmetic_expression(field: &ComplexField, query_object: &QueryObjec
             all_streams.first().unwrap().0
         };
         // Validate column
-        query_object.check_column_validity(col, &stream_name);
+        check_column_validity(col, &stream_name, query_object);
 
         let stream = query_object.get_stream(stream_name);
         let c_type = query_object.get_type(col);
@@ -271,7 +272,7 @@ fn process_null_check_condition(condition: &NullCondition, query_object: &QueryO
 
     let field = if condition.field.column_ref.is_some() {
         //validate column
-        query_object.check_column_validity(&col_ref, stream_name);
+        check_column_validity(&col_ref, stream_name, query_object);
         format!(
             "x{}.{}",
             stream.get_access().get_base_path(),
@@ -498,7 +499,7 @@ fn collect_column_null_checks(
             all_streams.first().unwrap().0
         };
 
-        query_object.check_column_validity(col, &stream_name);
+        check_column_validity(col, &stream_name, query_object);
 
         let stream = query_object.get_stream(stream_name);
 
@@ -529,7 +530,7 @@ fn collect_column_null_checks(
             all_streams.first().unwrap().0
         };
 
-        query_object.check_column_validity(&agg.column, stream_name);
+        check_column_validity(&agg.column, stream_name, query_object);
 
         let stream = query_object.get_stream(stream_name);
 

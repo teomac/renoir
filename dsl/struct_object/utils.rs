@@ -1,7 +1,7 @@
 use crate::dsl::struct_object::object::QueryObject;
 use crate::dsl::ir::ColumnRef;
 
-pub fn check_column_validity(col_ref: &ColumnRef, stream_name: &String, query_object: &mut QueryObject) {
+pub fn check_column_validity(col_ref: &ColumnRef, stream_name: &String, query_object: &QueryObject) {
     //check if the col ref corresponds to a real column
     let col_to_check = col_ref.column.clone();
     if col_ref.table.is_some() {

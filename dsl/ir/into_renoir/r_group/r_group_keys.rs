@@ -100,9 +100,9 @@ pub fn process_group_by(
                     .as_ref()
                     .expect("Column in GROUP BY must have table reference in JOIN query");
                 let table_name = check_alias(table, query_object);
-                query_object.check_column_validity(col, &table_name);
+                check_column_validity(col, &table_name, query_object);
             } else {
-                query_object.check_column_validity(col, stream_name);
+                check_column_validity(col, stream_name, query_object);
             }
         }
     
