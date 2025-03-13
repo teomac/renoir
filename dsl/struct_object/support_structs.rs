@@ -156,28 +156,42 @@ impl JoinTree {
         match self {
             JoinTree::Leaf(_) => {},
             JoinTree::Join { left, right, .. } => {
-                // First update any nested joins
-                left.update_access_paths(query_object);
-                right.update_access_paths(query_object);
-
-                // Then update the access paths for this join
+                // Update the access paths for this join
                 let left_streams = left.get_involved_streams();
                 let right_streams = right.get_involved_streams();
 
-                // Update all streams on the left side with .0
-                for stream in left_streams {
-                    let current_path = query_object.get_stream(&stream).get_access().get_base_path();
-                    let new_path = format!(".0{}", current_path);
-                    query_object.get_mut_stream(&stream).access.update_base_path(new_path);
+                // For left side - if it's a leaf append .0, if it's a join append .0.0 for left and .0.1 for right
+                match &**left {
+                    JoinTree::Leaf(_) => {
+                        for stream in left_streams {
+                            //println!("Updating access path for {} to .0", stream);
+                            query_object.get_mut_stream(&stream).access.update_base_path(".0".to_string());
+                        }
+                    },
+                    JoinTree::Join { left: nested_left, right: nested_right, .. } => {
+                        // Get the streams from nested join
+                        let nested_left_streams = nested_left.get_involved_streams();
+                        let nested_right_streams = nested_right.get_involved_streams();
+                        
+                        // Update nested left streams with .0.0
+                        for stream in nested_left_streams {
+                            //println!("Updating access path for {} to .0.0", stream);
+                            query_object.get_mut_stream(&stream).access.update_base_path(".0.0".to_string());
+                        }
+                        
+                        // Update nested right streams with .0.1
+                        for stream in nested_right_streams {
+                            //println!("Updating access path for {} to .0.1", stream);
+                            query_object.get_mut_stream(&stream).access.update_base_path(".0.1".to_string());
+                        }
+                    }
                 }
 
-                // Update all streams on the right side with .1
+                // For right side - always append .1
                 for stream in right_streams {
-                    let current_path = query_object.get_stream(&stream).get_access().get_base_path();
-                    let new_path = format!(".1{}", current_path);
-                    query_object.get_mut_stream(&stream).access.update_base_path(new_path);
+                    //println!("Updating access path for {} to .1", stream);
+                    query_object.get_mut_stream(&stream).access.update_base_path(".1".to_string());
                 }
-            }
         }
     }
-}
+    }}

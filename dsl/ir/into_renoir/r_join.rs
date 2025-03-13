@@ -93,8 +93,6 @@ pub fn process_join(
     // Store join tree and update access paths
     join_tree.update_access_paths(query_object);
 
-    println!("Access path for {} is {:?}", left_stream, query_object.get_stream(left_stream).get_access().get_base_path());
-    println!("Access path for {} is {:?}", right_stream, query_object.get_stream(right_stream).get_access().get_base_path());
     query_object.get_mut_stream(left_stream).join_tree = Some(join_tree);
 
     Ok(())
