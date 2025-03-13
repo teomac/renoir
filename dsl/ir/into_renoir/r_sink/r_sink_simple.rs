@@ -13,8 +13,6 @@ pub fn create_simple_map(
     let mut all_streams = Vec::new();
 
     let main_stream = query_object.get_stream(stream_name);
-    all_streams.push(stream_name.clone());
-
     //if it has a join tree, get all the streams involved in the join
     if main_stream.join_tree.is_some() {
         all_streams.extend(
@@ -27,7 +25,10 @@ pub fn create_simple_map(
     }
 
     let is_grouped = main_stream.is_keyed && main_stream.key_columns.len() > 0;
-    let keys = main_stream.key_columns.clone();
+    let mut keys = Vec::new();
+    for stream in all_streams.iter() {
+        keys.extend(query_object.get_stream(stream).key_columns.clone());
+    }
 
     let mut check_list = Vec::new();
 
@@ -51,13 +52,17 @@ pub fn create_simple_map(
                         stream_name
                     };
 
+                    let col_type = query_object.get_type(col_ref);
+
                     let stream = query_object.get_stream(col_stream_name);
                     stream.check_if_column_exists(&col_ref.column);
 
                     //if the stream is grouped, check if the column is a key column
-                    let mut is_key = false;
+                    let mut is_key: bool = false;
                     if is_grouped {
-                        if !keys.iter().any(|key| key.column == col_ref.column) {
+                        if !keys.iter().any(|key| key == col_ref) {
+                            println!("Key columns: {:?}", keys);
+                            println!("Column: {:?}", col_ref);
                             panic!(
                                 "Column {} is not a key column in the grouped stream",
                                 col_ref.column
@@ -67,13 +72,28 @@ pub fn create_simple_map(
                         }
                     }
 
-                    let value = format!(
-                        "x{}{}.{}",
-                        if is_key { ".0" } else { "" },
-                        stream.get_access().get_base_path(),
-                        col_ref.column
-                    );
-                    format!("{}: {}", field_name, value)
+                    if is_key {
+                        let key_pos = keys.iter().position(|key| key == col_ref).unwrap();
+                        println!("Keys: {:?}", keys);
+                        println!("Key Pos: {:?}", key_pos);
+                        if keys.len() == 1 {
+                            let value = format!(
+                                "x.0{}",
+                                if col_type == "String" { ".clone()" } else { "" }
+                            );
+                            return format!("{}: {}", field_name, value);
+                        } else {
+                            let value = format!("x.0.{}{}", key_pos, if col_type == "String" { ".clone()" } else { "" });
+                            format!("{}: {}", field_name, value)
+                        }
+                    } else {
+                        let value = format!(
+                            "x{}.{}",
+                            stream.get_access().get_base_path(),
+                            col_ref.column
+                        );
+                        format!("{}: {}", field_name, value)
+                    }
                 }
                 ProjectionColumn::ComplexValue(complex_field, alias) => {
                     let field_name = alias.as_ref().unwrap_or_else(|| {
@@ -126,6 +146,11 @@ pub fn process_complex_field(
     check_list: &mut Vec<String>,
     all_streams: &Vec<String>,
 ) -> String {
+    let mut keys = Vec::new();
+    for stream in all_streams.iter() {
+        keys.extend(query_object.get_stream(stream).key_columns.clone());
+    }
+
     if let Some(ref nested) = field.nested_expr {
         // Handle nested expression (left_field OP right_field)
         let (left, op, right) = &**nested;
@@ -309,15 +334,13 @@ pub fn process_complex_field(
         let col_stream = query_object.get_stream(col_stream_name);
         col_stream.check_if_column_exists(&col.column);
 
+        let col_type = query_object.get_type(col);
+
         //if the stream is grouped, check if the column is a key column
         let mut is_key = false;
+
         if query_object.get_stream(stream_name).is_keyed {
-            if !query_object
-                .get_stream(stream_name)
-                .key_columns
-                .iter()
-                .any(|key| key.column == col.column)
-            {
+            if !keys.iter().any(|key| key == col) {
                 panic!(
                     "Column {} is not a key column in the grouped stream",
                     col.column
@@ -327,18 +350,20 @@ pub fn process_complex_field(
             }
         }
 
-        check_list.push(format!(
-            "x{}{}.{}.is_some()",
-            if is_key { ".0" } else { "" },
-            col_stream.access.base_path,
-            col.column
-        ));
-        format!(
-            "x{}{}.{}.unwrap()",
-            if is_key { ".0" } else { "" },
-            col_stream.access.base_path,
-            col.column
-        )
+        if is_key {
+            let key_pos = keys.iter().position(|key| key == col).unwrap();
+            if keys.len() == 1 {
+                return format!("x.0{}", if col_type == "String" { ".clone()" } else { "" });
+            } else {
+                return format!("x.0.{}{}", key_pos, if col_type == "String" { ".clone()" } else { "" });
+            }
+        } else {
+            check_list.push(format!(
+                "x{}.{}.is_some()",
+                col_stream.access.base_path, col.column
+            ));
+            format!("x{}.{}.unwrap()", col_stream.access.base_path, col.column)
+        }
     } else if let Some(ref lit) = field.literal {
         // Handle literal value
         match lit {

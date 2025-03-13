@@ -171,7 +171,8 @@ fn process_group_by_keys(columns: &Vec<ColumnRef>, query_object: &mut QueryObjec
         let final_string  = columns
             .iter()
             .map(|col| {
-                check_column_validity(col, &stream_name, query_object);
+                let col_stream = col.table.as_ref().unwrap_or(&stream_name);
+                check_column_validity(col, &col_stream, query_object);
                 let needs_casting = stream.get_field_type(&col.column) == "f64";
                 format!("x.{}.clone(){}", col.column, if needs_casting { ".map(OrderedFloat)" } else { "" })
             })

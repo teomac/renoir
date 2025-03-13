@@ -49,6 +49,7 @@ impl IrToRenoir {
                 Ok(stream_name)
             },
             IrPlan::Join { left, right, condition, join_type } => {
+                query_object.has_join = true;
                 // For joins we need both stream names
                 let left_stream = Self::convert(left, query_object)?;
                 let right_stream = Self::convert(right, query_object)?;

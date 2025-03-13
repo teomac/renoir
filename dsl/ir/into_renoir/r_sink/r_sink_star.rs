@@ -13,7 +13,6 @@ pub fn create_star_map(stream_name: &String, query_object: &QueryObject) -> Stri
     //for stream in all_streams, build all the columns mapping in the .map
     let mut offset: usize = 0;
     let mut all_streams = Vec::new();
-    all_streams.push(stream_name.clone());
 
     //if it has a join tree, get all the streams involved in the join
     if stream.join_tree.is_some() {
@@ -46,10 +45,15 @@ pub fn create_star_map(stream_name: &String, query_object: &QueryObject) -> Stri
     } else {
         //grouped case
         //retrieve the key columns
-        let key_columns = stream.key_columns.clone();
+        let mut key_columns = Vec::new();
+    for stream in all_streams.iter() {
+        key_columns.extend(query_object.get_stream(stream).key_columns.clone());
+    }
 
-        for key_column in key_columns.iter() {
+        for (index, key_column) in key_columns.iter().enumerate() {
+            let is_single_key = key_columns.len() == 1;
             let col_table = key_column.table.clone().unwrap_or(String::new());
+            let col_type = query_object.get_type(key_column);
 
             let col_stream_name = if col_table.is_empty() {
                 stream_name
@@ -59,16 +63,39 @@ pub fn create_star_map(stream_name: &String, query_object: &QueryObject) -> Stri
 
             let col_stream = query_object.get_stream(col_stream_name);
             if col_stream.check_if_column_exists(&key_column.column) {
-                result.push_str(&format!(
-                    "{}: x{}.{},",
-                    query_object
-                        .result_column_types
-                        .get_index(offset)
-                        .unwrap()
-                        .0,
-                    col_stream.get_access().get_base_path(),
-                    key_column.column
-                ));
+
+                if is_single_key{
+                    result.push_str(&format!(
+                        "{}: x.0{},",
+                        query_object
+                            .result_column_types
+                            .get_index(offset)
+                            .unwrap()
+                            .0,
+                        if col_type == "String"{
+                            ".clone()"
+                        } else {
+                            ""
+                        }
+                    ));
+                }
+                else{
+                    result.push_str(&format!(
+                        "{}: x.0.{}{},",
+                        query_object
+                            .result_column_types
+                            .get_index(offset)
+                            .unwrap()
+                            .0,
+                        index,
+                        if col_type == "String"{
+                            ".clone()"
+                        } else {
+                            ""
+                        }
+                    ));
+                }
+               
             } else {
                 panic!(
                     "Column {} does not exist in stream {}",

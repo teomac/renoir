@@ -20,8 +20,15 @@ pub fn create_aggregate_map(projection_clauses: &Vec<ProjectionColumn>, stream_n
     let mut result = String::new();
 
     let stream = query_object.get_stream(stream_name);
+    let mut all_streams = Vec::new();
+    if stream.join_tree.is_some(){
+        all_streams.extend(stream.join_tree.as_ref().unwrap().get_involved_streams());
+    }
     let is_grouped = stream.is_keyed;
-    let keys = stream.key_columns.clone();
+    let mut keys = Vec::new();
+    for stream in all_streams.iter() {
+        keys.extend(query_object.get_stream(stream).key_columns.clone());
+    }
 
     // First analyze all clauses to build accumulator info
     for (i, clause) in projection_clauses.iter().enumerate() {
@@ -114,7 +121,14 @@ fn create_fold(acc_info: &mut AccumulatorInfo, stream_name: &String, query_objec
     let mut result = String::new();
     let stream = query_object.get_stream(stream_name);
     let is_grouped = stream.is_keyed;
-    let keys = stream.key_columns.clone();
+    let mut keys = Vec::new();
+    let mut all_streams = Vec::new();
+    if stream.join_tree.is_some(){
+        all_streams.extend(stream.join_tree.as_ref().unwrap().get_involved_streams());
+    }
+    for stream in all_streams.iter() {
+        keys.extend(query_object.get_stream(stream).key_columns.clone());
+    }
 
     // Initialize the fold accumulator with correct types and initial values
     let mut tuple_types = Vec::new();
@@ -286,7 +300,14 @@ pub fn create_map(projection_clauses: &Vec<ProjectionColumn>, acc_info: &Accumul
     let mut result = String::new();
     let stream = query_object.get_stream(stream_name);
     let is_grouped = stream.is_keyed;
-    let keys = stream.key_columns.clone();
+    let mut all_streams = Vec::new();
+    let mut keys = Vec::new();
+    if stream.join_tree.is_some(){
+        all_streams.extend(stream.join_tree.as_ref().unwrap().get_involved_streams());
+    }
+    for stream in all_streams.iter() {
+        keys.extend(query_object.get_stream(stream).key_columns.clone());
+    }
 
     let mut check_list = Vec::new();
 
@@ -403,10 +424,17 @@ pub fn create_map(projection_clauses: &Vec<ProjectionColumn>, acc_info: &Accumul
                     panic!("Cannot use column in projection clause in non-grouped query");
                 };
 
+                let col_type = query_object.get_type(col);
+
                 let col_stream = query_object.get_stream(col_stream_name);
                         col_stream.check_if_column_exists(&col.column);
                         let key_position = keys.iter().position(|x| x == col).unwrap();
-                        return format!("Some(x.0.{})", key_position);
+                        let is_single_key = keys.len() == 1;
+                        if is_single_key {
+                            format!("Some(x.0{})", if col_type == "String" { ".clone()" } else { "" })
+                        } else {
+                            format!("Some(x.0.{}{})", key_position, if col_type == "String" { ".clone()" } else { "" })
+                        }
             }
             ProjectionColumn::StringLiteral(value) => {
                 format!("Some(\"{}\".to_string())", value)
@@ -422,6 +450,18 @@ pub fn create_map(projection_clauses: &Vec<ProjectionColumn>, acc_info: &Accumul
 }
 
 fn process_complex_field_for_map(field: &ComplexField, stream_name: &String, acc_info: &AccumulatorInfo, query_object: &QueryObject, check_list: &mut Vec<String>) -> String {
+    let stream = query_object.get_stream(stream_name);
+        let mut all_streams = Vec::new();
+    let mut keys = Vec::new();
+    if stream.join_tree.is_some(){
+        all_streams.extend(stream.join_tree.as_ref().unwrap().get_involved_streams());
+    }
+    for stream in all_streams.iter() {
+        keys.extend(query_object.get_stream(stream).key_columns.clone());
+    }
+
+    
+    
     if let Some(ref nested) = field.nested_expr {
         // Handle nested expression (left_field OP right_field)
         let (left, op, right) = &**nested;
@@ -533,20 +573,25 @@ fn process_complex_field_for_map(field: &ComplexField, stream_name: &String, acc
         }
     } else if let Some(ref col) = field.column_ref {
         // Handle column reference - must be a key column in grouped context
-        let stream = query_object.get_stream(stream_name);
-        let keys = &stream.key_columns;
-
         // Verify this is a key column
         if !keys.iter().any(|key| key.column == col.column) {
             panic!("Column {} must be a key column when used with aggregates", col.column);
         }
+
+        let is_single_key = keys.len() == 1;
+        let col_type = query_object.get_type(col);
 
         // Get position in key tuple
         let key_position = keys.iter().position(|key| key.column == col.column)
             .expect("Key column not found");
 
         // Key columns are accessed via x.0 and don't need safety checks
-        format!("x.0.{}", key_position)
+        if is_single_key {
+            return format!("x.0{}", if col_type == "String" { ".clone()" } else { "" });
+        }
+        else{
+            return format!("x.0.{}{}", key_position, if col_type == "String" { ".clone()" } else { "" });
+        }
 
     } else if let Some(ref lit) = field.literal {
         // Handle literal values
