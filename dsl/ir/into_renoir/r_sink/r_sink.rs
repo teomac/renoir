@@ -2,7 +2,7 @@ use crate::dsl::ir::ir_ast_structure::ProjectionColumn;
 use crate::dsl::ir::r_sink::r_sink_utils::*;
 use crate::dsl::ir::r_sink::r_sink_star::*;
 use crate::dsl::ir::r_sink::r_sink_simple::*;
-use crate::dsl::ir::r_sink::r_sink_agg::*;
+use crate::dsl::ir::r_sink::r_sink_fold::*;
 use crate::dsl::struct_object::object::QueryObject;
 
 pub fn process_projections(

@@ -451,7 +451,7 @@ impl QueryObject {
         &mut self,
         columns: &Vec<ProjectionColumn>,
         stream_name: &String,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) {
         let mut used_names = std::collections::HashSet::new();
         let all_streams = self.streams.keys().cloned().collect::<Vec<String>>();
         let stream = self.get_stream(stream_name).clone();
@@ -622,8 +622,6 @@ impl QueryObject {
                 }
             }
         }
-
-        Ok(())
     }
 
     ////////////////////////////////////////////////////////////////
