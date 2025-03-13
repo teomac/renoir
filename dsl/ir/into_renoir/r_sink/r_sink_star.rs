@@ -1,0 +1,83 @@
+use crate::dsl::struct_object::object::QueryObject;
+use core::panic;
+
+pub fn create_star_map(stream_name: &String, query_object: &QueryObject) -> String {
+    let mut result = String::from(".map(|x| OutputStruct { ");
+    let stream = query_object.get_stream(stream_name);
+
+    //cases: JOIN -> WITH GROUP / WITHOUT GROUP
+    //and
+    // NO JOIN -> WITH GROUP / WITHOUT GROUP
+
+    // Handle joined case - need to use tuple access
+    //for stream in all_streams, build all the columns mapping in the .map
+    let mut offset: usize = 0;
+    let mut all_streams = Vec::new();
+    all_streams.push(stream_name.clone());
+
+    //if it has a join tree, get all the streams involved in the join
+    if stream.join_tree.is_some() {
+        all_streams.extend(stream.join_tree.clone().unwrap().get_involved_streams());
+    }
+
+    let is_grouped = stream.is_keyed && stream.key_columns.len() > 0;
+
+    if !is_grouped {
+        for stream in all_streams.iter() {
+            let stream = query_object.get_stream(stream);
+            let tuple_access = stream.get_access().get_base_path();
+            let table_struct = query_object.get_struct(&stream.source_table).unwrap();
+
+            for (column_index, field_name) in table_struct.iter().enumerate() {
+                result.push_str(&format!(
+                    "{}: x{}.{}, ",
+                    query_object
+                        .result_column_types
+                        .get_index(offset + column_index)
+                        .unwrap()
+                        .0,
+                    tuple_access,
+                    field_name.0
+                ));
+            }
+
+            offset += table_struct.len();
+        }
+    } else {
+        //grouped case
+        //retrieve the key columns
+        let key_columns = stream.key_columns.clone();
+
+        for key_column in key_columns.iter() {
+            let col_table = key_column.table.clone().unwrap_or(String::new());
+
+            let col_stream_name = if col_table.is_empty() {
+                stream_name
+            } else {
+                query_object.get_stream_from_alias(&col_table).unwrap()
+            };
+
+            let col_stream = query_object.get_stream(col_stream_name);
+            if col_stream.check_if_column_exists(&key_column.column) {
+                result.push_str(&format!(
+                    "{}: x{}.{},",
+                    query_object
+                        .result_column_types
+                        .get_index(offset)
+                        .unwrap()
+                        .0,
+                    col_stream.get_access().get_base_path(),
+                    key_column.column
+                ));
+            } else {
+                panic!(
+                    "Column {} does not exist in stream {}",
+                    key_column.column, col_stream_name
+                );
+            }
+            offset += 1;
+        }
+    }
+    result.push_str(" })");
+    result
+}

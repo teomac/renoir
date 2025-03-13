@@ -1,140 +1,33 @@
-use core::panic;
 use crate::dsl::ir::ir_ast_structure::{ComplexField, ProjectionColumn};
 use crate::dsl::ir::IrLiteral;
 use crate::dsl::struct_object::object::QueryObject;
-use crate::dsl::ir::r_sink::base::r_sink_utils::*;
-use crate::dsl::ir::r_sink::base::r_sink_base_agg::create_aggregate_map;
+use core::panic;
 
-
-
-/// Processes a `SelectColumn` and generates a corresponding string representation
-/// of the query operation.
-///
-/// # Arguments
-///
-/// * `select_clauses` - A reference to a/// * `query_object` - A reference to the `QueryObject` which contains metadata and type information for the query.
-///
-/// # Returns
-///
-/// A `String` that represents the query operation based on the provided `SelectColumn`.
-///
-/// # Panics
-///
-/// This function will panic if:
-/// - The data type for aggregation is not `f64` or `i64`.
-/// - The data type for power operation is not `f64` or `i64`.
-///
-///
-///
-///
-///
-
-pub fn process_projections(
-    projections: &Vec<ProjectionColumn>,
+pub fn create_simple_map(
+    projection_clauses: &Vec<ProjectionColumn>,
     stream_name: &String,
-    query_object: &mut QueryObject,
-) -> Result<(), Box<dyn std::error::Error>> {
-    let mut final_string = String::new();
-    // Check for SELECT * case
-    if projections.len() == 1 {
-        match &projections[0] {
-            ProjectionColumn::Column(col_ref, _) if col_ref.column == "*" => {
-                final_string = create_select_star_map(stream_name, query_object);
-            }
-            _ => {}
-        }
-
-        let stream_name = query_object.streams.keys().cloned().collect::<Vec<String>>()[0].clone();
-        let stream = query_object.get_mut_stream(&stream_name);
-
-        stream.insert_op(final_string.clone());
-
-        return Ok(());
-    }
-    // Check if any aggregations are present using recursive traversal
-    let has_aggregates: bool = projections.iter().any(|clause| match clause {
-        ProjectionColumn::Aggregate(_, _) => true,
-        ProjectionColumn::ComplexValue(field, _) => has_aggregate_in_complex_field(field),
-        _ => false,
-    });
-
-    if has_aggregates {
-        final_string = create_aggregate_map(projections, query_object);
-    } else {
-        final_string = create_simple_map(projections, query_object);
-    }
-
-    let stream_name = query_object.streams.keys().cloned().collect::<Vec<String>>()[0].clone();
-    let stream = query_object.get_mut_stream(&stream_name);
-
-    stream.insert_op(final_string.clone());
-
-    Ok(())
-}
-
-
-
-fn create_select_star_map(stream_name: &String, query_object: &QueryObject) -> String {
-    let mut result = String::from(".map(|x| OutputStruct { ");
-    let stream = query_object.get_stream(stream_name);
-    
-    if query_object.has_join {
-        // Handle joined case - need to use tuple access
-        //for stream in all_streams, build all the columns mapping in the .map
-        let mut offset: usize = 0;
-        let all_streams = stream.join_tree.clone().unwrap().get_involved_streams();
-
-        for stream in all_streams.iter() {
-
-            let stream = query_object.get_stream(stream);
-            let tuple_access = stream.get_access().get_base_path();
-            let table_struct = query_object.get_struct(&stream.source_table).unwrap();
-
-            for (column_index, field_name) in table_struct.iter().enumerate() {
-                result.push_str(&format!(
-                    "{}: x{}.{}, ",
-                    query_object
-                        .result_column_types
-                        .get_index(offset + column_index)
-                        .unwrap()
-                        .0,
-                    tuple_access,
-                    field_name.0
-                ));
-            }
-
-            offset += table_struct.len();
-        }
-    } else {
-        // Simple case - direct access
-        // retrieve the column list of the first table
-        let columns = query_object
-            .tables_info
-            .get(&query_object.get_all_table_names()[0])
-            .unwrap();
-
-        //zip the column list with the result_column_types
-        let zip = columns.iter().zip(query_object.result_column_types.iter());
-
-        //iterate over the zip and build the mapping
-        let fields: Vec<String> = zip
-            .collect::<Vec<_>>()
-            .iter()
-            .map(|(column, result_column)| format!("{}: x.{}", result_column.0, column.0))
-            .collect();
-
-        result.push_str(&fields.join(", "));
-    }
-
-    result.push_str(" })");
-    result
-}
-
-fn create_simple_map(projection_clauses: &Vec<ProjectionColumn>, query_object: &QueryObject) -> String {
+    query_object: &QueryObject,
+) -> String {
     let mut map_string = String::from(".map(|x| OutputStruct { ");
     let empty_string = "".to_string();
-    let all_streams = query_object.streams.keys().collect::<Vec<&String>>();
+    let mut all_streams = Vec::new();
 
+    let main_stream = query_object.get_stream(stream_name);
+    all_streams.push(stream_name.clone());
+
+    //if it has a join tree, get all the streams involved in the join
+    if main_stream.join_tree.is_some() {
+        all_streams.extend(
+            main_stream
+                .join_tree
+                .clone()
+                .unwrap()
+                .get_involved_streams(),
+        );
+    }
+
+    let is_grouped = main_stream.is_keyed && main_stream.key_columns.len() > 0;
+    let keys = main_stream.key_columns.clone();
 
     let mut check_list = Vec::new();
 
@@ -150,22 +43,37 @@ fn create_simple_map(projection_clauses: &Vec<ProjectionColumn>, query_object: &
                         .unwrap_or_else(|| (&empty_string, &empty_string))
                         .0;
 
-                    let stream_name = if col_ref.table.is_some(){
-                        query_object.get_stream_from_alias(&col_ref.table.as_ref().unwrap()).unwrap()
-                    }else{
-                        if all_streams.len() == 1{
-                            &all_streams[0].clone()}
-                        else{
-                            panic!("Invalid column reference - no table specified and multiple streams present in query");
-                        }
+                    let col_stream_name = if col_ref.table.is_some() {
+                        query_object
+                            .get_stream_from_alias(&col_ref.table.as_ref().unwrap())
+                            .unwrap()
+                    } else {
+                        stream_name
                     };
 
-                    let stream = query_object.get_stream(stream_name);
+                    let stream = query_object.get_stream(col_stream_name);
                     stream.check_if_column_exists(&col_ref.column);
 
-                    let value = 
-                        format!("x{}.{}", stream.get_access().get_base_path(), col_ref.column)
-                    ;
+                    //if the stream is grouped, check if the column is a key column
+                    let mut is_key = false;
+                    if is_grouped {
+                        if !keys.iter().any(|key| key.column == col_ref.column) {
+                            panic!(
+                                "Column {} is not a key column in the grouped stream",
+                                col_ref.column
+                            );
+                        }
+                        else {
+                            is_key = true;
+                        }
+                    }
+
+                    let value = format!(
+                        "x{}{}.{}",
+                        if is_key { ".0" } else { "" },
+                        stream.get_access().get_base_path(),
+                        col_ref.column
+                    );
                     format!("{}: {}", field_name, value)
                 }
                 ProjectionColumn::ComplexValue(complex_field, alias) => {
@@ -177,7 +85,13 @@ fn create_simple_map(projection_clauses: &Vec<ProjectionColumn>, query_object: &
                             .map(|(name, _)| name)
                             .unwrap()
                     });
-                    let value = process_complex_field(complex_field, query_object, &mut check_list);
+                    let value = process_complex_field(
+                        complex_field,
+                        stream_name,
+                        query_object,
+                        &mut check_list,
+                        &all_streams,
+                    );
                     // Deduplicate and the check list
                     check_list.sort();
                     check_list.dedup();
@@ -193,7 +107,9 @@ fn create_simple_map(projection_clauses: &Vec<ProjectionColumn>, query_object: &
                         )
                     }
                 }
-                ProjectionColumn::StringLiteral(value) => format!("{}: Some(\"{}\".to_string())", value, value),
+                ProjectionColumn::StringLiteral(value) => {
+                    format!("{}: Some(\"{}\".to_string())", value, value)
+                }
                 _ => unreachable!("Should not have aggregates in simple map"),
             }
         })
@@ -206,11 +122,11 @@ fn create_simple_map(projection_clauses: &Vec<ProjectionColumn>, query_object: &
 
 pub fn process_complex_field(
     field: &ComplexField,
+    stream_name: &String,
     query_object: &QueryObject,
     check_list: &mut Vec<String>,
+    all_streams: &Vec<String>,
 ) -> String {
-    let all_streams = query_object.streams.keys().collect::<Vec<&String>>();
-
     if let Some(ref nested) = field.nested_expr {
         // Handle nested expression (left_field OP right_field)
         let (left, op, right) = &**nested;
@@ -227,16 +143,40 @@ pub fn process_complex_field(
                 if op == "/" {
                     return format!(
                         "({} as f64) {} ({} as f64)",
-                        process_complex_field(left, query_object, check_list),
+                        process_complex_field(
+                            left,
+                            stream_name,
+                            query_object,
+                            check_list,
+                            all_streams
+                        ),
                         op,
-                        process_complex_field(right, query_object, check_list)
+                        process_complex_field(
+                            right,
+                            stream_name,
+                            query_object,
+                            check_list,
+                            all_streams
+                        )
                     );
                 }
 
                 // Special handling for power operation (^)
                 if op == "^" {
-                    let left_expr = process_complex_field(left, query_object, check_list);
-                    let right_expr = process_complex_field(right, query_object, check_list);
+                    let left_expr = process_complex_field(
+                        left,
+                        stream_name,
+                        query_object,
+                        check_list,
+                        all_streams,
+                    );
+                    let right_expr = process_complex_field(
+                        right,
+                        stream_name,
+                        query_object,
+                        check_list,
+                        all_streams,
+                    );
 
                     // If either operand is f64, use powf
                     if left_type == "f64" || right_type == "f64" {
@@ -255,8 +195,15 @@ pub fn process_complex_field(
                     }
                 }
 
-                let left_expr = process_complex_field(left, query_object, check_list);
-                let right_expr = process_complex_field(right, query_object, check_list);
+                let left_expr =
+                    process_complex_field(left, stream_name, query_object, check_list, all_streams);
+                let right_expr = process_complex_field(
+                    right,
+                    stream_name,
+                    query_object,
+                    check_list,
+                    all_streams,
+                );
 
                 // Add as f64 to integer literals when needed
                 let processed_left = if let Some(ref lit) = left.literal {
@@ -309,16 +256,29 @@ pub fn process_complex_field(
             if op == "/" {
                 return format!(
                     "({} as f64) {} ({} as f64)",
-                    process_complex_field(left, query_object, check_list),
+                    process_complex_field(left, stream_name, query_object, check_list, all_streams),
                     op,
-                    process_complex_field(right, query_object, check_list)
+                    process_complex_field(
+                        right,
+                        stream_name,
+                        query_object,
+                        check_list,
+                        all_streams
+                    )
                 );
             }
 
             // Special handling for power operation (^)
             if op == "^" {
-                let left_expr = process_complex_field(left, query_object, check_list);
-                let right_expr = process_complex_field(right, query_object, check_list);
+                let left_expr =
+                    process_complex_field(left, stream_name, query_object, check_list, all_streams);
+                let right_expr = process_complex_field(
+                    right,
+                    stream_name,
+                    query_object,
+                    check_list,
+                    all_streams,
+                );
 
                 // If both are f64, use powf
                 if left_type == "f64" {
@@ -332,30 +292,52 @@ pub fn process_complex_field(
             // Regular arithmetic with same types
             format!(
                 "({} {} {})",
-                process_complex_field(left, query_object, check_list),
+                process_complex_field(left, stream_name, query_object, check_list, all_streams),
                 op,
-                process_complex_field(right, query_object, check_list)
+                process_complex_field(right, stream_name, query_object, check_list, all_streams)
             )
         }
     } else if let Some(ref col) = field.column_ref {
         // Handle column reference
-        let stream_name = if col.table.is_some(){
-            query_object.get_stream_from_alias(&col.table.as_ref().unwrap()).unwrap()
-        }else{
-            if all_streams.len() == 1{
-                &all_streams[0].clone()}
-            else{
-                panic!("Invalid column reference - no table specified and multiple streams present in query");
-            }
+        let col_stream_name = if col.table.is_some() {
+            query_object
+                .get_stream_from_alias(&col.table.as_ref().unwrap())
+                .unwrap()
+        } else {
+            stream_name
         };
 
-        let stream = query_object.get_stream(stream_name);
-        stream.check_if_column_exists(&col.column);
+        let col_stream = query_object.get_stream(col_stream_name);
+        col_stream.check_if_column_exists(&col.column);
 
-           
+        //if the stream is grouped, check if the column is a key column
+        let mut is_key =false;
+        if query_object.get_stream(stream_name).is_keyed {
+            if !query_object
+                .get_stream(stream_name)
+                .key_columns
+                .iter()
+                .any(|key| key.column == col.column)
+            {
+                panic!(
+                    "Column {} is not a key column in the grouped stream",
+                    col.column
+                );
+            }
+            else {
+                is_key = true;
+            }
+        }
 
-            check_list.push(format!("x{}.{}.is_some()", stream.access.base_path, col.column));
-            format!("x{}.{}.unwrap()", stream.access.base_path, col.column)
+        check_list.push(format!(
+            "x{}{}.{}.is_some()",
+            if is_key { ".0" } else { "" },
+            col_stream.access.base_path, col.column
+        ));
+        format!("x{}{}.{}.unwrap()", 
+            if is_key { ".0" } else { "" },
+            col_stream.access.base_path, col.column
+        )
     } else if let Some(ref lit) = field.literal {
         // Handle literal value
         match lit {
@@ -371,6 +353,3 @@ pub fn process_complex_field(
         panic!("Invalid ComplexField - no valid content");
     }
 }
-
-
-

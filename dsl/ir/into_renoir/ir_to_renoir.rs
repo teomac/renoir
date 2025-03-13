@@ -2,7 +2,7 @@ use crate::dsl::{
     ir::{
         ast_parser::ir_ast_structure::IrPlan,
         into_renoir::{r_condition::process_filter_clause, r_group::r_group_keys::process_group_by, 
-            r_sink::base::r_sink_base::process_projections, r_join::*, r_limit::*, r_order::*}, 
+            r_sink::r_sink::process_projections, r_join::*, r_limit::*, r_order::*}, 
     },
     struct_object::object::QueryObject,
 };
@@ -28,6 +28,10 @@ impl IrToRenoir {
             },
             IrPlan::Project { input, columns, distinct } => {
                 let stream_name = Self::convert(input, query_object)?;
+
+                //function used to fill the result_column_types object in the query_object
+                query_object.populate_result_mappings(columns, &stream_name);
+
                 process_projections(columns, &stream_name, query_object)?;
                 if *distinct {
                     process_distinct(query_object);
