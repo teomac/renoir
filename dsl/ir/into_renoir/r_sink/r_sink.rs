@@ -1,9 +1,11 @@
 use crate::dsl::ir::ir_ast_structure::ProjectionColumn;
-use crate::dsl::ir::r_sink::r_sink_utils::*;
-use crate::dsl::ir::r_sink::r_sink_star::*;
-use crate::dsl::ir::r_sink::r_sink_simple::*;
 use crate::dsl::ir::r_sink::r_sink_fold::*;
+use crate::dsl::ir::r_sink::r_sink_simple::*;
+use crate::dsl::ir::r_sink::r_sink_star::*;
+use crate::dsl::ir::r_sink::r_sink_utils::*;
 use crate::dsl::struct_object::object::QueryObject;
+
+use super::r_sink_agg::create_aggregate_map_from_previous;
 
 pub fn process_projections(
     projections: &Vec<ProjectionColumn>,
@@ -33,14 +35,13 @@ pub fn process_projections(
     });
 
     if has_aggregates {
-        if !(query_object.get_stream(stream_name).agg_position.is_empty()){
-            //1. there is a group with a condition with aggregates -> 
+        if !(query_object.get_stream(stream_name).agg_position.is_empty()) {
+            //1. there is a group with a condition with aggregates ->
             //we have already performed a .fold(), we only have to access aggregates
-
-            //TODO - implement this case
-        }
-        else{
-            //2. there is a group with a condition without aggregates || there is no group -> 
+            final_string =
+                create_aggregate_map_from_previous(projections, stream_name, query_object);
+        } else {
+            //2. there is a group with a condition without aggregates || there is no group ->
             //we have to perform a .fold() and access the aggregates
             final_string = create_aggregate_map(projections, stream_name, query_object);
         }
@@ -51,6 +52,10 @@ pub fn process_projections(
     let stream = query_object.get_mut_stream(&stream_name);
 
     stream.insert_op(final_string.clone());
+
+    if stream.is_keyed {
+        stream.insert_op(".drop_key()".to_string());
+    }
 
     Ok(())
 }

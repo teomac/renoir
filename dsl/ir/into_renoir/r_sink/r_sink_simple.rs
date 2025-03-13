@@ -62,8 +62,7 @@ pub fn create_simple_map(
                                 "Column {} is not a key column in the grouped stream",
                                 col_ref.column
                             );
-                        }
-                        else {
+                        } else {
                             is_key = true;
                         }
                     }
@@ -311,7 +310,7 @@ pub fn process_complex_field(
         col_stream.check_if_column_exists(&col.column);
 
         //if the stream is grouped, check if the column is a key column
-        let mut is_key =false;
+        let mut is_key = false;
         if query_object.get_stream(stream_name).is_keyed {
             if !query_object
                 .get_stream(stream_name)
@@ -323,8 +322,7 @@ pub fn process_complex_field(
                     "Column {} is not a key column in the grouped stream",
                     col.column
                 );
-            }
-            else {
+            } else {
                 is_key = true;
             }
         }
@@ -332,11 +330,14 @@ pub fn process_complex_field(
         check_list.push(format!(
             "x{}{}.{}.is_some()",
             if is_key { ".0" } else { "" },
-            col_stream.access.base_path, col.column
+            col_stream.access.base_path,
+            col.column
         ));
-        format!("x{}{}.{}.unwrap()", 
+        format!(
+            "x{}{}.{}.unwrap()",
             if is_key { ".0" } else { "" },
-            col_stream.access.base_path, col.column
+            col_stream.access.base_path,
+            col.column
         )
     } else if let Some(ref lit) = field.literal {
         // Handle literal value

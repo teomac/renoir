@@ -80,8 +80,7 @@ pub fn create_template(query_object: &QueryObject) -> String {
 
     let mut stream_declarations: Vec<String> = Vec::new();
 
-    let mut all_stream_names = all_streams.keys().cloned().collect::<Vec<String>>();
-    all_stream_names.reverse();
+    let all_stream_names = all_streams.keys().cloned().collect::<Vec<String>>();
 
 
     for (i, stream_name) in all_stream_names.iter().enumerate() {

@@ -282,7 +282,7 @@ fn create_fold(acc_info: &mut AccumulatorInfo, stream_name: &String, query_objec
 
 
 //function used to create the .map() operation
-fn create_map(projection_clauses: &Vec<ProjectionColumn>, acc_info: &AccumulatorInfo, stream_name: &String, query_object: &QueryObject) -> String {
+pub fn create_map(projection_clauses: &Vec<ProjectionColumn>, acc_info: &AccumulatorInfo, stream_name: &String, query_object: &QueryObject) -> String {
     let mut result = String::new();
     let stream = query_object.get_stream(stream_name);
     let is_grouped = stream.is_keyed;
