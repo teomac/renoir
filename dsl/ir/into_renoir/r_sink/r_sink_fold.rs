@@ -202,25 +202,9 @@ fn create_fold(acc_info: &mut AccumulatorInfo, stream_name: &String, query_objec
 
                 col_stream.check_if_column_exists(&col.column);
 
-                //check if is grouped and the column is a key column
-                let mut is_key_col = false;
-                if is_grouped {
-                    is_key_col = keys.contains(&col);
-                }
-
                 let col_access = {
                     format!(
-                        "x{}{}.{}",
-                        if is_grouped {
-                            if is_key_col {
-                                ".0"
-                            } else {
-                                ".1"
-                            }
-                        }
-                        else{
-                            ""
-                        },
+                        "x{}.{}",
                         col_stream.get_access().get_base_path(),
                         col.column
                     )
@@ -229,7 +213,7 @@ fn create_fold(acc_info: &mut AccumulatorInfo, stream_name: &String, query_objec
                 match agg_type {
                     AggregateType::Count => {
                         if col.column == "*" {
-                            update_code.push_str(&format!("    acc{} += 1;\n", index_acc));
+                            update_code.push_str(&format!("    {}acc{} += 1;\n", asterisk, index_acc));
                         } else {
                             update_code.push_str(&format!(
                                 "    if {}.is_some() {{ {}acc{} += 1; }}\n",
@@ -431,9 +415,9 @@ pub fn create_map(projection_clauses: &Vec<ProjectionColumn>, acc_info: &Accumul
                         let key_position = keys.iter().position(|x| x == col).unwrap();
                         let is_single_key = keys.len() == 1;
                         if is_single_key {
-                            format!("Some(x.0{})", if col_type == "String" { ".clone()" } else { "" })
+                            format!("x.0{}", if col_type == "String" { ".clone()" } else { "" })
                         } else {
-                            format!("Some(x.0.{}{})", key_position, if col_type == "String" { ".clone()" } else { "" })
+                            format!("x.0.{}{}", key_position, if col_type == "String" { ".clone()" } else { "" })
                         }
             }
             ProjectionColumn::StringLiteral(value) => {

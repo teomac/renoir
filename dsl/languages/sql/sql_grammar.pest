@@ -62,8 +62,8 @@ arithmetic_factor = {
     string_literal |
     boolean |
     table_column |
-    variable |
-    aggregate_expr
+    aggregate_expr |
+    variable
 }
 
 exists_expr = { exists_keyword ~ subquery_expr }
