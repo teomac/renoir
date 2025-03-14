@@ -939,8 +939,10 @@ impl QueryObject {
                     panic!("Column reference must have table name in JOIN query");
                 }
             };
-            //check if the column is valid
-            check_column_validity(&agg.column, &stream_name, &self);
+            //check if the column is valid (not when it's count(*))
+            if !(agg.function == AggregateType::Count  && agg.column.column == "*") {
+                check_column_validity(&agg.column, &stream_name, &self);
+            }
             match agg.function {
                 AggregateType::Count => "usize".to_string(),
                 AggregateType::Avg => "f64".to_string(),
