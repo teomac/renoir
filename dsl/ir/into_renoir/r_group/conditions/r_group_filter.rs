@@ -2,8 +2,8 @@ use crate::dsl::ir::ir_ast_structure::{
     AggregateType, ComplexField, GroupBaseCondition, GroupClause, NullOp,
 };
 use crate::dsl::ir::r_group::r_group_keys::GroupAccumulatorInfo;
-use crate::dsl::ir::{ColumnRef, QueryObject};
 use crate::dsl::ir::{AggregateFunction, BinaryOp, ComparisonOp, IrLiteral};
+use crate::dsl::ir::{ColumnRef, QueryObject};
 
 // Function to create the filter operation
 pub fn create_filter_operation(
@@ -143,7 +143,6 @@ fn process_filter_condition(
                     let col_access = if is_key_field {
                         // Get the position in the group by key tuple
                         let key_position = keys
-                            
                             .iter()
                             .position(|c| {
                                 c.column == col_ref.column
@@ -227,10 +226,8 @@ fn process_filter_field(
         let left_type = query_object.get_complex_field_type(left);
         let right_type = query_object.get_complex_field_type(right);
 
-        let left_expr =
-            process_filter_field(left, keys, query_object, acc_info, &mut check_list);
-        let right_expr =
-            process_filter_field(right, keys, query_object, acc_info, &mut check_list);
+        let left_expr = process_filter_field(left, keys, query_object, acc_info, &mut check_list);
+        let right_expr = process_filter_field(right, keys, query_object, acc_info, &mut check_list);
 
         // Improved type handling for arithmetic operations
         if left_type != right_type {
@@ -291,13 +288,31 @@ fn process_filter_field(
         };
         // Handle column reference - check if it's a key or not
         if let Some(key_position) = keys.iter().position(|c| c.column == col.column) {
+            let col_type = query_object.get_type(col);
             // It's a key - use its position in the group by tuple
             if keys.len() == 1 {
                 check_list.push(format!("x.0{}.is_some()", as_ref));
-                format!("x.0{}.unwrap()", as_ref)
+                format!(
+                    "x.0{}.unwrap(){}",
+                    as_ref,
+                    if col_type == "f64" {
+                        ".into_inner()"
+                    } else {
+                        ""
+                    }
+                )
             } else {
                 check_list.push(format!("x.0.{}{}.is_some()", key_position, as_ref));
-                format!("x.0.{}{}.unwrap()", key_position, as_ref)
+                format!(
+                    "x.0.{}{}.unwrap(){}",
+                    key_position,
+                    as_ref,
+                    if col_type == "f64" {
+                        ".into_inner()"
+                    } else {
+                        ""
+                    }
+                )
             }
         } else {
             // Not a key - use x.1

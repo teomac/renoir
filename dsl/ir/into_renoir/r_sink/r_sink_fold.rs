@@ -23,6 +23,8 @@ pub fn create_aggregate_map(projection_clauses: &Vec<ProjectionColumn>, stream_n
     let mut all_streams = Vec::new();
     if stream.join_tree.is_some(){
         all_streams.extend(stream.join_tree.as_ref().unwrap().get_involved_streams());
+    } else {
+        all_streams.push(stream_name.clone());
     }
     let is_grouped = stream.is_keyed;
     let mut keys = Vec::new();
@@ -125,6 +127,8 @@ fn create_fold(acc_info: &mut AccumulatorInfo, stream_name: &String, query_objec
     let mut all_streams = Vec::new();
     if stream.join_tree.is_some(){
         all_streams.extend(stream.join_tree.as_ref().unwrap().get_involved_streams());
+    } else {
+        all_streams.push(stream_name.clone());
     }
     for stream in all_streams.iter() {
         keys.extend(query_object.get_stream(stream).key_columns.clone());
@@ -288,7 +292,10 @@ pub fn create_map(projection_clauses: &Vec<ProjectionColumn>, acc_info: &Accumul
     let mut keys = Vec::new();
     if stream.join_tree.is_some(){
         all_streams.extend(stream.join_tree.as_ref().unwrap().get_involved_streams());
+    } else {
+        all_streams.push(stream_name.clone());
     }
+
     for stream in all_streams.iter() {
         keys.extend(query_object.get_stream(stream).key_columns.clone());
     }
@@ -415,9 +422,19 @@ pub fn create_map(projection_clauses: &Vec<ProjectionColumn>, acc_info: &Accumul
                         let key_position = keys.iter().position(|x| x == col).unwrap();
                         let is_single_key = keys.len() == 1;
                         if is_single_key {
-                            format!("x.0{}", if col_type == "String" { ".clone()" } else { "" })
+                            if col_type == "f64" {
+                                format!("if x.0.is_some() {{ x.0.unwrap().into_inner() }} else {{ None }}")
+                            } else {
+                                format!("x.0{}", if col_type == "String" { ".clone()" } else { "" })
+                            }
+                            
                         } else {
-                            format!("x.0.{}{}", key_position, if col_type == "String" { ".clone()" } else { "" })
+                            if col_type == "f64" {
+                                format!("if x.0.{}.is_some() {{ x.0.{}.unwrap().into_inner() }} else {{ None }}", key_position, key_position)
+                            } else {
+                                format!("x.0.{}{}", key_position, if col_type == "String" { ".clone()" } else { "" })
+                            }
+                            
                         }
             }
             ProjectionColumn::StringLiteral(value) => {
@@ -439,7 +456,10 @@ fn process_complex_field_for_map(field: &ComplexField, stream_name: &String, acc
     let mut keys = Vec::new();
     if stream.join_tree.is_some(){
         all_streams.extend(stream.join_tree.as_ref().unwrap().get_involved_streams());
+    } else {
+        all_streams.push(stream_name.clone());
     }
+
     for stream in all_streams.iter() {
         keys.extend(query_object.get_stream(stream).key_columns.clone());
     }
@@ -571,10 +591,23 @@ fn process_complex_field_for_map(field: &ComplexField, stream_name: &String, acc
 
         // Key columns are accessed via x.0 and don't need safety checks
         if is_single_key {
-            return format!("x.0{}", if col_type == "String" { ".clone()" } else { "" });
+            if col_type == "f64" {
+                check_list.push(format!("x.0.is_some()"));
+                return format!("x.0.unwrap().into_inner()");
+            } else {
+                return format!("x.0{}", if col_type == "String" { ".clone()" } else { "" });
+            }
+            
         }
         else{
-            return format!("x.0.{}{}", key_position, if col_type == "String" { ".clone()" } else { "" });
+            if col_type == "f64" {
+                check_list.push(format!("x.0.{}.is_some()", key_position));
+                return format!("x.0.{}.unwrap().into_inner()", key_position);
+            } else {
+                return format!("x.0.{}{}", key_position, if col_type == "String" { ".clone()" } else { "" });
+
+            }
+            
         }
 
     } else if let Some(ref lit) = field.literal {

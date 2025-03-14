@@ -22,6 +22,8 @@ pub fn create_simple_map(
                 .unwrap()
                 .get_involved_streams(),
         );
+    } else {
+        all_streams.push(stream_name.clone());
     }
 
     let is_grouped = main_stream.is_keyed && main_stream.key_columns.len() > 0;
@@ -76,14 +78,33 @@ pub fn create_simple_map(
                         let key_pos = keys.iter().position(|key| key == col_ref).unwrap();
                         println!("Keys: {:?}", keys);
                         println!("Key Pos: {:?}", key_pos);
+                        let value: String;
                         if keys.len() == 1 {
-                            let value = format!(
-                                "x.0{}",
-                                if col_type == "String" { ".clone()" } else { "" }
-                            );
-                            return format!("{}: {}", field_name, value);
+                            if col_type == "f64" {
+                                value = format!(
+                                    "if x.0.is_some() {{ Some(x.0.unwrap().into_inner() as f64) }} else {{ None }}",
+                                );
+                        
+                            } else {
+                                value = format!(
+                                    "x.0{}",
+                                    if col_type == "String" { ".clone()" } else { "" }
+                                );
+                                
+                            }
+                            format!("{}: {}", field_name, value)
                         } else {
-                            let value = format!("x.0.{}{}", key_pos, if col_type == "String" { ".clone()" } else { "" });
+                            if col_type == "f64" {
+                                value = format!(
+                                    "if x.0.{}.is_some() {{ Some(x.0.{}.unwrap().into_inner() as f64) }} else {{ None }}",
+        
+                                    key_pos,
+                                    key_pos
+                                );
+                            } else {
+                                value = format!("x.0.{}{}", key_pos, if col_type == "String" { ".clone()" } else { "" });
+                                
+                            }
                             format!("{}: {}", field_name, value)
                         }
                     } else {
@@ -353,9 +374,31 @@ pub fn process_complex_field(
         if is_key {
             let key_pos = keys.iter().position(|key| key == col).unwrap();
             if keys.len() == 1 {
-                return format!("x.0{}", if col_type == "String" { ".clone()" } else { "" });
+                if col_type == "f64" {
+                    check_list.push(format!(
+                        "x.0.is_some()",
+                    ));
+                    return format!("x.0.unwrap().into_inner()");
+                } else  {
+                    return format!("x.0{}", if col_type == "String" { ".clone()" } else { "" });
+                }
             } else {
-                return format!("x.0.{}{}", key_pos, if col_type == "String" { ".clone()" } else { "" });
+                if col_type == "f64" {
+                    check_list.push(format!(
+                        "x.0.{}.is_some()", key_pos
+                    ));
+                    return format!(
+                        "x.0.{}.unwrap().into_inner()",
+                        key_pos,
+                    );
+                } else  {
+                    return format!(
+                        "x.0.{}{}",
+                        key_pos,
+                        if col_type == "String" { ".clone()" } else { "" }
+                    );
+                }
+                
             }
         } else {
             check_list.push(format!(

@@ -17,6 +17,8 @@ pub fn create_star_map(stream_name: &String, query_object: &QueryObject) -> Stri
     //if it has a join tree, get all the streams involved in the join
     if stream.join_tree.is_some() {
         all_streams.extend(stream.join_tree.clone().unwrap().get_involved_streams());
+    } else {
+        all_streams.push(stream_name.clone());
     }
 
     let is_grouped = stream.is_keyed && stream.key_columns.len() > 0;
@@ -65,35 +67,59 @@ pub fn create_star_map(stream_name: &String, query_object: &QueryObject) -> Stri
             if col_stream.check_if_column_exists(&key_column.column) {
 
                 if is_single_key{
-                    result.push_str(&format!(
-                        "{}: x.0{},",
-                        query_object
-                            .result_column_types
-                            .get_index(offset)
-                            .unwrap()
-                            .0,
-                        if col_type == "String"{
-                            ".clone()"
-                        } else {
-                            ""
-                        }
-                    ));
+                    if col_type == "f64" {
+                        result.push_str(&format!(
+                            "{}: if x.0.is_some() {{ Some(x.0.unwrap().into_inner() as f64) }} else {{ None }},",
+                            query_object
+                                .result_column_types
+                                .get_index(offset)
+                                .unwrap()
+                                .0,
+                        ));
+                    } else {
+                        result.push_str(&format!(
+                            "{}: x.0{},",
+                            query_object
+                                .result_column_types
+                                .get_index(offset)
+                                .unwrap()
+                                .0,
+                            if col_type == "String"{
+                                ".clone()"
+                            } else {
+                                ""
+                            }
+                        ));
+                    }
                 }
                 else{
-                    result.push_str(&format!(
-                        "{}: x.0.{}{},",
-                        query_object
-                            .result_column_types
-                            .get_index(offset)
-                            .unwrap()
-                            .0,
-                        index,
-                        if col_type == "String"{
-                            ".clone()"
-                        } else {
-                            ""
-                        }
-                    ));
+                    if col_type == "f64" {
+                        result.push_str(&format!(
+                            "{}: if x.0.{}.is_some() {{ Some(x.0.{}.unwrap().into_inner() as f64) }} else {{ None }},",
+                            query_object
+                                .result_column_types
+                                .get_index(offset)
+                                .unwrap()
+                                .0,
+                            index,
+                            index
+                        ));
+                    } else {
+                        result.push_str(&format!(
+                            "{}: x.0.{}{},",
+                            query_object
+                                .result_column_types
+                                .get_index(offset)
+                                .unwrap()
+                                .0,
+                            index,
+                            if col_type == "String"{
+                                ".clone()"
+                            } else {
+                                ""
+                            }
+                        ));
+                    }
                 }
                
             } else {
