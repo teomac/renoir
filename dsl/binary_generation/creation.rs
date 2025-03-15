@@ -9,7 +9,7 @@ pub struct RustProject {
 }
 
 impl RustProject {
-    pub fn create_empty_project() -> io::Result<RustProject> {
+    pub fn create_empty_project(path: &String) -> io::Result<RustProject> {
         // Get path to renoir and convert to string with forward slashes
         let renoir_path = std::env::current_dir()?
             .parent()
@@ -21,7 +21,7 @@ impl RustProject {
             .replace('\\', "/");
 
         // Create project directory in current directory
-        let project_path = std::env::current_dir()?.join("query_project");
+        let project_path = PathBuf::from(path);
 
         if !project_path.exists() {
             fs::create_dir_all(&project_path)?;
@@ -76,58 +76,52 @@ pub fn create_template(query_object: &QueryObject, is_subquery: bool) -> String 
     }
 
     // Generate struct definitions for input and output tables
-    let struct_definitions =
-        generate_struct_declarations(&table_names, &query_object);
+    let struct_definitions = generate_struct_declarations(&table_names, &query_object);
 
     let mut stream_declarations: Vec<String> = Vec::new();
 
     let all_stream_names = all_streams.keys().cloned().collect::<Vec<String>>();
 
-
     for (i, stream_name) in all_stream_names.iter().enumerate() {
-        let mut stream ;
-        if i == all_stream_names.len() -1 {
+        let mut stream;
+        if i == all_stream_names.len() - 1 {
             let stream_object = all_streams.get(stream_name).unwrap();
             let stream_op_chain = stream_object.op_chain.concat();
-            
+
             stream = format!(
                 r#"let {} = {}{};
                  "#,
                 stream_name,
                 stream_op_chain,
-                
                 if !is_subquery {
-                    format!(r#".write_csv(move |_| r"{}.csv".into(), true)"#, query_object.output_path)
+                    format!(
+                        r#".write_csv(move |_| r"{}.csv".into(), true)"#,
+                        query_object.output_path
+                    )
                 } else {
                     format!(".collect_vec()")
                 }
             );
-            
-        stream.push_str(&format!("ctx.execute_blocking();"));
-        
-        //insert order by string
-        stream.push_str(&query_object.order_by_string);
-        
-        //insert limit string
-        stream.push_str(&query_object.limit_string);
-        
 
-        //insert distinct string
-        stream.push_str(&query_object.distinct_string);
-        }
+            stream.push_str(&format!("ctx.execute_blocking();"));
 
-        else{
+            //insert order by string
+            stream.push_str(&query_object.order_by_string);
+
+            //insert limit string
+            stream.push_str(&query_object.limit_string);
+
+            //insert distinct string
+            stream.push_str(&query_object.distinct_string);
+        } else {
             let stream_object = all_streams.get(stream_name).unwrap();
-        let stream_op_chain = stream_object.op_chain.concat();
-        stream = format!(
-            r#"let {} = {};
+            let stream_op_chain = stream_object.op_chain.concat();
+            stream = format!(
+                r#"let {} = {};
              "#,
-            stream_name,
-            stream_op_chain
-        );
-
+                stream_name, stream_op_chain
+            );
         }
-        
 
         stream_declarations.push(stream);
     }
@@ -153,12 +147,21 @@ pub fn create_template(query_object: &QueryObject, is_subquery: bool) -> String 
             {}
             
         }}"#,
-        struct_definitions, streams,
+        struct_definitions,
+        streams,
         if is_subquery {
-            r#"let result = stream0.get();
-            println!("{}", result.first());"#
+            format!(
+                r#"let result = stream0.get();
+            if result.is_some() && result.as_ref().unwrap().first().is_some() && result.as_ref().unwrap().first().as_ref().unwrap().{}.is_some() {{
+                println!("{{:?}}", result.clone().unwrap().first().unwrap().{}.clone().unwrap());
+            }} else {{
+                println!("{{}}", "".to_string());
+            }}"#,
+                query_object.result_column_types.first().unwrap().0,
+                query_object.result_column_types.first().unwrap().0
+            )
         } else {
-            ""
+            "".to_string()
         }
     )
 }

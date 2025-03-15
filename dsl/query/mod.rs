@@ -1,4 +1,5 @@
 use indexmap::IndexMap;
+use subquery_utils::manage_subqueries;
 
 use super::binary_generation::creation;
 use crate::dsl::binary_generation::creation::*;
@@ -50,10 +51,9 @@ pub mod subquery_utils;
 
 pub fn query_csv(
     query_str: &String,
-    output_path: &str,
+    output_path: &String,
     input_tables: &IndexMap<String, (String, String)>, // key: table name, value: (csv_path, user_defined_types)
 ) -> io::Result<String> {
-
     // step 0: safety checks
     if input_tables.len() == 0 {
         panic!("No input tables provided");
@@ -69,14 +69,12 @@ pub fn query_csv(
         }
     }
 
-
-
     let mut query_object = QueryObject::new();
 
     query_object.set_output_path(output_path);
 
     // step 1: if not existing, create a Rust project
-    let rust_project = creation::RustProject::create_empty_project()?;
+    let rust_project = creation::RustProject::create_empty_project(output_path)?;
 
     // step 2: open csv input, read column names and data types, create the struct for each csv file
 
@@ -88,29 +86,33 @@ pub fn query_csv(
         let user_types = parse_type_string(type_list).unwrap();
         let csv_columns = get_csv_columns(csv);
         let temp: IndexMap<String, String> = csv_columns
-            
-            .into_iter().zip(user_types.into_iter())
+            .into_iter()
+            .zip(user_types.into_iter())
             .map(|(c, t)| (c.to_string(), t.to_string()))
             .collect();
         tables_info.insert(key.to_string(), temp);
-    } 
+    }
 
     query_object.set_tables_info(tables_info);
     query_object.set_table_to_csv(tables_csv);
 
     // step 3: parse the query
     let ir_query = sql_to_ir(query_str);
-    let ir_ast = query_ir_to_ast(&ir_query);
-    // TODO: check if there is a subquery
+    let mut ir_ast = query_ir_to_ast(&ir_query);
+    // step 3.5: manage subqueries
+    ir_ast = manage_subqueries(&ir_ast, &output_path.to_string(), &query_object).unwrap();
+
     query_object = query_object.populate(&ir_ast);
     println!("Ir AST: {:?}", query_object.ir_ast);
     query_object.collect_projection_aggregates(&ir_ast);
 
-
     // step 4: convert Ir AST to renoir string
     let result = ir_ast_to_renoir(&mut query_object);
     if result.is_err() {
-        return Err(io::Error::new(io::ErrorKind::Other, "Error converting IR AST to Renoir"));
+        return Err(io::Error::new(
+            io::ErrorKind::Other,
+            "Error converting IR AST to Renoir",
+        ));
     }
 
     // step 5: generate main.rs and update it in the Rust project
@@ -121,18 +123,13 @@ pub fn query_csv(
     binary_execution(output_path, rust_project)
 }
 
-
 pub fn subquery_csv(
     ir_ast: Arc<IrPlan>,
-    output_path: &str,
+    output_path: &String,
     tables_info: IndexMap<String, IndexMap<String, String>>,
     tables_csv: IndexMap<String, String>,
 ) -> String {
-
-    // step 0: create temporary path
-    let mut output_path = output_path.to_string();
-    output_path.push_str("\\subquery");
-
+    
     // step 1: create query_object
     let mut query_object = QueryObject::new();
     query_object.set_output_path(&output_path);
@@ -140,9 +137,10 @@ pub fn subquery_csv(
     query_object.set_table_to_csv(tables_csv);
 
     // step2: create new temporary project
-    let rust_project = creation::RustProject::create_empty_project().unwrap();
+    let rust_project = creation::RustProject::create_empty_project(output_path).unwrap();
 
     // step 3: check if there is a subquery
+    let ir_ast = manage_subqueries(&ir_ast, &output_path.to_string(), &query_object).unwrap();
 
     // step 3.5: populate query_object with ir_ast
     query_object = query_object.populate(&ir_ast);
@@ -165,5 +163,4 @@ pub fn subquery_csv(
     } else {
         return output.unwrap();
     }
-
 }

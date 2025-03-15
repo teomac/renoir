@@ -615,8 +615,8 @@ impl QueryObject {
 
                     self.result_column_types.insert(col_name, result_type);
                 }
-                ProjectionColumn::StringLiteral(value) => {
-                    let col_name = self.get_unique_name(value, &mut used_names);
+                ProjectionColumn::StringLiteral(value, alias) => {
+                    let col_name = self.get_unique_name(&alias.as_ref().unwrap_or(value), &mut used_names);
                     self.result_column_types
                         .insert(col_name, "String".to_string());
                 }

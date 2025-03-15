@@ -67,7 +67,7 @@ pub fn create_aggregate_map(projection_clauses: &Vec<ProjectionColumn>, stream_n
                 }
                 //no need to add the column because it is already a key in the keyed stream
             }
-            ProjectionColumn::StringLiteral(_) => {
+            ProjectionColumn::StringLiteral(_, _) => {
                 // String literals are constant, no update needed
             }
             _ => panic!("Invalid projection clause"),
@@ -438,7 +438,7 @@ pub fn create_map(projection_clauses: &Vec<ProjectionColumn>, acc_info: &Accumul
                             
                         }
             }
-            ProjectionColumn::StringLiteral(value) => {
+            ProjectionColumn::StringLiteral(value, _) => {
                 format!("Some(\"{}\".to_string())", value)
             }
             _ => panic!("Invalid projection clause"),

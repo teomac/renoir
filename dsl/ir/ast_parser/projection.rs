@@ -82,7 +82,7 @@ impl ProjectionParser {
                                 // remove quotes from string
                                 let inner_str = expr.as_str();
                                 let clean_str = inner_str[1..inner_str.len() - 1].to_string();
-                                Ok(ProjectionColumn::StringLiteral(clean_str))
+                                Ok(ProjectionColumn::StringLiteral(clean_str, alias))
                             }
                             Rule::subquery => {
                                 let subquery = IrParser::parse_subquery(expr)?;

@@ -98,7 +98,7 @@ pub enum ProjectionColumn {
     Column(ColumnRef, Option<String>),
     Aggregate(AggregateFunction, Option<String>),
     ComplexValue(ComplexField, Option<String>),
-    StringLiteral(String),
+    StringLiteral(String, Option<String>),
     Subquery(Arc<IrPlan>, Option<String>),
 }
 

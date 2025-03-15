@@ -147,8 +147,16 @@ pub fn create_simple_map(
                         )
                     }
                 }
-                ProjectionColumn::StringLiteral(value) => {
-                    format!("{}: Some(\"{}\".to_string())", value, value)
+                ProjectionColumn::StringLiteral(value, alias) => {
+                    let field_name = alias.as_ref().unwrap_or_else(|| {
+                        query_object
+                            .result_column_types
+                            .iter()
+                            .nth(i) // Use i from enumerate instead
+                            .map(|(name, _)| name)
+                            .unwrap()
+                    });
+                    format!("{}: Some({}.to_string())", field_name, value)
                 }
                 _ => unreachable!("Should not have aggregates in simple map"),
             }
