@@ -1,6 +1,7 @@
 use std::fs;
 use std::io;
 use std::path::PathBuf;
+
 use crate::dsl::struct_object::object::QueryObject;
 
 pub struct RustProject {
@@ -65,7 +66,7 @@ impl RustProject {
     }
 }
 
-pub fn create_template(query_object: &QueryObject) -> String {
+pub fn create_template(query_object: &QueryObject, is_subquery: bool) -> String {
     let all_streams = &query_object.streams;
 
     let mut table_names = Vec::new();
@@ -88,12 +89,18 @@ pub fn create_template(query_object: &QueryObject) -> String {
         if i == all_stream_names.len() -1 {
             let stream_object = all_streams.get(stream_name).unwrap();
             let stream_op_chain = stream_object.op_chain.concat();
+            
             stream = format!(
-                r#"let {} = {}.write_csv(move |_| r"{}.csv".into(), true);
+                r#"let {} = {}{};
                  "#,
                 stream_name,
                 stream_op_chain,
-                query_object.output_path,
+                
+                if !is_subquery {
+                    format!(r#".write_csv(move |_| r"{}.csv".into(), true)"#, query_object.output_path)
+                } else {
+                    format!(".collect_vec()")
+                }
             );
             
         stream.push_str(&format!("ctx.execute_blocking();"));
@@ -143,9 +150,16 @@ pub fn create_template(query_object: &QueryObject) -> String {
             let ctx = StreamContext::new_local();
 
             {}
+            {}
             
         }}"#,
         struct_definitions, streams,
+        if is_subquery {
+            r#"let result = stream0.get();
+            println!("{}", result.first());"#
+        } else {
+            ""
+        }
     )
 }
 

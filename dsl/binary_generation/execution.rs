@@ -75,7 +75,6 @@ pub fn binary_execution(
         ));
     }
 
-    // Parse the JSON output into Vec<f64>
     let output_str = String::from_utf8(output.stdout)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 

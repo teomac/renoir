@@ -70,6 +70,7 @@ pub fn create_aggregate_map(projection_clauses: &Vec<ProjectionColumn>, stream_n
             ProjectionColumn::StringLiteral(_) => {
                 // String literals are constant, no update needed
             }
+            _ => panic!("Invalid projection clause"),
         }
     }
 
@@ -440,6 +441,7 @@ pub fn create_map(projection_clauses: &Vec<ProjectionColumn>, acc_info: &Accumul
             ProjectionColumn::StringLiteral(value) => {
                 format!("Some(\"{}\".to_string())", value)
             }
+            _ => panic!("Invalid projection clause"),
         };
         result.push_str(&format!("    {}: {},\n", field_name, value));
     }

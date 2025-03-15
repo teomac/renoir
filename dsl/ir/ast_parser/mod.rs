@@ -10,6 +10,7 @@ pub mod projection;
 pub mod source;
 
 pub use ir_ast_structure::*;
+use pest::iterators::Pair;
 
 use crate::dsl::ir::ast_parser::builder::IrASTBuilder;
 use crate::dsl::ir::ast_parser::error::IrParseError;
@@ -27,7 +28,34 @@ impl IrParser {
         let pairs = Self::parse(Rule::query, input).map_err(|e| IrParseError::PestError(e))?;
 
         let ast = IrASTBuilder::build_ast_from_pairs(pairs)?;
+
         Ok(ast)
+    }
+
+    pub fn parse_subquery(pair: Pair<Rule>) -> Result<Arc<IrPlan>, IrParseError> {
+        if pair.as_rule() != Rule::subquery {
+            return Err(IrParseError::InvalidInput(format!(
+                "Expected subquery expression, got {:?}",
+                pair.as_rule()
+            )));
+        }
+        
+        println!("Parsing subquery: {:?}", pair);
+        
+        
+        let subquery_text = pair.as_str();
+        println!("Subquery text: {}", subquery_text);
+        
+        // Remove the outer parentheses
+        let inner_ir = if subquery_text.starts_with("(") && subquery_text.ends_with(")") {
+            &subquery_text[1..subquery_text.len()-1]
+        } else {
+            subquery_text
+        };
+        println!("Inner IR: {}", inner_ir);
+        
+        
+        IrParser::parse_query(inner_ir)
     }
 }
 

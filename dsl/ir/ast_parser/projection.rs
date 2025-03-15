@@ -1,5 +1,5 @@
 use super::error::IrParseError;
-use super::ir_ast_structure::*;
+use super::{ir_ast_structure::*, IrParser};
 use super::literal::LiteralParser;
 use crate::dsl::ir::ast_parser::Rule;
 use pest::iterators::Pair;
@@ -83,6 +83,10 @@ impl ProjectionParser {
                                 let inner_str = expr.as_str();
                                 let clean_str = inner_str[1..inner_str.len() - 1].to_string();
                                 Ok(ProjectionColumn::StringLiteral(clean_str))
+                            }
+                            Rule::subquery => {
+                                let subquery = IrParser::parse_subquery(expr)?;
+                                Ok(ProjectionColumn::Subquery(subquery, alias))
                             }
                             _ => Err(IrParseError::InvalidInput(format!(
                                 "Invalid column expression: {:?}",

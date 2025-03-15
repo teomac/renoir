@@ -40,6 +40,17 @@ query = {
     EOI
 }
 
+subquery = {
+    left_parenthesis ~
+    scan_clause  ~
+    filter_clause?  ~
+    group_clause?  ~
+    projection_clause  ~
+    order_clause? ~
+    limit_expr? ~
+    right_parenthesis
+}
+
 // Basic clauses
 scan_clause = { 
     "from" ~ 
@@ -116,7 +127,7 @@ column_list = {
 }
 
 column_item = {
-    (qualified_column | aggregate_expr | identifier | complex_op | string) ~
+    (qualified_column | aggregate_expr | identifier | complex_op | string | subquery) ~
     (as_keyword ~ identifier)?
 }
 

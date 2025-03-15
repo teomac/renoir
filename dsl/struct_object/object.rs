@@ -620,258 +620,12 @@ impl QueryObject {
                     self.result_column_types
                         .insert(col_name, "String".to_string());
                 }
+                _ => panic!("Invalid projection column type"),
             }
         }
     }
 
-    ////////////////////////////////////////////////////////////////
-
-    /*
-
-        // Populate the result column types based on select clauses
-        if let Some(ref ir_ast) = self.ir_ast {
-            let mut used_names = std::collections::HashSet::new();
-
-            for select_clause in &ir_ast.select.select {
-                match select_clause {
-                    ProjectionColumn::Column(col_ref, alias) => {
-                        // Handle SELECT * case
-                        if col_ref.column == "*" {
-                            // Check if there's a GROUP BY clause
-                            if let Some(ref group_by) = ir_ast.group_by {
-                                // If GROUP BY is present, only include the columns from the GROUP BY clause
-                                for group_col in &group_by.columns {
-                                    let table = if let Some(table_ref) = &group_col.table {
-                                        // Use check_alias to properly retrieve the table name
-                                        if self.has_join {
-                                            // Import the check_alias function
-                                            use crate::dsl::ir::r_utils::check_alias;
-                                            check_alias(table_ref, &self)
-                                        } else {
-                                            self.tables_info.first().unwrap().0.clone()
-                                        }
-                                    } else {
-                                        // If table is not specified, use the first table
-                                        self.tables_info.first().unwrap().0.clone()
-                                    };
-
-                                    if let Some(struct_map) = self.tables_info.get(&table) {
-                                        if let Some(col_type) = struct_map.get(&group_col.column) {
-                                            //build the suffix after checking if the table is an alias
-                                            let checked_table = check_alias(&table, &self);
-                                            let suffix = if checked_table != table {
-                                                //we are in the case where the table is an alias
-                                                table.clone()
-                                            } else {
-                                                //we are in the case where the table is not an alias
-                                                checked_table
-                                            };
-
-                                            let full_col_name =
-                                                format!("{}_{}", group_col.column, suffix);
-                                            self.result_column_types
-                                                .insert(full_col_name, col_type.clone());
-                                        }
-                                    }
-                                }
-                            } else {
-                                //use all the result table names to populate the result_column_types
-                                //get all the tables and alias from all the streams
-                                let final_tables = self
-                                    .streams
-                                    .iter()
-                                    .map(|(_, stream)| {
-                                        (stream.source_table.clone(), stream.alias.clone())
-                                    })
-                                    .collect::<Vec<_>>();
-
-                                let tables_info = self.tables_info.clone();
-
-                                // If no GROUP BY, include all columns from all tables (existing behavior)
-                                for (table_name, table_alias) in final_tables.iter() {
-                                    if let Some(struct_map) = tables_info.get(table_name) {
-                                        // Get the suffix (alias or table name)
-                                        let suffix = if table_alias.is_empty() {
-                                            table_name.clone()
-                                        } else {
-                                            table_alias.clone()
-                                        };
-
-                                        // Add each column with the appropriate suffix
-                                        for (col_name, col_type) in struct_map {
-                                            let full_col_name = format!("{}_{}", col_name, suffix);
-                                            self.result_column_types
-                                                .insert(full_col_name, col_type.clone());
-                                        }
-                                    }
-                                }
-                            }
-                        } else {
-                            //check if the column is valid
-                            let stream_name = if col_ref.table.is_some() {
-                                self.get_stream_from_alias(col_ref.table.as_ref().unwrap())
-                                    .unwrap()
-                                    .clone()
-                            } else {
-                                let all_streams =
-                                    self.streams.keys().cloned().collect::<Vec<String>>();
-                                if all_streams.len() == 1 {
-                                    all_streams[0].clone()
-                                } else {
-                                    panic!("Column reference must have table name in JOIN query");
-                                }
-                            };
-                            self.check_column_validity(col_ref, &stream_name);
-
-                            // Regular column selection
-                            let col_name = alias.clone().unwrap_or_else(|| {
-                                if self.has_join {
-                                    // Add table suffix in join case
-                                    let table = col_ref.table.as_ref().expect(
-                                        "Column reference must have table name in JOIN query",
-                                    );
-                                    let checked_table = check_alias(table, &self);
-                                    let suffix = if checked_table != *table {
-                                        //we are in the case where the table is an alias
-                                        table
-                                    } else {
-                                        //we are in the case where the table is not an alias
-                                        &checked_table
-                                    };
-                                    format!("{}_{}", col_ref.column, suffix)
-                                } else {
-                                    col_ref.column.clone()
-                                }
-                            });
-
-                            let col_name = self.get_unique_name(&col_name, &mut used_names);
-                            let col_type = self.get_type(col_ref);
-                            self.result_column_types.insert(col_name, col_type);
-                        }
-                    }
-
-                    ProjectionColumn::Aggregate(agg_func, alias) => {
-                        //check if the column is valid
-                        let stream_name = if agg_func.column.table.is_some() {
-                            self.get_stream_from_alias(agg_func.column.table.as_ref().unwrap())
-                                .unwrap()
-                                .clone()
-                        } else {
-                            let all_streams = self.streams.keys().cloned().collect::<Vec<String>>();
-                            if all_streams.len() == 1 {
-                                all_streams[0].clone()
-                            } else {
-                                panic!("Column reference must have table name in JOIN query");
-                            }
-                        };
-                        if agg_func.column.column != "*" {
-                            self.check_column_validity(&agg_func.column, &stream_name);
-                        }
-
-                        let col_name = if let Some(alias_name) = alias {
-                            self.get_unique_name(alias_name, &mut used_names)
-                        } else {
-                            // Generate name based on aggregate function
-                            let base_name = match &agg_func.function {
-                                AggregateType::Count => {
-                                    if agg_func.column.column == "*" {
-                                        "count_star".to_string()
-                                    } else {
-                                        // Add table suffix in join case
-                                        if self.has_join {
-                                            let table = agg_func.column.table.as_ref()
-                                                .expect("Column reference must have table name in JOIN query");
-
-                                            let suffix = if alias.is_some() {
-                                                alias.as_ref().unwrap()
-                                            } else {
-                                                &table
-                                            };
-
-                                            format!("count_{}_{}", agg_func.column.column, suffix)
-                                        } else {
-                                            format!("count_{}", agg_func.column.column)
-                                        }
-                                    }
-                                }
-                                other_agg => {
-                                    if self.has_join {
-                                        let table = agg_func.column.table.as_ref().expect(
-                                            "Column reference must have table name in JOIN query",
-                                        );
-                                        let suffix = if alias.is_some() {
-                                            alias.as_ref().unwrap()
-                                        } else {
-                                            &table
-                                        };
-                                        format!(
-                                            "{}_{}_{}",
-                                            other_agg.to_string().to_lowercase(),
-                                            agg_func.column.column,
-                                            suffix
-                                        )
-                                    } else {
-                                        format!(
-                                            "{}_{}",
-                                            other_agg.to_string().to_lowercase(),
-                                            agg_func.column.column
-                                        )
-                                    }
-                                }
-                            };
-                            self.get_unique_name(&base_name, &mut used_names)
-                        };
-
-                        let col_type = match agg_func.function {
-                            AggregateType::Count => "usize".to_string(),
-                            AggregateType::Avg => "f64".to_string(),
-                            _ => self.get_type(&agg_func.column),
-                        };
-
-                        self.result_column_types.insert(col_name, col_type);
-                    }
-
-                    ProjectionColumn::ComplexValue(col_ref, alias) => {
-                        let result_type = self.get_complex_field_type(col_ref);
-                        let col_name = if let Some(alias_name) = alias {
-                            self.get_unique_name(alias_name, &mut used_names)
-                        } else {
-                            if self.has_join {
-                                // Try to construct a meaningful name from the complex expression
-                                let base_name = if let Some(ref col) = col_ref.column_ref {
-                                    let table = col.table.as_ref().expect(
-                                        "Column reference must have table name in JOIN query",
-                                    );
-                                    let suffix = if alias.is_some() {
-                                        alias.as_ref().unwrap()
-                                    } else {
-                                        &table
-                                    };
-
-                                    format!("expr_{}_{}", col.column, suffix)
-                                } else {
-                                    format!("expr_{}", used_names.len())
-                                };
-                                self.get_unique_name(&base_name, &mut used_names)
-                            } else {
-                                let base_name = format!("expr_{}", used_names.len());
-                                self.get_unique_name(&base_name, &mut used_names)
-                            }
-                        };
-
-                        self.result_column_types.insert(col_name, result_type);
-                    }
-                    ProjectionColumn::StringLiteral(value) => {
-                        let col_name = self.get_unique_name(value, &mut used_names);
-                        self.result_column_types
-                            .insert(col_name, "String".to_string());
-                    }
-                }
-            }
-        }
-        self
-    }*/
-
+    
     // Helper method to generate unique column names
     fn get_unique_name(
         &self,
@@ -927,20 +681,20 @@ impl QueryObject {
                 left_type
             }
         } else if let Some(ref agg) = field.aggregate {
-            let stream_name = if agg.column.table.is_some() {
-                self.get_stream_from_alias(agg.column.table.as_ref().unwrap())
-                    .unwrap()
-                    .clone()
-            } else {
-                let all_streams = self.streams.keys().cloned().collect::<Vec<String>>();
-                if all_streams.len() == 1 {
-                    all_streams[0].clone()
-                } else {
-                    panic!("Column reference must have table name in JOIN query");
-                }
-            };
             //check if the column is valid (not when it's count(*))
             if !(agg.function == AggregateType::Count  && agg.column.column == "*") {
+                let stream_name = if agg.column.table.is_some() {
+                    self.get_stream_from_alias(agg.column.table.as_ref().unwrap())
+                        .unwrap()
+                        .clone()
+                } else {
+                    let all_streams = self.streams.keys().cloned().collect::<Vec<String>>();
+                    if all_streams.len() == 1 {
+                        all_streams[0].clone()
+                    } else {
+                        panic!("Column reference must have table name in JOIN query");
+                    }
+                };
                 check_column_validity(&agg.column, &stream_name, &self);
             }
             match agg.function {

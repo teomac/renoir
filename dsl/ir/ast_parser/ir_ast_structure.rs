@@ -99,6 +99,7 @@ pub enum ProjectionColumn {
     Aggregate(AggregateFunction, Option<String>),
     ComplexValue(ComplexField, Option<String>),
     StringLiteral(String),
+    Subquery(Arc<IrPlan>, Option<String>),
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
