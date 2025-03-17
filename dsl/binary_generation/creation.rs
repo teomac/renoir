@@ -68,12 +68,13 @@ impl RustProject {
 
 pub fn create_template(query_object: &QueryObject, is_subquery: bool) -> String {
     let all_streams = &query_object.streams;
+    //streams are returned in reverse order
 
     let mut table_names = Vec::new();
-
     for (_, stream) in all_streams.iter() {
         table_names.push(stream.source_table.clone());
     }
+    table_names.reverse();
 
     // Generate struct definitions for input and output tables
     let struct_definitions = generate_struct_declarations(&table_names, &query_object);
@@ -173,7 +174,7 @@ pub fn generate_struct_declarations(
     //Part1: generate struct definitions for input tables
 
     let struct_names = query_object.get_all_structs();
-
+    
     // Use iterators to zip through table_names, struct_names, and field_lists to maintain order
     let mut result: String = table_names
         .iter()

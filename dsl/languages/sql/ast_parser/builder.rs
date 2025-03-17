@@ -13,7 +13,6 @@ pub struct SqlASTBuilder;
 
 impl SqlASTBuilder {
     pub fn build_ast_from_pairs(pairs: Pairs<Rule>) -> Result<SqlAST, SqlParseError> {
-        println!("Building AST from pairs. Pairs: {:?}", pairs);
         for pair in pairs {
             match pair.as_rule() {
                 Rule::query => {

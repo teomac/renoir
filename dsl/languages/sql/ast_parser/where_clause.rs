@@ -146,9 +146,7 @@ fn parse_condition(pair: Pair<Rule>) -> Result<WhereClause, SqlParseError> {
             let column_ref = in_inner.next().ok_or_else(|| {
                 SqlParseError::InvalidInput("Missing column reference in IN expression".to_string())
             })?;
-            
-            println!("Column ref: {:?}", column_ref.as_rule());
-            
+                        
             // Parse the column reference
             let column = match column_ref.as_rule() {
                 Rule::variable => ColumnRef {
@@ -167,8 +165,6 @@ fn parse_condition(pair: Pair<Rule>) -> Result<WhereClause, SqlParseError> {
                 SqlParseError::InvalidInput("Missing IN keyword".to_string())
             })?;
             
-            println!("IN keyword: {:?}", in_keyword.as_rule());
-            
             // Check if it's negated (NOT IN)
             let is_negated = in_keyword.as_str().to_uppercase().contains("NOT");
             
@@ -176,9 +172,7 @@ fn parse_condition(pair: Pair<Rule>) -> Result<WhereClause, SqlParseError> {
             let subquery_expr = in_inner.next().ok_or_else(|| {
                 SqlParseError::InvalidInput("Missing subquery in IN expression".to_string())
             })?;
-            
-            println!("Subquery: {:?}", subquery_expr.as_rule());
-            
+                        
             // Parse the inner SQL directly
             let subquery = SqlParser::parse_subquery(subquery_expr)?;
             

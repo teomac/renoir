@@ -41,7 +41,6 @@ impl IrParser {
         }        
         
         let subquery_text = pair.as_str();
-        println!("Subquery text: {}", subquery_text);
         
         // Remove the outer parentheses
         let inner_ir = if subquery_text.starts_with("(") && subquery_text.ends_with(")") {
@@ -49,7 +48,6 @@ impl IrParser {
         } else {
             subquery_text
         };
-        println!("Inner IR: {}", inner_ir);
         
         
         IrParser::parse_query(inner_ir)

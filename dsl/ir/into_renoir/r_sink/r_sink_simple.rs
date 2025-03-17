@@ -63,8 +63,6 @@ pub fn create_simple_map(
                     let mut is_key: bool = false;
                     if is_grouped {
                         if !keys.iter().any(|key| key == col_ref) {
-                            println!("Key columns: {:?}", keys);
-                            println!("Column: {:?}", col_ref);
                             panic!(
                                 "Column {} is not a key column in the grouped stream",
                                 col_ref.column
@@ -76,8 +74,6 @@ pub fn create_simple_map(
 
                     if is_key {
                         let key_pos = keys.iter().position(|key| key == col_ref).unwrap();
-                        println!("Keys: {:?}", keys);
-                        println!("Key Pos: {:?}", key_pos);
                         let value: String;
                         if keys.len() == 1 {
                             if col_type == "f64" {
