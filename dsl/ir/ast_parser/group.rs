@@ -1,5 +1,5 @@
 use super::error::IrParseError;
-use super::ir_ast_structure::*;
+use super::{ir_ast_structure::*, IrParser};
 use crate::dsl::ir::ast_parser::Rule;
 use pest::iterators::Pair;
 
@@ -160,7 +160,7 @@ impl GroupParser {
                     },
                 )))
             }
-            Rule::qualified_column | Rule::identifier => {
+            Rule::qualified_column | Rule::identifier | Rule::subquery => {
                 // Check if this is a NULL check
                 let operator_pair = inner
                     .next()
@@ -191,7 +191,7 @@ impl GroupParser {
                 }
             }
             _ => Err(IrParseError::InvalidInput(format!(
-                "Unexpected token in condition: {:?}",
+                "Invalid condition type: {:?}",
                 first.as_rule()
             ))),
         }
@@ -236,6 +236,13 @@ impl GroupParser {
                 Self::parse_arithmetic_expr(expr)
             }
             Rule::arithmetic_factor => Self::parse_arithmetic_factor(inner),
+            Rule::subquery => Ok(ComplexField {
+                column_ref: None,
+                literal: None,
+                aggregate: None,
+                nested_expr: None,
+                subquery: Some(IrParser::parse_subquery(inner)?),
+            }),
             _ => Err(IrParseError::InvalidInput(format!(
                 "Unexpected token in arithmetic term: {:?}",
                 inner.as_rule()
@@ -284,6 +291,13 @@ impl GroupParser {
                     subquery: None,
                 })
             }
+            Rule::subquery => Ok(ComplexField {
+                column_ref: None,
+                literal: None,
+                aggregate: None,
+                nested_expr: None,
+                subquery: Some(IrParser::parse_subquery(operand)?),
+            }),
             _ => Err(IrParseError::InvalidInput(format!(
                 "Invalid operand type: {:?}",
                 operand.as_rule()
@@ -423,6 +437,13 @@ impl GroupParser {
                 aggregate: None,
                 nested_expr: None,
                 subquery: None,
+            }),
+            Rule::subquery => Ok(ComplexField {
+                column_ref: None,
+                literal: None,
+                aggregate: None,
+                nested_expr: None,
+                subquery: Some(IrParser::parse_subquery(pair)?),
             }),
             _ => Err(IrParseError::InvalidInput(format!(
                 "Expected field reference, got {:?}",

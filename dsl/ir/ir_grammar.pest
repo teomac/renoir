@@ -88,6 +88,7 @@ arithmetic_term = {
 }
 
 arithmetic_factor = {
+    subquery |
     aggregate_expr|
     value |
     qualified_column |

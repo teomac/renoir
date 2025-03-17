@@ -1,6 +1,5 @@
 use super::error::SqlParseError;
-use super::sql_ast_structure::*;
-use super::builder::SqlASTBuilder;
+use super::{sql_ast_structure::*, SqlParser};
 use crate::dsl::languages::sql::ast_parser::Rule;
 use pest::iterators::Pair;
 
@@ -80,17 +79,6 @@ impl GroupByParser {
                 pair.as_rule()
             ))),
         }
-    }
-
-    // New: Method to parse subqueries
-    fn parse_subquery(pair: Pair<Rule>) -> Result<SqlAST, SqlParseError> {
-        // Extract the query part from the subquery
-        let query = pair.into_inner()
-            .next()
-            .ok_or_else(|| SqlParseError::InvalidInput("Empty subquery".to_string()))?;
-        
-        // Use the builder to parse the query
-        SqlASTBuilder::build_ast_from_pairs(query.into_inner())
     }
 
     //////////////////////////////////////////////////////////////////////////////////
@@ -202,7 +190,7 @@ impl GroupByParser {
                     SqlParseError::InvalidInput("Missing subquery in EXISTS".to_string())
                 })?;
                 
-                let subquery = Self::parse_subquery(exists_inner)?;
+                let subquery = SqlParser::parse_subquery(exists_inner)?;
                 return Ok(HavingClause::Base(HavingBaseCondition::Exists(Box::new(subquery))));
             }
             
@@ -225,7 +213,7 @@ impl GroupByParser {
                             SqlParseError::InvalidInput("Missing subquery in IN expression".to_string())
                         })?;
                         
-                        let subquery = Self::parse_subquery(subquery_expr)?;
+                        let subquery = SqlParser::parse_subquery(subquery_expr)?;
                         return Ok(HavingClause::Base(HavingBaseCondition::In(column, Box::new(subquery))));
                     }
                 }
@@ -368,7 +356,7 @@ impl GroupByParser {
             }),
             Rule::subquery_expr => {
                 // New: Handle subquery in HAVING field
-                let subquery = Self::parse_subquery(pair)?;
+                let subquery = SqlParser::parse_subquery(pair)?;
                 Ok(HavingField {
                     column: None,
                     value: None,
@@ -516,6 +504,11 @@ impl GroupByParser {
 
                 Ok(left)
             }
+            Rule::subquery_expr => {
+                // New: Handle subquery in arithmetic expression
+                let subquery = SqlParser::parse_subquery(pair)?;
+                Ok(ArithmeticExpr::Subquery(Box::new(subquery)))
+            },
             _ => Err(SqlParseError::InvalidInput(format!(
                 "Expected arithmetic expression, got {:?}",
                 pair.as_rule()
@@ -546,6 +539,11 @@ impl GroupByParser {
                     _ => Self::parse_arithmetic_factor(first),
                 }
             }
+            Rule::subquery_expr => {
+                // New: Handle subquery in arithmetic expression
+                let subquery = SqlParser::parse_subquery(pair)?;
+                Ok(ArithmeticExpr::Subquery(Box::new(subquery)))
+            },
             _ => Err(SqlParseError::InvalidInput(format!(
                 "Expected arithmetic primary, got {:?}",
                 pair.as_rule()
@@ -642,7 +640,7 @@ impl GroupByParser {
             },
             Rule::subquery_expr => {
                 // New: Handle subquery in arithmetic expression
-                let subquery = Self::parse_subquery(factor)?;
+                let subquery = SqlParser::parse_subquery(factor)?;
                 Ok(ArithmeticExpr::Subquery(Box::new(subquery)))
             },
             _ => Err(SqlParseError::InvalidInput(format!(

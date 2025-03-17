@@ -1,6 +1,6 @@
 use std::{io, sync::Arc};
 
-use crate::dsl::{ir::{literal::LiteralParser, Condition, FilterClause, FilterConditionType, IrPlan, NullCondition, ProjectionColumn}, struct_object::object::QueryObject};
+use crate::dsl::{ir::{literal::LiteralParser, Condition, FilterClause, FilterConditionType, GroupBaseCondition, GroupClause, IrPlan, NullCondition, ProjectionColumn}, struct_object::object::QueryObject};
 use crate::dsl::ir::ast_parser::ir_ast_structure::ComplexField;
 
 use super::subquery_csv;
@@ -67,10 +67,18 @@ pub fn manage_subqueries(ir_ast: &Arc<IrPlan>, output_path: &String, query_objec
         },
         IrPlan::GroupBy { input, keys, group_condition } => {
             let processed_input = manage_subqueries(input, &output_path, query_object)?;
+            
+            // Process the group condition if it exists
+            let processed_condition = if let Some(condition) = group_condition {
+                Some(process_group_condition(condition, &output_path, query_object)?)
+            } else {
+                None
+            };
+
             Ok(Arc::new(IrPlan::GroupBy {
                 input: processed_input,
                 keys: keys.clone(),
-                group_condition: group_condition.clone()
+                group_condition: processed_condition
             }))
         },
         IrPlan::Join { left, right, condition, join_type } => {
@@ -196,6 +204,46 @@ fn process_filter_condition(condition: &FilterClause, output_path: &String, quer
             Ok(FilterClause::Expression {
                 left: Box::new(processed_left),
                 binary_op: binary_op.clone(),
+                right: Box::new(processed_right),
+            })
+        }
+    }
+}
+
+fn process_group_condition(condition: &GroupClause, output_path: &String, query_object: &QueryObject) -> io::Result<GroupClause> {
+    match condition {
+        GroupClause::Base(base_condition) => {
+            match base_condition {
+                GroupBaseCondition::Comparison(comparison) => {
+                    // Process both left and right fields for subqueries
+                    let processed_left = process_complex_field(&comparison.left_field, output_path, query_object)?;
+                    let processed_right = process_complex_field(&comparison.right_field, output_path, query_object)?;
+                    
+                    Ok(GroupClause::Base(GroupBaseCondition::Comparison(Condition {
+                        left_field: processed_left,
+                        operator: comparison.operator.clone(),
+                        right_field: processed_right,
+                    })))
+                },
+                GroupBaseCondition::NullCheck(null_check) => {
+                    // Process the field for subqueries
+                    let processed_field = process_complex_field(&null_check.field, output_path, query_object)?;
+                    
+                    Ok(GroupClause::Base(GroupBaseCondition::NullCheck(NullCondition {
+                        field: processed_field,
+                        operator: null_check.operator.clone(),
+                    })))
+                }
+            }
+        },
+        GroupClause::Expression { left, op, right } => {
+            // Recursively process both sides of the expression
+            let processed_left = process_group_condition(left, output_path, query_object)?;
+            let processed_right = process_group_condition(right, output_path, query_object)?;
+            
+            Ok(GroupClause::Expression {
+                left: Box::new(processed_left),
+                op: op.clone(),
                 right: Box::new(processed_right),
             })
         }

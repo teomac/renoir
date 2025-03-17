@@ -124,6 +124,7 @@ fn process_filter_condition(
                     }
                 }
                 GroupBaseCondition::NullCheck(null_check) => {
+                    if null_check.field.column_ref.is_some(){
                     // Get the column reference that's being checked for null
                     let col_ref = if let Some(ref col) = null_check.field.column_ref {
                         col
@@ -194,6 +195,39 @@ fn process_filter_condition(
                         NullOp::IsNotNull => format!("{}.is_some()", col_access),
                     }
                 }
+
+                else if null_check.field.literal.is_some(){
+                    let lit = null_check.field.literal.as_ref().unwrap();
+                    match lit {
+                        IrLiteral::Boolean(_) | IrLiteral::Integer(_) | IrLiteral::Float(_) => {
+                            match null_check.operator {
+                                NullOp::IsNull => format!("false"),
+                                NullOp::IsNotNull => format!("true"),
+                            }
+                        }
+                        IrLiteral::String(string) => {
+                            match null_check.operator {
+                                NullOp::IsNull => format!("{}", string.is_empty()),
+                                NullOp::IsNotNull => format!("{}", !string.is_empty()),
+                            }
+                        }
+                        IrLiteral::ColumnRef(_) => {
+                            panic!("We should not be here.")
+                        }
+                    }
+                }
+                else if null_check.field.aggregate.is_some(){
+                    match null_check.operator {
+                        NullOp::IsNull => format!("false"),
+                        NullOp::IsNotNull => format!("true"),
+                    }
+                }
+                else {
+                    panic!("Invalid NULL check - must be on a column reference or literal")
+                }
+            
+            
+            }
             }
         }
         GroupClause::Expression { left, op, right } => {
