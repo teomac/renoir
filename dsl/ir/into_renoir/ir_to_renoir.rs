@@ -78,6 +78,9 @@ impl IrToRenoir {
                 process_limit(*offset, *limit, query_object);
                 Ok(stream_name)
             }
+            IrPlan::Table { table_name } => {
+                Ok(table_name.clone())
+            }
         }
 }
 }

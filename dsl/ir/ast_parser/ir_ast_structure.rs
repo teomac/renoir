@@ -7,7 +7,7 @@ pub enum IrPlan {
     Scan {
         stream_name: String,
         alias: Option<String>,
-        input_source: String,
+        input_source: Arc<IrPlan>,
     },
     
     // Transformation operations
@@ -45,6 +45,9 @@ pub enum IrPlan {
         limit: i64,
         offset: Option<i64>,
     },
+    Table{
+        table_name: String,
+    }
 }
 
 // Supporting structures
@@ -192,7 +195,7 @@ pub enum BinaryOp {
 // Implementation of helper methods for the new structure
 impl IrPlan {
     // Convenience method to create a scan operation
-    pub fn scan(stream_name: String, alias: Option<String>, input_source: String) -> Self {
+    pub fn scan(stream_name: String, alias: Option<String>, input_source: Arc<IrPlan>) -> Self {
         IrPlan::Scan { stream_name, alias, input_source }
     }
     

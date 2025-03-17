@@ -61,7 +61,7 @@ scan_clause = {
 stream_input = @{ ('a'..'z' | 'A'..'Z'| "_") ~ ('a'..'z' | 'A'..'Z'| '0'..'9' | "_")* }
 
 scan_expr = { 
-    identifier ~ 
+    (subquery | identifier )~ 
     (as_keyword ~ identifier)? ~ 
     in_keyword ~ 
     stream_input 

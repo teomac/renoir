@@ -258,7 +258,7 @@ impl QueryObject {
         // Add main table
         let main_scan: &Arc<IrPlan> = scans.first().unwrap();
 
-        let (main_table, main_stream, main_alias) = match &**main_scan {
+        let (main_table_arc, main_stream, main_alias) = match &**main_scan {
             IrPlan::Scan {
                 input_source,
                 stream_name,
@@ -267,8 +267,18 @@ impl QueryObject {
             _ => panic!("Error: this is not a scan node"),
         };
 
+        let main_table ;
+
+        //check if main table is a table name or a subquery
+        match &**main_table_arc {
+            IrPlan::Table { table_name } => {
+                main_table = table_name.clone();
+            }
+            _ => panic!("Main table is not a table name."),
+        }
+
         //check if the table is present in the list
-        if self.tables_info.get(main_table).is_none() {
+        if self.tables_info.get(&main_table).is_none() {
             panic!("Table {} is not present in the list of tables.", main_table);
         }
 
@@ -283,7 +293,7 @@ impl QueryObject {
 
         //now let's start processing the joins
         for scan in scans.iter().skip(1) {
-            let (join_table, join_stream, join_alias) = match &**scan {
+            let (join_table_arc, join_stream, join_alias) = match &**scan {
                 IrPlan::Scan {
                     input_source,
                     stream_name,
@@ -292,9 +302,21 @@ impl QueryObject {
                 _ => panic!("Error: this is not a scan node"),
             };
 
+            //check if the table is a table name or a subquery
+            let join_table ;
+
+            //check if main table is a table name or a subquery
+            match &**join_table_arc {
+                IrPlan::Table { table_name } => {
+                    join_table = table_name.clone();
+                }
+                _ => panic!("Main table is not a table name."),
+            }
+
+
             //check if the table is in the tables_info
-            if self.tables_info.get(join_table).is_none() {
-                panic!("Table {} is not present in the list of tables.", join_table);
+            if self.tables_info.get(&join_table).is_none() {
+                panic!("Table {} is not present in the list of tables.", &join_table);
             }
 
             //create the stream
@@ -303,7 +325,7 @@ impl QueryObject {
                 &join_table,
                 &join_alias
                     .clone()
-                    .unwrap_or_else(|| panic!("Alias not found for table {}", join_table)),
+                    .unwrap_or_else(|| panic!("Alias not found for table {}", &join_table)),
             );
         }
 
@@ -322,7 +344,7 @@ impl QueryObject {
 
         for table in tables_info_keys.iter() {
             //if the table is not in the stream_tables, remove it from the tables_info object
-            if table != main_table && !stream_tables.contains(table) {
+            if table != &main_table && !stream_tables.contains(table) {
                 temp_tables_info.shift_remove(table);
             }
         }
@@ -730,6 +752,7 @@ impl QueryObject {
                 let input_scans = Self::collect_scan_nodes(input);
                 scans.extend(input_scans);
             }
+            _ => {}
         }
         scans
     }

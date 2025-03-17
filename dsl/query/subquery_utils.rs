@@ -107,7 +107,8 @@ pub fn manage_subqueries(ir_ast: &Arc<IrPlan>, output_path: &String, query_objec
             }))
         },
         // Base case - Scan nodes have no nested queries to process
-        IrPlan::Scan { .. } => Ok(ir_ast.clone())
+        IrPlan::Scan { .. } => Ok(ir_ast.clone()),
+        IrPlan::Table { .. } => Ok(ir_ast.clone())
     }
 }
 

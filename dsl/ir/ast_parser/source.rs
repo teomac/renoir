@@ -1,5 +1,5 @@
 use super::error::IrParseError;
-use super::ir_ast_structure::*;
+use super::{ir_ast_structure::*, IrParser};
 use crate::dsl::ir::ast_parser::Rule;
 use pest::iterators::Pair;
 use std::sync::Arc;
@@ -82,9 +82,7 @@ impl SourceParser {
         let mut inner = pair.into_inner();
         let table_name = inner
             .next()
-            .ok_or_else(|| IrParseError::InvalidInput("Missing stream name".to_string()))?
-            .as_str()
-            .to_string();
+            .ok_or_else(|| IrParseError::InvalidInput("Missing stream name".to_string()))?;
 
         let mut alias = None;
         let mut stream_input = None;
@@ -110,15 +108,35 @@ impl SourceParser {
             ));
         }
 
-        if alias.is_none() && has_join{
-            alias = Some(table_name.clone());
-        }
+        
 
-        Ok(IrPlan::Scan {
-            stream_name: stream_input.unwrap(),
-            alias,
-            input_source: table_name, 
-        })
+        match table_name.as_rule() {
+            Rule::identifier => {
+                if alias.is_none() && has_join{
+                    alias = Some(table_name.as_str().to_string().clone());
+                }
+
+                return Ok(IrPlan::Scan {
+                    stream_name: stream_input.unwrap(),
+                    alias,
+                    input_source: IrPlan::Table { table_name: table_name.as_str().to_string() }.into(),
+                });
+            }
+            Rule::subquery => {
+                let subquery = IrParser::parse_subquery(table_name)?;
+                return Ok(IrPlan::Scan {
+                    stream_name: stream_input.unwrap(),
+                    alias,
+                    input_source: subquery,
+                });
+            }
+            _ => {
+                return Err(IrParseError::InvalidInput(
+                    "Invalid input source for stream".to_string(),
+                ));
+            }
+
+        }
     }
 
     fn parse_qualified_column(pair: Pair<Rule>) -> Result<ColumnRef, IrParseError> {
