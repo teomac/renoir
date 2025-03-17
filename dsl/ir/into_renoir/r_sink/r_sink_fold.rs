@@ -205,7 +205,8 @@ fn create_fold(acc_info: &mut AccumulatorInfo, stream_name: &String, query_objec
 
                 let col_stream = query_object.get_stream(col_stream_name);
 
-                col_stream.check_if_column_exists(&col.column);
+                if(col.column != "*"){
+                col_stream.check_if_column_exists(&col.column);}
 
                 let col_access = {
                     format!(
