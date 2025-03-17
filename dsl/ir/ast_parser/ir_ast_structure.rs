@@ -129,6 +129,7 @@ pub struct ComplexField {
     pub literal: Option<IrLiteral>,
     pub aggregate: Option<AggregateFunction>,
     pub nested_expr: Option<Box<(ComplexField, String, ComplexField)>>,
+    pub subquery: Option<Arc<IrPlan>>,
 }
 
 #[derive(Debug, PartialEq, Clone)]

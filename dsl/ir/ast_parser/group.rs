@@ -213,6 +213,7 @@ impl GroupParser {
                     literal: None,
                     aggregate: None,
                     nested_expr: Some(Box::new((result, op.as_str().to_string(), next_field))),
+                    subquery: None,
                 };
             }
         }
@@ -254,12 +255,14 @@ impl GroupParser {
                 literal: Some(Self::parse_literal(operand)?),
                 aggregate: None,
                 nested_expr: None,
+                subquery: None,
             }),
             Rule::qualified_column => Ok(ComplexField {
                 column_ref: Some(Self::parse_column_ref(operand)?),
                 literal: None,
                 aggregate: None,
                 nested_expr: None,
+                subquery: None,
             }),
             Rule::identifier => Ok(ComplexField {
                 column_ref: Some(ColumnRef {
@@ -269,6 +272,7 @@ impl GroupParser {
                 literal: None,
                 aggregate: None,
                 nested_expr: None,
+                subquery: None,
             }),
             Rule::aggregate_expr => {
                 let agg_func = Self::parse_aggregate_function(operand)?;
@@ -277,6 +281,7 @@ impl GroupParser {
                     literal: None,
                     aggregate: Some(agg_func),
                     nested_expr: None,
+                    subquery: None,
                 })
             }
             _ => Err(IrParseError::InvalidInput(format!(
@@ -406,6 +411,7 @@ impl GroupParser {
                     literal: None,
                     aggregate: None,
                     nested_expr: None,
+                    subquery: None,
                 })
             }
             Rule::identifier => Ok(ComplexField {
@@ -416,6 +422,7 @@ impl GroupParser {
                 literal: None,
                 aggregate: None,
                 nested_expr: None,
+                subquery: None,
             }),
             _ => Err(IrParseError::InvalidInput(format!(
                 "Expected field reference, got {:?}",

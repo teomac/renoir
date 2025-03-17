@@ -250,42 +250,88 @@ fn process_condition(condition: &FilterConditionType, query_object: &QueryObject
 
 /// Process a null check condition (IS NULL or IS NOT NULL)
 fn process_null_check_condition(condition: &NullCondition, query_object: &QueryObject) -> String {
-    let col_ref = if condition.field.column_ref.is_some() {
-        condition.field.column_ref.as_ref().unwrap()
-    } else {
-        panic!("Invalid null check condition - missing column reference")
-    };
+    let field = &condition.field;
 
-    let stream_name = if col_ref.table.is_some() {
-        query_object
-            .get_stream_from_alias(col_ref.table.as_ref().unwrap())
-            .unwrap()
-    } else {
-        let all_streams = &query_object.streams;
-        if all_streams.len() > 1 {
-            panic!("Invalid column reference - missing table name");
+    //case column reference
+    if field.column_ref.is_some(){
+        let col_ref = if condition.field.column_ref.is_some() {
+            condition.field.column_ref.as_ref().unwrap()
+        } else {
+            panic!("Invalid null check condition - missing column reference")
+        };
+    
+        let stream_name = if col_ref.table.is_some() {
+            query_object
+                .get_stream_from_alias(col_ref.table.as_ref().unwrap())
+                .unwrap()
+        } else {
+            let all_streams = &query_object.streams;
+            if all_streams.len() > 1 {
+                panic!("Invalid column reference - missing table name");
+            }
+            all_streams.first().unwrap().0
+        };
+    
+        let stream = query_object.get_stream(stream_name);
+    
+        let field = if condition.field.column_ref.is_some() {
+            //validate column
+            check_column_validity(&col_ref, stream_name, query_object);
+            format!(
+                "x{}.{}",
+                stream.get_access().get_base_path(),
+                col_ref.column
+            )
+        } else {
+            panic!("Invalid null check condition - missing column reference")
+        };
+
+        match condition.operator {
+            NullOp::IsNull => format!("{}.is_none()", field),
+            NullOp::IsNotNull => format!("{}.is_some()", field),
         }
-        all_streams.first().unwrap().0
-    };
-
-    let stream = query_object.get_stream(stream_name);
-
-    let field = if condition.field.column_ref.is_some() {
-        //validate column
-        check_column_validity(&col_ref, stream_name, query_object);
-        format!(
-            "x{}.{}",
-            stream.get_access().get_base_path(),
-            col_ref.column
-        )
-    } else {
-        panic!("Invalid null check condition - missing column reference")
-    };
-
-    match condition.operator {
-        NullOp::IsNull => format!("{}.is_none()", field),
-        NullOp::IsNotNull => format!("{}.is_some()", field),
     }
+
+    //case it is a literal
+    else if field.literal.is_some(){
+        let lit = field.literal.as_ref().unwrap();
+        match lit {
+            IrLiteral::Boolean(_) => {
+                match condition.operator {
+                    NullOp::IsNull => format!("false"),
+                    NullOp::IsNotNull => format!("true"),
+                }
+            }
+
+            IrLiteral::Float(_) | IrLiteral::Integer(_) => {
+                match condition.operator {
+                    NullOp::IsNull => format!("false"),
+                    NullOp::IsNotNull => format!("true"),
+                }
+            }
+
+            IrLiteral::String(string) => {
+                match condition.operator {
+                    NullOp::IsNull => format!("{}", string.is_empty()),
+                    NullOp::IsNotNull => format!("{}", !string.is_empty()),
+                }
+            }
+
+            _ => {
+                panic!("Invalid null check condition - missing field")
+        }
+    }}
+
+    //case nested_expr: TODO
+
+    else{
+        panic!("Invalid null check condition - missing field")
+    }
+
+
+    
+
+   
 }
 
 /// Process a comparison condition (>, <, =, etc.)

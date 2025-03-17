@@ -97,7 +97,7 @@ arithmetic_factor = {
 // Conditions for FILTER clause
 condition = { 
     arithmetic_expr ~ comparison_op ~ arithmetic_expr | 
-    (qualified_column | identifier) ~ null_op
+    (qualified_column | subquery | identifier | number) ~ null_op
 }
 
 comparison_op = @{ ">=" | "<=" | "!=" | ">" | "<" | "==" | "="}
@@ -110,7 +110,7 @@ filter_clause = { "where" ~ filter_condition }
 
 // Projection clause expressions
 projection_expr = { complex_op | aggregate_expr | qualified_column | identifier }
-column_operand = { aggregate_expr | qualified_column | identifier | number }
+column_operand = { aggregate_expr | qualified_column | subquery | identifier | number }
 parenthesized_expr = { left_parenthesis ~ projection_expr ~ right_parenthesis }
 
 complex_op = { 

@@ -74,7 +74,7 @@ condition = {
     exists_expr |
     in_expr |
     arithmetic_expr ~ operator ~ arithmetic_expr | 
-    (table_column | variable) ~ null_operator
+    (table_column | subquery_expr | variable | number ) ~ null_operator
 }
 
 where_conditions = { where_term ~ (binary_op ~ where_term)* }

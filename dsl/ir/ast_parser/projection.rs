@@ -222,6 +222,7 @@ impl ProjectionParser {
                 literal: None,
                 aggregate: None,
                 nested_expr: Some(Box::new((left_field, op, right_field))),
+                subquery: None,
             };
         }
 
@@ -280,12 +281,14 @@ impl ProjectionParser {
                 literal: Some(LiteralParser::parse(operand.as_str())?),
                 aggregate: None,
                 nested_expr: None,
+                subquery: None,
             }),
             Rule::qualified_column => Ok(ComplexField {
                 column_ref: Some(Self::parse_column_ref(operand)?),
                 literal: None,
                 aggregate: None,
                 nested_expr: None,
+                subquery: None,
             }),
             Rule::identifier => Ok(ComplexField {
                 column_ref: Some(ColumnRef {
@@ -295,12 +298,21 @@ impl ProjectionParser {
                 literal: None,
                 aggregate: None,
                 nested_expr: None,
+                subquery: None,
             }),
             Rule::aggregate_expr => Ok(ComplexField {
                 column_ref: None,
                 literal: None,
                 aggregate: Some(Self::parse_aggregate_function(operand)?),
                 nested_expr: None,
+                subquery: None,
+            }),
+            Rule::subquery => Ok(ComplexField {
+                column_ref: None,
+                literal: None,
+                aggregate: None,
+                nested_expr: None,
+                subquery: Some(IrParser::parse_subquery(operand)?),
             }),
             _ => Err(IrParseError::InvalidInput(format!(
                 "Invalid operand: {:?}",

@@ -38,10 +38,7 @@ impl IrParser {
                 "Expected subquery expression, got {:?}",
                 pair.as_rule()
             )));
-        }
-        
-        println!("Parsing subquery: {:?}", pair);
-        
+        }        
         
         let subquery_text = pair.as_str();
         println!("Subquery text: {}", subquery_text);

@@ -116,8 +116,8 @@ fn validate_no_aggregates_in_where(clause: &Option<WhereClause>) -> Result<(), S
                 WhereBaseCondition::NullCheck(null_cond) => {
                     check_where_field_for_aggregates(&null_cond.field)?;
                 }
-                WhereBaseCondition::Exists(sql_ast, _) => { /*TODO */ }
-                WhereBaseCondition::In(column_ref, sql_ast, _) => { /*TODO */ }
+                WhereBaseCondition::Exists(_, _) => { /*TODO */ }
+                WhereBaseCondition::In(_, _, _) => { /*TODO */ }
             },
             WhereClause::Expression { left, op: _, right } => {
                 validate_no_aggregates_in_where(&Some(*left.clone()))?;
@@ -185,8 +185,8 @@ fn validate_having_expr_columns(
             HavingBaseCondition::NullCheck(null_cond) => {
                 validate_having_field(&null_cond.field, group_by_columns)?;
             }
-            HavingBaseCondition::Exists(sql_ast) => {/*TODO */},
-            HavingBaseCondition::In(column_ref, sql_ast) => {/*TODO */},
+            HavingBaseCondition::Exists(_) => {/*TODO */},
+            HavingBaseCondition::In(_, _) => {/*TODO */},
         },
         HavingClause::Expression { left, op: _, right } => {
             validate_having_expr_columns(left, group_by_columns)?;
@@ -262,7 +262,7 @@ fn validate_arithmetic_columns(
                 validate_arithmetic_columns(right, group_by_columns)?;
                 Ok(())
             }
-        ArithmeticExpr::Subquery(sql_ast) => {
+        ArithmeticExpr::Subquery(_) => {
             Ok(())
         /*TODO */},
     }
@@ -271,7 +271,6 @@ fn validate_arithmetic_columns(
 fn validate_limit_offset(clause: &Option<LimitClause>) -> Result<(), SqlParseError> {
     if let Some(limit_clause) = clause {
         // Check that LIMIT is non-negative
-        println!("Limit: {:?}", limit_clause.limit);
         if limit_clause.limit < 0 {
             return Err(SqlParseError::InvalidInput(format!(
                 "LIMIT value must be non-negative, got {}",

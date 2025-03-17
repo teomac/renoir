@@ -1,5 +1,6 @@
 use super::error::IrParseError;
-use super::ir_ast_structure::*;
+use super::{ir_ast_structure::*, IrParser};
+use super::literal::LiteralParser;
 use crate::dsl::ir::ast_parser::Rule;
 use pest::iterators::Pair;
 
@@ -141,7 +142,7 @@ impl ConditionParser {
                     },
                 )))
             }
-            Rule::qualified_column | Rule::identifier => {
+            Rule::qualified_column | Rule::identifier | Rule::number | Rule::subquery => {
                 // Check if this is a NULL check
                 let operator_pair = inner
                     .next()
@@ -195,6 +196,7 @@ impl ConditionParser {
                     literal: None,
                     aggregate: None,
                     nested_expr: Some(Box::new((result, op.as_str().to_string(), next_field))),
+                    subquery: None,
                 };
             }
         }
@@ -240,6 +242,7 @@ impl ConditionParser {
                 literal: Some(Self::parse_literal(operand)?),
                 aggregate: None,
                 nested_expr: None,
+                subquery: None,
             }),
             Rule::qualified_column => {
                 let column_ref = Self::parse_qualified_column(operand)?;
@@ -248,6 +251,7 @@ impl ConditionParser {
                     literal: None,
                     aggregate: None,
                     nested_expr: None,
+                    subquery: None,
                 })
             }
             Rule::identifier => Ok(ComplexField {
@@ -258,6 +262,7 @@ impl ConditionParser {
                 literal: None,
                 aggregate: None,
                 nested_expr: None,
+                subquery: None,
             }),
             Rule::aggregate_expr => {
                 let agg_func = Self::parse_aggregate_function(operand)?;
@@ -266,6 +271,7 @@ impl ConditionParser {
                     literal: None,
                     aggregate: Some(agg_func),
                     nested_expr: None,
+                    subquery: None,
                 })
             }
             _ => Err(IrParseError::InvalidInput(format!(
@@ -399,6 +405,7 @@ impl ConditionParser {
                     literal: None,
                     aggregate: None,
                     nested_expr: None,
+                    subquery: None,
                 })
             }
             Rule::identifier => Ok(ComplexField {
@@ -409,7 +416,29 @@ impl ConditionParser {
                 literal: None,
                 aggregate: None,
                 nested_expr: None,
+                subquery: None,
             }),
+            Rule::number => {
+                let num = LiteralParser::parse(pair.as_str())
+                    .map_err(|e| IrParseError::InvalidInput(e.to_string()))?;
+                Ok(ComplexField {
+                    column_ref: None,
+                    literal: Some(num),
+                    aggregate: None,
+                    nested_expr: None,
+                    subquery: None,
+                })
+            }
+            Rule::subquery => {
+                let subquery = IrParser::parse_subquery(pair)?;
+                Ok(ComplexField {
+                    column_ref: None,
+                    literal: None,
+                    aggregate: None,
+                    nested_expr: None,
+                    subquery: Some(subquery),
+                })
+            }
             _ => Err(IrParseError::InvalidInput(format!(
                 "Expected field reference, got {:?}",
                 pair.as_rule()

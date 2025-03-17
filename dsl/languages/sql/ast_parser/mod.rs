@@ -42,13 +42,10 @@ impl SqlParser {
                 pair.as_rule()
             )));
         }
-        
-        println!("Parsing subquery: {:?}", pair);
-        
+                
         // For subqueries, we need to create a new parser instance
         // We'll extract the SQL text from the subquery and parse it directly
         let subquery_text = pair.as_str();
-        println!("Subquery text: {}", subquery_text);
         
         // Remove the outer parentheses
         let inner_sql = if subquery_text.starts_with("(") && subquery_text.ends_with(")") {
@@ -56,7 +53,6 @@ impl SqlParser {
         } else {
             subquery_text
         };
-        println!("Inner SQL: {}", inner_sql);
         
         // Parse the inner SQL directly using the main parser
         use crate::dsl::languages::sql::ast_parser::SqlParser;

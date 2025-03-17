@@ -156,7 +156,7 @@ pub fn create_simple_map(
                             .map(|(name, _)| name)
                             .unwrap()
                     });
-                    format!("{}: Some({}.to_string())", field_name, value)
+                    format!("{}: Some(\"{}\".to_string())", field_name, value)
                 }
                 _ => unreachable!("Should not have aggregates in simple map"),
             }

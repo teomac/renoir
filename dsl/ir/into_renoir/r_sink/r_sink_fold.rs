@@ -143,7 +143,6 @@ fn create_fold(acc_info: &mut AccumulatorInfo, stream_name: &String, query_objec
     for (value, (_pos, val_type)) in acc_info.value_positions.iter() {
         match value {
             AccumulatorValue::Aggregate(agg_type, _) => {
-                println!("val_type: {}", val_type);
                 match agg_type {
                     AggregateType::Max | AggregateType::Min | AggregateType::Sum => {
                         // Initialize these as None
@@ -205,7 +204,7 @@ fn create_fold(acc_info: &mut AccumulatorInfo, stream_name: &String, query_objec
 
                 let col_stream = query_object.get_stream(col_stream_name);
 
-                if(col.column != "*"){
+                if col.column != "*"{
                 col_stream.check_if_column_exists(&col.column);}
 
                 let col_access = {
@@ -457,6 +456,7 @@ fn process_complex_field_for_map(field: &ComplexField, stream_name: &String, acc
     let stream = query_object.get_stream(stream_name);
         let mut all_streams = Vec::new();
     let mut keys = Vec::new();
+    let is_keyed = stream.is_keyed;
     if stream.join_tree.is_some(){
         all_streams.extend(stream.join_tree.as_ref().unwrap().get_involved_streams());
     } else {
@@ -640,10 +640,12 @@ fn process_complex_field_for_map(field: &ComplexField, stream_name: &String, acc
                     )).unwrap().0
                 );
 
-                check_list.push(format!("x.1.{}.is_some()", sum_pos));
+                check_list.push(format!("x{}.{}.is_some()", if is_keyed {".1"} else {""} , sum_pos));
                 format!(
-                    "(x.1.{} as f64) / (x.1.{} as f64)",
+                    "(x{}.{} as f64) / (x{}.{} as f64)",
+                    if is_keyed {".1"} else {""},
                     if is_single_acc { "".to_string() } else { format!(".{}", sum_pos) },
+                    if is_keyed {".1"} else {""},
                     if is_single_acc { "".to_string() } else { format!(".{}", count_pos) }
                 )
             },
@@ -654,7 +656,9 @@ fn process_complex_field_for_map(field: &ComplexField, stream_name: &String, acc
                 )).unwrap().0;
 
                 // Count doesn't need a safety check as it's always available
-                format!("x.1{}", if is_single_acc { "".to_string() } else { format!(".{}", pos) })
+                format!("x{}{}",
+                    if is_keyed {".1"} else {""},
+                 if is_single_acc { "".to_string() } else { format!(".{}", pos) })
             },
             _ => {  // MAX, MIN, SUM
                 let pos = acc_info.value_positions.get(&AccumulatorValue::Aggregate(
@@ -662,10 +666,12 @@ fn process_complex_field_for_map(field: &ComplexField, stream_name: &String, acc
                     agg.column.clone()
                 )).unwrap().0;
 
-                check_list.push(format!("x.1{}.is_some()", 
+                check_list.push(format!("x{}{}.is_some()", 
+                    if is_keyed {".1"} else {""},
                     if is_single_acc { "".to_string() } else { format!(".{}", pos) }
                 ));
-                format!("x.1{}.unwrap()", 
+                format!("x{}{}.unwrap()", 
+                    if is_keyed {".1"} else {""},
                     if is_single_acc { "".to_string() } else { format!(".{}", pos) }
                 )
             }
