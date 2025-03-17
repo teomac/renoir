@@ -1,6 +1,6 @@
 use std::{io, sync::Arc};
 
-use crate::dsl::{ir::{literal::LiteralParser, IrPlan, ProjectionColumn}, struct_object::object::QueryObject};
+use crate::dsl::{ir::{literal::LiteralParser, Condition, FilterClause, FilterConditionType, IrPlan, NullCondition, ProjectionColumn}, struct_object::object::QueryObject};
 use crate::dsl::ir::ast_parser::ir_ast_structure::ComplexField;
 
 use super::subquery_csv;
@@ -56,20 +56,13 @@ pub fn manage_subqueries(ir_ast: &Arc<IrPlan>, output_path: &String, query_objec
         IrPlan::Filter { input, predicate } => {
             // Process input first
             let processed_input = manage_subqueries(input, &output_path, query_object)?;
-
-            // Process predicate to find and replace subqueries
-            //as for now, we only focus on subqueries that are in comparison expressions
-            //NO expressions like IN or EXISTS for now
-
-
-
-
-
-
+            
+            // Process the predicate to handle any subqueries
+            let processed_predicate = process_filter_condition(predicate, &output_path, query_object)?;
 
             Ok(Arc::new(IrPlan::Filter {
                 input: processed_input,
-                predicate: predicate.clone()
+                predicate: processed_predicate
             }))
         },
         IrPlan::GroupBy { input, keys, group_condition } => {
@@ -165,5 +158,46 @@ fn process_complex_field(field: &ComplexField, output_path: &String, query_objec
         },
         // Other cases just return clone of original field since they can't contain subqueries
         _ => Ok(field.clone())
+    }
+}
+
+
+fn process_filter_condition(condition: &FilterClause, output_path: &String, query_object: &QueryObject) -> io::Result<FilterClause> {
+    match condition {
+        FilterClause::Base(base_condition) => {
+            match base_condition {
+                FilterConditionType::Comparison(comparison) => {
+                    // Process both left and right fields for subqueries
+                    let processed_left = process_complex_field(&comparison.left_field, output_path, query_object)?;
+                    let processed_right = process_complex_field(&comparison.right_field, output_path, query_object)?;
+                    
+                    Ok(FilterClause::Base(FilterConditionType::Comparison(Condition {
+                        left_field: processed_left,
+                        operator: comparison.operator.clone(),
+                        right_field: processed_right,
+                    })))
+                },
+                FilterConditionType::NullCheck(null_check) => {
+                    // Process the field for subqueries
+                    let processed_field = process_complex_field(&null_check.field, output_path, query_object)?;
+                    
+                    Ok(FilterClause::Base(FilterConditionType::NullCheck(NullCondition {
+                        field: processed_field,
+                        operator: null_check.operator.clone(),
+                    })))
+                }
+            }
+        },
+        FilterClause::Expression { left, binary_op, right } => {
+            // Recursively process both sides of the expression
+            let processed_left = process_filter_condition(left, output_path, query_object)?;
+            let processed_right = process_filter_condition(right, output_path, query_object)?;
+            
+            Ok(FilterClause::Expression {
+                left: Box::new(processed_left),
+                binary_op: binary_op.clone(),
+                right: Box::new(processed_right),
+            })
+        }
     }
 }

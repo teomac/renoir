@@ -223,6 +223,16 @@ impl ConditionParser {
                 Self::parse_arithmetic_expr(expr)
             }
             Rule::arithmetic_factor => Self::parse_arithmetic_operand(inner),
+            Rule::subquery => {
+                let subquery = IrParser::parse_subquery(inner)?;
+                Ok(ComplexField {
+                    column_ref: None,
+                    literal: None,
+                    aggregate: None,
+                    nested_expr: None,
+                    subquery: Some(subquery),
+                })
+            }
             _ => Err(IrParseError::InvalidInput(format!(
                 "Unexpected token in arithmetic term: {:?}",
                 inner.as_rule()

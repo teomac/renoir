@@ -81,6 +81,7 @@ arithmetic_expr = {
 }
 
 arithmetic_term = {
+    subquery |
     arithmetic_factor |
     left_parenthesis ~ arithmetic_expr ~ right_parenthesis 
    

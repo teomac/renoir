@@ -278,6 +278,11 @@ fn parse_condition(pair: Pair<Rule>) -> Result<WhereClause, SqlParseError> {
 
                 Ok(left)
             }
+            Rule::subquery_expr => {
+                // New: Handle subquery in arithmetic expression
+                let subquery = SqlParser::parse_subquery(pair)?;
+                Ok(ArithmeticExpr::Subquery(Box::new(subquery)))
+            }
             _ => Err(SqlParseError::InvalidInput(format!(
                 "Expected arithmetic expression, got {:?}",
                 pair.as_rule()
@@ -307,6 +312,11 @@ fn parse_condition(pair: Pair<Rule>) -> Result<WhereClause, SqlParseError> {
                     }
                     _ => Self::parse_arithmetic_factor(first),
                 }
+            }
+            Rule::subquery_expr => {
+                // New: Handle subquery in arithmetic expression
+                let subquery = SqlParser::parse_subquery(pair)?;
+                Ok(ArithmeticExpr::Subquery(Box::new(subquery)))
             }
             _ => Err(SqlParseError::InvalidInput(format!(
                 "Expected arithmetic primary, got {:?}",
