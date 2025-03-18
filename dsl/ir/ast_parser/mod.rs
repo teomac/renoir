@@ -38,18 +38,17 @@ impl IrParser {
                 "Expected subquery expression, got {:?}",
                 pair.as_rule()
             ))));
-        }        
-        
+        }
+
         let subquery_text = pair.as_str();
-        
+
         // Remove the outer parentheses
         let inner_ir = if subquery_text.starts_with("(") && subquery_text.ends_with(")") {
-            &subquery_text[1..subquery_text.len()-1]
+            &subquery_text[1..subquery_text.len() - 1]
         } else {
             subquery_text
         };
-        
-        
+
         IrParser::parse_query(inner_ir)
     }
 }

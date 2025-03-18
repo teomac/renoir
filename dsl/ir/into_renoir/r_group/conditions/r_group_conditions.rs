@@ -25,10 +25,12 @@ pub fn parse_group_conditions(
                     let right_type = query_object.get_complex_field_type(&comp.right_field);
 
                     // Validate types are compatible for comparison
-                    if left_type != right_type && !((left_type == "f64" || left_type == "i64" || left_type == "usize")
+                    if left_type != right_type
+                        && !((left_type == "f64" || left_type == "i64" || left_type == "usize")
                             && (right_type == "f64"
                                 || right_type == "i64"
-                                || right_type == "usize")) {
+                                || right_type == "usize"))
+                    {
                         panic!(
                             "Invalid comparison between incompatible types: {} and {}",
                             left_type, right_type

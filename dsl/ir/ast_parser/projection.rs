@@ -1,6 +1,6 @@
 use super::error::IrParseError;
-use super::{ir_ast_structure::*, IrParser};
 use super::literal::LiteralParser;
+use super::{ir_ast_structure::*, IrParser};
 use crate::dsl::ir::ast_parser::Rule;
 use pest::iterators::Pair;
 
@@ -12,14 +12,13 @@ impl ProjectionParser {
         let mut distinct = false;
 
         // Skip the 'select' keyword if present
-        if inner.peek().map_or(false, |p| p.as_str() == "select") {
+        if inner.peek().is_some_and(|p| p.as_str() == "select") {
             inner.next();
         }
 
         // Check for 'distinct' keyword
         if inner
-            .peek()
-            .map_or(false, |p| p.as_rule() == Rule::distinct_keyword)
+            .peek().is_some_and(|p| p.as_rule() == Rule::distinct_keyword)
         {
             inner.next();
             distinct = true;
@@ -65,9 +64,10 @@ impl ProjectionParser {
                                 Self::parse_aggregate_function(expr)?,
                                 alias,
                             )),
-                            Rule::qualified_column => {
-                                Ok(ProjectionColumn::Column(Self::parse_column_ref(expr)?, alias))
-                            }
+                            Rule::qualified_column => Ok(ProjectionColumn::Column(
+                                Self::parse_column_ref(expr)?,
+                                alias,
+                            )),
                             Rule::identifier => Ok(ProjectionColumn::Column(
                                 ColumnRef {
                                     table: None,
@@ -186,7 +186,11 @@ impl ProjectionParser {
                     ))))
                 }
             },
-            None => return Err(Box::new(IrParseError::InvalidInput("Missing operand".to_string()))),
+            None => {
+                return Err(Box::new(IrParseError::InvalidInput(
+                    "Missing operand".to_string(),
+                )))
+            }
         };
 
         // Process operators and operands in pairs

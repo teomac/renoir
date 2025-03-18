@@ -98,13 +98,19 @@ impl SqlToIr {
         let mut stream_index = 0;
         let mut from_str = match &from_clause.scan {
             FromSource::Table(scan_clause) => match &scan_clause.alias {
-                Some(alias) => format!("from {} as {} in stream{}", scan_clause.variable, alias, stream_index),
+                Some(alias) => format!(
+                    "from {} as {} in stream{}",
+                    scan_clause.variable, alias, stream_index
+                ),
                 None => format!("from {} in stream{}", scan_clause.variable, stream_index),
             },
             FromSource::Subquery(subquery, alias) => {
                 let subquery_str = Self::convert(subquery);
                 match alias {
-                    Some(alias_name) => format!("from ({}) as {} in stream{}", subquery_str, alias_name, stream_index),
+                    Some(alias_name) => format!(
+                        "from ({}) as {} in stream{}",
+                        subquery_str, alias_name, stream_index
+                    ),
                     None => format!("from ({}) in stream{}", subquery_str, stream_index),
                 }
             }
@@ -115,7 +121,6 @@ impl SqlToIr {
         // iterate over join(s)
         if let Some(joins) = &from_clause.joins {
             for join in joins.iter() {
-               
                 let join_source = match &join.join_scan {
                     FromSource::Table(scan_clause) => match &scan_clause.alias {
                         Some(alias) => format!("{} as {}", scan_clause.variable, alias),
@@ -155,7 +160,7 @@ impl SqlToIr {
                 stream_index += 1;
             }
         }
-        
+
         from_str
     }
 
@@ -185,7 +190,7 @@ impl SqlToIr {
                         NullOp::IsNotNull => "is not null",
                     };
                     format!("{} {}", field, op)
-                },
+                }
                 // Handle EXISTS subquery
                 WhereBaseCondition::Exists(subquery, negated) => {
                     let subquery_str = Self::convert(subquery);
@@ -194,7 +199,7 @@ impl SqlToIr {
                     } else {
                         format!("exists({})", subquery_str)
                     }
-                },
+                }
                 // Handle IN subquery
                 WhereBaseCondition::In(column, subquery, negated) => {
                     let column_str = column.to_string();
@@ -290,12 +295,12 @@ impl SqlToIr {
                     AggregateFunction::Count => "count",
                 };
                 format!("{}({})", agg, col_ref)
-            },
+            }
             ArithmeticExpr::BinaryOp(left, op, right) => {
                 let left_str = Self::arithmetic_expr_to_string(left);
                 let right_str = Self::arithmetic_expr_to_string(right);
                 format!("{} {} {}", left_str, op, right_str)
-            },
+            }
             // Handle subquery in arithmetic expression
             ArithmeticExpr::Subquery(subquery) => {
                 format!("({})", Self::convert(subquery))
@@ -415,11 +420,11 @@ impl SqlToIr {
                         NullOp::IsNull => format!("{} is null", field),
                         NullOp::IsNotNull => format!("{} is not null", field),
                     }
-                },
+                }
                 // Handle EXISTS in HAVING
                 HavingBaseCondition::Exists(subquery) => {
                     format!("exists({})", Self::convert(subquery))
-                },
+                }
                 // Handle IN in HAVING
                 HavingBaseCondition::In(column, subquery) => {
                     format!("{} in ({})", column, Self::convert(subquery))

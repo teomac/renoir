@@ -48,7 +48,6 @@ pub mod subquery_utils;
 /// 4. Convert the Ir AST to a valid Renoir query.
 /// 5. Generate the main.rs file and update it in the Rust project.
 /// 6. Compile the binary and save it to the specified output path.
-
 pub fn query_csv(
     query_str: &str,
     output_path: &String,
@@ -129,7 +128,6 @@ pub fn subquery_csv(
     tables_info: IndexMap<String, IndexMap<String, String>>,
     tables_csv: IndexMap<String, String>,
 ) -> String {
-    
     // step 1: create query_object
     let mut query_object = QueryObject::new();
     query_object.set_output_path(output_path);

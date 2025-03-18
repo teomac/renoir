@@ -5,11 +5,11 @@ use crate::dsl::struct_object::utils::*;
 
 pub fn process_join(
     left_stream: &String,
-    right_stream: &String, 
+    right_stream: &String,
     conditions: &Vec<JoinCondition>,
     join_type: &JoinType,
-    query_object: &mut QueryObject) -> Result<(), Box<dyn std::error::Error>> {
-
+    query_object: &mut QueryObject,
+) -> Result<(), Box<dyn std::error::Error>> {
     // Get the join type string
     let join_method = match join_type {
         JoinType::Inner => "join",
@@ -20,14 +20,20 @@ pub fn process_join(
     let mut left_tuple: Vec<String> = Vec::new();
     let mut right_tuple: Vec<String> = Vec::new();
 
-     // Generate the join conditions
-     for condition in conditions {
+    // Generate the join conditions
+    for condition in conditions {
         let mut left_col = condition.left_col.clone();
         let mut right_col = condition.right_col.clone();
 
         // Get the stream names from aliases
-        let mut left_stream_name = query_object.get_stream_from_alias(left_col.table.as_ref().unwrap()).unwrap().clone();
-        let mut right_stream_name = query_object.get_stream_from_alias(right_col.table.as_ref().unwrap()).unwrap().clone();
+        let mut left_stream_name = query_object
+            .get_stream_from_alias(left_col.table.as_ref().unwrap())
+            .unwrap()
+            .clone();
+        let mut right_stream_name = query_object
+            .get_stream_from_alias(right_col.table.as_ref().unwrap())
+            .unwrap()
+            .clone();
 
         // Validate columns
         check_column_validity(&left_col, &left_stream_name, query_object);
@@ -48,22 +54,32 @@ pub fn process_join(
         let right_stream = query_object.get_stream(&right_stream_name);
 
         // Build tuple expressions
-        let needs_casting = query_object.get_type(&left_col) == "f64" 
-            || query_object.get_type(&right_col) == "f64";
+        let needs_casting =
+            query_object.get_type(&left_col) == "f64" || query_object.get_type(&right_col) == "f64";
 
-        left_tuple.push(format!("x{}.{}.clone(){}",
+        left_tuple.push(format!(
+            "x{}.{}.clone(){}",
             left_stream.get_access().get_base_path(),
             left_col.column,
-            if needs_casting { ".map(OrderedFloat)" } else { "" }
+            if needs_casting {
+                ".map(OrderedFloat)"
+            } else {
+                ""
+            }
         ));
 
-        right_tuple.push(format!("y{}.{}.clone(){}",
+        right_tuple.push(format!(
+            "y{}.{}.clone(){}",
             right_stream.get_access().get_base_path(),
             right_col.column,
-            if needs_casting { ".map(OrderedFloat)" } else { "" }
+            if needs_casting {
+                ".map(OrderedFloat)"
+            } else {
+                ""
+            }
         ));
     }
-         // Construct the join operation string
+    // Construct the join operation string
     let join_op = format!(
         ".{}({}, |x| ({}), |y| ({})).drop_key()",
         join_method,
@@ -72,22 +88,21 @@ pub fn process_join(
         right_tuple.join(", ")
     );
 
-        
     // Store the join operation in the left stream
     let stream = query_object.get_mut_stream(left_stream);
     stream.insert_op(join_op);
 
-         // Create or update join tree
+    // Create or update join tree
     let join_tree = JoinTree::Join {
         left: Box::new(match &query_object.get_stream(left_stream).join_tree {
             Some(tree) => tree.clone(),
-            None => JoinTree::Leaf(left_stream.clone())
+            None => JoinTree::Leaf(left_stream.clone()),
         }),
         right: Box::new(match &query_object.get_stream(right_stream).join_tree {
             Some(tree) => tree.clone(),
-            None => JoinTree::Leaf(right_stream.clone())
+            None => JoinTree::Leaf(right_stream.clone()),
         }),
-        join_type: join_type.clone()
+        join_type: join_type.clone(),
     };
 
     // Store join tree and update access paths

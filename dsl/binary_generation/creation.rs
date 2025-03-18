@@ -1,7 +1,7 @@
+use std::fmt::Write;
 use std::fs;
 use std::io;
 use std::path::PathBuf;
-use std::fmt::Write;
 
 use crate::dsl::struct_object::object::QueryObject;
 
@@ -168,14 +168,11 @@ pub fn create_template(query_object: &QueryObject, is_subquery: bool) -> String 
     )
 }
 
-pub fn generate_struct_declarations(
-    table_names: &[String],
-    query_object: &QueryObject,
-) -> String {
+pub fn generate_struct_declarations(table_names: &[String], query_object: &QueryObject) -> String {
     //Part1: generate struct definitions for input tables
 
     let struct_names = query_object.get_all_structs();
-    
+
     // Use iterators to zip through table_names, struct_names, and field_lists to maintain order
     let mut result: String = table_names
         .iter()
@@ -191,14 +188,14 @@ pub fn generate_struct_declarations(
             // Generate field definitions directly from table to struct mapping
 
             let fields_str = query_object
-            .tables_info
-            .get(_table_name)
-            .unwrap()
-            .iter()
-            .fold(String::new(), |mut output,(field_name, field_type) |
-                {let _ = writeln!(output, "{}: Option<{}>,\n", field_name, field_type);
-                output
-            });
+                .tables_info
+                .get(_table_name)
+                .unwrap()
+                .iter()
+                .fold(String::new(), |mut output, (field_name, field_type)| {
+                    let _ = writeln!(output, "{}: Option<{}>,\n", field_name, field_type);
+                    output
+                });
 
             struct_def.push_str(&fields_str);
             struct_def.push_str("}\n\n");

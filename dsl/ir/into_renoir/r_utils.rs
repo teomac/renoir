@@ -4,12 +4,11 @@ use crate::dsl::ir::{AggregateFunction, AggregateType, IrLiteral};
 
 // helper function to convert column reference to string
 pub fn convert_column_ref(column_ref: &ColumnRef, query_object: &QueryObject) -> String {
-
     if column_ref.column == "*" {
         if !query_object.has_join {
             return "x".to_string();
-        } else 
-            //case join
+        } else
+        //case join
         {
             let val = column_ref.table.as_ref().unwrap();
             let stream_name = check_alias(val, query_object);
@@ -17,15 +16,16 @@ pub fn convert_column_ref(column_ref: &ColumnRef, query_object: &QueryObject) ->
             let stream = query_object.get_stream(&stream_name);
 
             let access = stream.get_access().base_path.clone();
-            return format!(
-                "x{}",
-                access
-            );
+            return format!("x{}", access);
         }
     }
 
     if !query_object.has_join {
-        let all_streams = query_object.streams.keys().cloned().collect::<Vec<String>>();
+        let all_streams = query_object
+            .streams
+            .keys()
+            .cloned()
+            .collect::<Vec<String>>();
         let stream_name = all_streams.first().unwrap();
         let stream = query_object.get_stream(stream_name);
 
@@ -39,10 +39,9 @@ pub fn convert_column_ref(column_ref: &ColumnRef, query_object: &QueryObject) ->
             );
         };
         format!("x{}.{}", stream.get_access().get_base_path(), col)
-    } 
-    else
+    } else
     //case join
-     {
+    {
         // take value from column_ref.table
         let val = column_ref.table.as_ref().unwrap();
         // check if value is an alias in the query object hashmap
@@ -104,19 +103,29 @@ pub fn convert_aggregate(aggregate: &AggregateFunction, query_object: &QueryObje
 pub fn check_alias(table_to_check: &str, query_object: &QueryObject) -> String {
     //case if table is an alias
     if query_object.alias_to_stream.contains_key(table_to_check) {
-       query_object.alias_to_stream.get(table_to_check).unwrap().to_string()
+        query_object
+            .alias_to_stream
+            .get(table_to_check)
+            .unwrap()
+            .to_string()
     }
-
     //case if table is not an alias
     else {
         //the table is actual a table name. Let's check if the table exists in the tables_info hashmap
         if query_object.tables_info.contains_key(table_to_check) {
-            query_object.streams.keys().cloned().collect::<Vec<String>>().first().unwrap().to_string()
+            query_object
+                .streams
+                .keys()
+                .cloned()
+                .collect::<Vec<String>>()
+                .first()
+                .unwrap()
+                .to_string()
         } else {
             //throw error
             panic!("Table {} does not exist", table_to_check);
         }
-}
+    }
 }
 
 // Helper function to find the exact matching result column for an ORDER BY column
@@ -140,7 +149,11 @@ pub fn find_matching_result_column(
         let is_alias = actual_table != table_name.unwrap();
 
         // Build the expected pattern for the column name
-        let table_suffix = if is_alias { table_name.unwrap().to_string() } else { actual_table.to_string() };
+        let table_suffix = if is_alias {
+            table_name.unwrap().to_string()
+        } else {
+            actual_table.to_string()
+        };
         let expected_pattern = format!("{}_{}", column_name, table_suffix);
 
         // First check for exact match with the pattern

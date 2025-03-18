@@ -12,7 +12,7 @@ pub fn process_projections(
     stream_name: &String,
     query_object: &mut QueryObject,
 ) -> Result<(), Box<dyn std::error::Error>> {
-    let final_string ;
+    let final_string;
 
     // Check if any aggregations are present using recursive traversal
     let has_aggregates: bool = projections.iter().any(|clause| match clause {
@@ -41,7 +41,6 @@ pub fn process_projections(
 
         return Ok(());
     }
-    
 
     if has_aggregates {
         if !(query_object.get_stream(stream_name).agg_position.is_empty()) {

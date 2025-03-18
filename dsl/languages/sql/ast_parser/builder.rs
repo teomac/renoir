@@ -21,8 +21,7 @@ impl SqlASTBuilder {
                     inner.next(); // Skip SELECT keyword
 
                     let distinct = inner
-                        .next()
-                        .map_or(false, |token| token.as_rule() == Rule::distinct_keyword);
+                        .next().is_some_and(|token| token.as_rule() == Rule::distinct_keyword);
 
                     if !distinct {
                         // If the next token is not DISTINCT, we need to go back to the beginning
@@ -137,7 +136,11 @@ impl SqlASTBuilder {
 
                     return Ok(ast);
                 }
-                _ => return Err(Box::new(SqlParseError::InvalidInput("Expected query".to_string()))),
+                _ => {
+                    return Err(Box::new(SqlParseError::InvalidInput(
+                        "Expected query".to_string(),
+                    )))
+                }
             }
         }
         Err(Box::new(SqlParseError::InvalidInput(

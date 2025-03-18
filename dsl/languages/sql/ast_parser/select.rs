@@ -25,12 +25,10 @@ impl SelectParser {
                 // Parse the actual column content
                 Self::parse_column_item(column_item)
             }
-            _ => {
-                Err(Box::new(SqlParseError::InvalidInput(format!(
-                    "Expected column_with_alias, got {:?}",
-                    pair.as_rule()
-                ))))
-            }
+            _ => Err(Box::new(SqlParseError::InvalidInput(format!(
+                "Expected column_with_alias, got {:?}",
+                pair.as_rule()
+            )))),
         }
     }
 
@@ -49,27 +47,27 @@ impl SelectParser {
             Rule::aggregate_expr => {
                 let agg = Self::parse_aggregate(item)?;
                 Ok(SelectType::Aggregate(agg.0, agg.1))
-            },
+            }
             Rule::select_expr => Self::parse_complex_expression(item),
             Rule::subquery_expr => {
                 // Handle subquery in SELECT
                 let subquery = SqlParser::parse_subquery(item)?;
-                
+
                 // Validate that the subquery only returns one column
                 if subquery.select.select.len() != 1 {
                     return Err(Box::new(SqlParseError::InvalidInput(
-                        "Subquery in SELECT must return exactly one column".to_string()
+                        "Subquery in SELECT must return exactly one column".to_string(),
                     )));
                 }
-                
+
                 Ok(SelectType::Subquery(Box::new(subquery)))
-            },
+            }
             Rule::string_literal => {
                 // remove quotes from string
                 let inner_str = item.as_str();
                 let clean_str = inner_str[1..inner_str.len() - 1].to_string();
                 Ok(SelectType::StringLiteral(clean_str))
-            },
+            }
             _ => Err(Box::new(SqlParseError::InvalidInput(format!(
                 "Invalid column item: {:?}",
                 item.as_rule()
@@ -114,7 +112,9 @@ impl SelectParser {
         }
     }
 
-    fn parse_aggregate(pair: Pair<Rule>) -> Result<(AggregateFunction, ColumnRef), Box<SqlParseError>> {
+    fn parse_aggregate(
+        pair: Pair<Rule>,
+    ) -> Result<(AggregateFunction, ColumnRef), Box<SqlParseError>> {
         let mut agg = pair.into_inner();
         let func = match agg
             .next()
@@ -283,7 +283,7 @@ impl SelectParser {
                     nested_expr: None,
                     subquery: None,
                 })
-            },
+            }
             Rule::subquery_expr => {
                 // New: Handle subquery in column operand
                 let subquery = SqlParser::parse_subquery(inner)?;
@@ -294,7 +294,7 @@ impl SelectParser {
                     nested_expr: None,
                     subquery: Some(Box::new(subquery)),
                 })
-            },
+            }
             _ => Err(Box::new(SqlParseError::InvalidInput(format!(
                 "Invalid operand: {:?}",
                 inner.as_rule()

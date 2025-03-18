@@ -21,7 +21,7 @@ impl LimitParser {
             None
         };
 
-        Ok( (limit, offset ))
+        Ok((limit, offset))
     }
 
     fn parse_limit(pair: Pair<Rule>) -> Result<i64, Box<IrParseError>> {

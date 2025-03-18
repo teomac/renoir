@@ -80,7 +80,9 @@ impl OrderParser {
         }
 
         if items.is_empty() {
-            return Err(Box::new(IrParseError::InvalidInput("Empty order clause".to_string())));
+            return Err(Box::new(IrParseError::InvalidInput(
+                "Empty order clause".to_string(),
+            )));
         }
 
         Ok(items)

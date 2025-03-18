@@ -106,7 +106,7 @@ pub enum WhereClause {
 pub enum WhereBaseCondition {
     Comparison(WhereCondition),
     NullCheck(WhereNullCondition),
-    Exists(Box<SqlAST>, bool), // Subquery, negated
+    Exists(Box<SqlAST>, bool),        // Subquery, negated
     In(ColumnRef, Box<SqlAST>, bool), // Column, subquery, negated
 }
 

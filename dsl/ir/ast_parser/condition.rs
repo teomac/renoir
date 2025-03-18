@@ -1,6 +1,6 @@
 use super::error::IrParseError;
-use super::{ir_ast_structure::*, IrParser};
 use super::literal::LiteralParser;
+use super::{ir_ast_structure::*, IrParser};
 use crate::dsl::ir::ast_parser::Rule;
 use pest::iterators::Pair;
 
@@ -22,7 +22,9 @@ impl ConditionParser {
         Self::parse_conditions(conditions)
     }
 
-    pub fn parse_conditions(conditions_pair: Pair<Rule>) -> Result<FilterClause, Box<IrParseError>> {
+    pub fn parse_conditions(
+        conditions_pair: Pair<Rule>,
+    ) -> Result<FilterClause, Box<IrParseError>> {
         let mut pairs = conditions_pair.into_inner().peekable();
 
         let first = pairs
@@ -101,7 +103,9 @@ impl ConditionParser {
         }
     }
 
-    fn parse_single_condition(condition_pair: Pair<Rule>) -> Result<FilterClause, Box<IrParseError>> {
+    fn parse_single_condition(
+        condition_pair: Pair<Rule>,
+    ) -> Result<FilterClause, Box<IrParseError>> {
         let mut inner = condition_pair.into_inner();
 
         // Get the first field
@@ -313,7 +317,9 @@ impl ConditionParser {
                             .parse::<i64>()
                             .map(IrLiteral::Integer)
                             .or_else(|_| inner.as_str().parse::<f64>().map(IrLiteral::Float))
-                            .map_err(|_| IrParseError::InvalidInput("Invalid number".to_string()))?)
+                            .map_err(|_| {
+                                IrParseError::InvalidInput("Invalid number".to_string())
+                            })?)
                     }
                     Rule::boolean_keyword => match inner.as_str() {
                         "true" => Ok(IrLiteral::Boolean(true)),
@@ -328,7 +334,9 @@ impl ConditionParser {
                     )))),
                 }
             }
-            _ => Err(Box::new(IrParseError::InvalidInput("Expected value".to_string()))),
+            _ => Err(Box::new(IrParseError::InvalidInput(
+                "Expected value".to_string(),
+            ))),
         }
     }
 

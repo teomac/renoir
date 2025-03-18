@@ -185,8 +185,8 @@ fn validate_having_expr_columns(
             HavingBaseCondition::NullCheck(null_cond) => {
                 validate_having_field(&null_cond.field, group_by_columns)?;
             }
-            HavingBaseCondition::Exists(_) => {/*TODO */},
-            HavingBaseCondition::In(_, _) => {/*TODO */},
+            HavingBaseCondition::Exists(_) => { /*TODO */ }
+            HavingBaseCondition::In(_, _) => { /*TODO */ }
         },
         HavingClause::Expression { left, op: _, right } => {
             validate_having_expr_columns(left, group_by_columns)?;
@@ -237,35 +237,36 @@ fn validate_arithmetic_columns(
 ) -> Result<(), Box<SqlParseError>> {
     match expr {
         ArithmeticExpr::Column(col_ref) => {
-                        // Check if this column is in the GROUP BY
-                        let is_in_group_by = group_by_columns.iter().any(|gb_col| {
-                            gb_col.column == col_ref.column
-                                && (gb_col.table == col_ref.table || col_ref.table.is_none())
-                        });
-        
-                        if !is_in_group_by {
-                           return Err(Box::new(SqlParseError::InvalidInput(
+            // Check if this column is in the GROUP BY
+            let is_in_group_by = group_by_columns.iter().any(|gb_col| {
+                gb_col.column == col_ref.column
+                    && (gb_col.table == col_ref.table || col_ref.table.is_none())
+            });
+
+            if !is_in_group_by {
+                return Err(Box::new(SqlParseError::InvalidInput(
                                format!("Column '{}' in HAVING clause must be in GROUP BY or used in an aggregate function",
                                    col_ref
                               )
                            )));
-                       };
-                        Ok(())
-            }
+            };
+            Ok(())
+        }
         ArithmeticExpr::Aggregate(_, _) => {
-                Ok(())
+            Ok(())
 
-                // Aggregates are always allowed in HAVING
-            }
+            // Aggregates are always allowed in HAVING
+        }
         ArithmeticExpr::Literal(_) => Ok(()),
         ArithmeticExpr::BinaryOp(left, _, right) => {
-                validate_arithmetic_columns(left, group_by_columns)?;
-                validate_arithmetic_columns(right, group_by_columns)?;
-                Ok(())
-            }
+            validate_arithmetic_columns(left, group_by_columns)?;
+            validate_arithmetic_columns(right, group_by_columns)?;
+            Ok(())
+        }
         ArithmeticExpr::Subquery(_) => {
             Ok(())
-        /*TODO */},
+            /*TODO */
+        }
     }
 }
 

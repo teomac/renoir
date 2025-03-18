@@ -120,103 +120,95 @@ fn process_filter_condition(
                     }
                 }
                 GroupBaseCondition::NullCheck(null_check) => {
-                    if null_check.field.column_ref.is_some(){
-                    // Get the column reference that's being checked for null
-                    let col_ref = if let Some(ref col) = null_check.field.column_ref {
-                        col
-                    } else {
-                        panic!("NULL check must be on a column reference");
-                    };
-
-                    // Check if this column is part of the GROUP BY key
-                    let is_key_field = keys.iter().any(|c| {
-                        c.column == col_ref.column
-                            && (c.table.is_none()
-                                || col_ref.table.is_none()
-                                || c.table == col_ref.table)
-                    });
-
-                    // Get column access based on whether it's a key field
-                    let col_access = if is_key_field {
-                        // Get the position in the group by key tuple
-                        let key_position = keys
-                            .iter()
-                            .position(|c| {
-                                c.column == col_ref.column
-                                    && (c.table.is_none()
-                                        || col_ref.table.is_none()
-                                        || c.table == col_ref.table)
-                            })
-                            .unwrap();
-
-                        if keys.len() == 1 {
-                            // Single key column
-                            "x.0".to_string()
+                    if null_check.field.column_ref.is_some() {
+                        // Get the column reference that's being checked for null
+                        let col_ref = if let Some(ref col) = null_check.field.column_ref {
+                            col
                         } else {
-                            // Multiple key columns - access by position
-                            format!("x.0.{}", key_position)
-                        }
-                    } else {
-                        // Not a key column - must be in the accumulated values or aggregates
-
-                        let stream_name = if col_ref.table.is_some() {
-                            query_object
-                                .get_stream_from_alias(col_ref.table.as_ref().unwrap())
-                                .unwrap()
-                        } else if query_object.streams.len() == 1 {
-                            query_object.streams.first().unwrap().0
-                        } else {
-                            panic!("Column reference must have a table reference")
+                            panic!("NULL check must be on a column reference");
                         };
-                        let stream = query_object.get_stream(stream_name);
-                        stream.check_if_column_exists(&col_ref.column);
 
-                        format!(
-                            "x.1{}.{}",
-                            stream.get_access().get_base_path(),
-                            col_ref.column
-                        )
-                    };
+                        // Check if this column is part of the GROUP BY key
+                        let is_key_field = keys.iter().any(|c| {
+                            c.column == col_ref.column
+                                && (c.table.is_none()
+                                    || col_ref.table.is_none()
+                                    || c.table == col_ref.table)
+                        });
 
-                    // Generate the appropriate null check
-                    match null_check.operator {
-                        NullOp::IsNull => format!("{}.is_none()", col_access),
-                        NullOp::IsNotNull => format!("{}.is_some()", col_access),
-                    }
-                }
+                        // Get column access based on whether it's a key field
+                        let col_access = if is_key_field {
+                            // Get the position in the group by key tuple
+                            let key_position = keys
+                                .iter()
+                                .position(|c| {
+                                    c.column == col_ref.column
+                                        && (c.table.is_none()
+                                            || col_ref.table.is_none()
+                                            || c.table == col_ref.table)
+                                })
+                                .unwrap();
 
-                else if null_check.field.literal.is_some(){
-                    let lit = null_check.field.literal.as_ref().unwrap();
-                    match lit {
-                        IrLiteral::Boolean(_) | IrLiteral::Integer(_) | IrLiteral::Float(_) => {
-                            match null_check.operator {
-                                NullOp::IsNull => "false".to_string(),
-                                NullOp::IsNotNull => "true".to_string(),
+                            if keys.len() == 1 {
+                                // Single key column
+                                "x.0".to_string()
+                            } else {
+                                // Multiple key columns - access by position
+                                format!("x.0.{}", key_position)
                             }
+                        } else {
+                            // Not a key column - must be in the accumulated values or aggregates
+
+                            let stream_name = if col_ref.table.is_some() {
+                                query_object
+                                    .get_stream_from_alias(col_ref.table.as_ref().unwrap())
+                                    .unwrap()
+                            } else if query_object.streams.len() == 1 {
+                                query_object.streams.first().unwrap().0
+                            } else {
+                                panic!("Column reference must have a table reference")
+                            };
+                            let stream = query_object.get_stream(stream_name);
+                            stream.check_if_column_exists(&col_ref.column);
+
+                            format!(
+                                "x.1{}.{}",
+                                stream.get_access().get_base_path(),
+                                col_ref.column
+                            )
+                        };
+
+                        // Generate the appropriate null check
+                        match null_check.operator {
+                            NullOp::IsNull => format!("{}.is_none()", col_access),
+                            NullOp::IsNotNull => format!("{}.is_some()", col_access),
                         }
-                        IrLiteral::String(string) => {
-                            match null_check.operator {
+                    } else if null_check.field.literal.is_some() {
+                        let lit = null_check.field.literal.as_ref().unwrap();
+                        match lit {
+                            IrLiteral::Boolean(_) | IrLiteral::Integer(_) | IrLiteral::Float(_) => {
+                                match null_check.operator {
+                                    NullOp::IsNull => "false".to_string(),
+                                    NullOp::IsNotNull => "true".to_string(),
+                                }
+                            }
+                            IrLiteral::String(string) => match null_check.operator {
                                 NullOp::IsNull => format!("{}", string.is_empty()),
                                 NullOp::IsNotNull => format!("{}", !string.is_empty()),
+                            },
+                            IrLiteral::ColumnRef(_) => {
+                                panic!("We should not be here.")
                             }
                         }
-                        IrLiteral::ColumnRef(_) => {
-                            panic!("We should not be here.")
+                    } else if null_check.field.aggregate.is_some() {
+                        match null_check.operator {
+                            NullOp::IsNull => "false".to_string(),
+                            NullOp::IsNotNull => "true".to_string(),
                         }
+                    } else {
+                        panic!("Invalid NULL check - must be on a column reference or literal")
                     }
                 }
-                else if null_check.field.aggregate.is_some(){
-                    match null_check.operator {
-                        NullOp::IsNull => "false".to_string(),
-                        NullOp::IsNotNull => "true".to_string(),
-                    }
-                }
-                else {
-                    panic!("Invalid NULL check - must be on a column reference or literal")
-                }
-            
-            
-            }
             }
         }
         GroupClause::Expression { left, op, right } => {
@@ -394,9 +386,7 @@ fn process_filter_field(
         }
 
         match agg.function {
-            AggregateType::Count => {
-                col_access.to_string()
-            }
+            AggregateType::Count => col_access.to_string(),
             AggregateType::Max | AggregateType::Min | AggregateType::Sum => {
                 format!("{}.unwrap()", col_access)
             }
@@ -406,11 +396,7 @@ fn process_filter_field(
                     function: AggregateType::Count,
                     column: col.clone(),
                 });
-                format!(
-                    "{}.unwrap() / x.1.{} as f64",
-                    col_access,
-                    count_pos
-                )
+                format!("{}.unwrap() / x.1.{} as f64", col_access, count_pos)
             }
         }
     } else {

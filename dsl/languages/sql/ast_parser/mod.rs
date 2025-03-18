@@ -23,12 +23,12 @@ use pest_derive::Parser;
 //test
 #[derive(Parser)]
 #[grammar = "dsl/languages/sql/sql_grammar.pest"]
-
 pub struct SqlParser;
 
 impl SqlParser {
     pub fn parse_query(input: &str) -> Result<SqlAST, Box<SqlParseError>> {
-        let pairs = Self::parse(Rule::query, input).map_err(|e| Box::new(SqlParseError::from(e)))?;
+        let pairs =
+            Self::parse(Rule::query, input).map_err(|e| Box::new(SqlParseError::from(e)))?;
 
         //println!("Pairs: {:?}", pairs);
 
@@ -42,18 +42,18 @@ impl SqlParser {
                 pair.as_rule()
             ))));
         }
-                
+
         // For subqueries, we need to create a new parser instance
         // We'll extract the SQL text from the subquery and parse it directly
         let subquery_text = pair.as_str();
-        
+
         // Remove the outer parentheses
         let inner_sql = if subquery_text.starts_with("(") && subquery_text.ends_with(")") {
-            &subquery_text[1..subquery_text.len()-1]
+            &subquery_text[1..subquery_text.len() - 1]
         } else {
             subquery_text
         };
-        
+
         // Parse the inner SQL directly using the main parser
         SqlParser::parse_query(inner_sql)
     }

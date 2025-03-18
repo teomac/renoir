@@ -471,9 +471,7 @@ fn has_column_reference(field: &ComplexField) -> bool {
         return has_column_reference(left) || has_column_reference(right);
     }
     if let Some(IrLiteral::ColumnRef(_)) = field.literal {
-        
-            return true;
-        
+        return true;
     }
     if let Some(ref _agg) = field.aggregate {
         return true;

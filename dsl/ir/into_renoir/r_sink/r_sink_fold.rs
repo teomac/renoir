@@ -1,27 +1,30 @@
-///
-/// initial function
-/// 
-/// function that performs the .fold() operation
-/// function to parse complex expr for the .fold()
-/// 
-/// function that performs the .map() operation
-/// function to parse complex expr for the .map()
-/// 
-
-use core::panic;
 use crate::dsl::ir::ir_ast_structure::{ComplexField, ProjectionColumn};
+use crate::dsl::ir::r_sink::r_sink_utils::{AccumulatorInfo, AccumulatorValue};
 use crate::dsl::ir::{AggregateType, IrLiteral};
 use crate::dsl::struct_object::object::QueryObject;
-use crate::dsl::ir::r_sink::r_sink_utils::{AccumulatorInfo, AccumulatorValue};
+///
+/// initial function
+///
+/// function that performs the .fold() operation
+/// function to parse complex expr for the .fold()
+///
+/// function that performs the .map() operation
+/// function to parse complex expr for the .map()
+///
+use core::panic;
 
 //initial function
-pub fn create_aggregate_map(projection_clauses: &[ProjectionColumn], stream_name: &String, query_object: &QueryObject) -> String {
+pub fn create_aggregate_map(
+    projection_clauses: &[ProjectionColumn],
+    stream_name: &String,
+    query_object: &QueryObject,
+) -> String {
     let mut acc_info = AccumulatorInfo::new();
     let mut result = String::new();
 
     let stream = query_object.get_stream(stream_name);
     let mut all_streams = Vec::new();
-    if stream.join_tree.is_some(){
+    if stream.join_tree.is_some() {
         all_streams.extend(stream.join_tree.as_ref().unwrap().get_involved_streams());
     } else {
         all_streams.push(stream_name.clone());
@@ -54,11 +57,7 @@ pub fn create_aggregate_map(projection_clauses: &[ProjectionColumn], stream_name
                 }
             },
             ProjectionColumn::ComplexValue(field, _) => {
-                collect_aggregates_from_complex_field(
-                    field,
-                    &mut acc_info,
-                    query_object,
-                );
+                collect_aggregates_from_complex_field(field, &mut acc_info, query_object);
             }
             ProjectionColumn::Column(col, _) => {
                 //check if the stream is grouped and if the column is a key column
@@ -78,7 +77,12 @@ pub fn create_aggregate_map(projection_clauses: &[ProjectionColumn], stream_name
     result.push_str(&create_fold(&mut acc_info, stream_name, query_object));
 
     //call function to perform the .map()
-    result.push_str(&create_map(projection_clauses, &acc_info, stream_name, query_object));
+    result.push_str(&create_map(
+        projection_clauses,
+        &acc_info,
+        stream_name,
+        query_object,
+    ));
 
     result
 }
@@ -105,7 +109,7 @@ fn collect_aggregates_from_complex_field(
                 acc_info.add_value(
                     AccumulatorValue::Aggregate(agg.function.clone(), agg.column.clone()),
                     query_object.get_type(&agg.column),
-                    );
+                );
             }
         }
     }
@@ -118,15 +122,18 @@ fn collect_aggregates_from_complex_field(
     }
 }
 
-
 //function used to create the .fold() operation
-fn create_fold(acc_info: &mut AccumulatorInfo, stream_name: &String, query_object: &QueryObject) -> String {
+fn create_fold(
+    acc_info: &mut AccumulatorInfo,
+    stream_name: &String,
+    query_object: &QueryObject,
+) -> String {
     let mut result = String::new();
     let stream = query_object.get_stream(stream_name);
     let is_grouped = stream.is_keyed;
     let mut keys = Vec::new();
     let mut all_streams = Vec::new();
-    if stream.join_tree.is_some(){
+    if stream.join_tree.is_some() {
         all_streams.extend(stream.join_tree.as_ref().unwrap().get_involved_streams());
     } else {
         all_streams.push(stream_name.clone());
@@ -195,17 +202,19 @@ fn create_fold(acc_info: &mut AccumulatorInfo, stream_name: &String, query_objec
         }
         match value {
             AccumulatorValue::Aggregate(agg_type, col) => {
-                let col_stream_name = if col.table.is_some(){
-                    query_object.get_stream_from_alias(col.table.as_ref().unwrap()).unwrap()
-                }
-                else{
+                let col_stream_name = if col.table.is_some() {
+                    query_object
+                        .get_stream_from_alias(col.table.as_ref().unwrap())
+                        .unwrap()
+                } else {
                     stream_name
                 };
 
                 let col_stream = query_object.get_stream(col_stream_name);
 
-                if col.column != "*"{
-                col_stream.check_if_column_exists(&col.column);}
+                if col.column != "*" {
+                    col_stream.check_if_column_exists(&col.column);
+                }
 
                 let col_access = {
                     format!(
@@ -218,7 +227,8 @@ fn create_fold(acc_info: &mut AccumulatorInfo, stream_name: &String, query_objec
                 match agg_type {
                     AggregateType::Count => {
                         if col.column == "*" {
-                            update_code.push_str(&format!("    {}acc{} += 1;\n", asterisk, index_acc));
+                            update_code
+                                .push_str(&format!("    {}acc{} += 1;\n", asterisk, index_acc));
                         } else {
                             update_code.push_str(&format!(
                                 "    if {}.is_some() {{ {}acc{} += 1; }}\n",
@@ -261,10 +271,9 @@ fn create_fold(acc_info: &mut AccumulatorInfo, stream_name: &String, query_objec
             }
             AccumulatorValue::Column(col) => {
                 //check if the column is a key column
-                if !is_grouped{
+                if !is_grouped {
                     panic!("Cannot use column in projection clause in non-grouped query");
-                }
-                else if !keys.contains(col) {
+                } else if !keys.contains(col) {
                     panic!("Cannot use column in projection clause in grouped query that is not a key column");
                 }
             }
@@ -278,18 +287,21 @@ fn create_fold(acc_info: &mut AccumulatorInfo, stream_name: &String, query_objec
     result.push_str("})\n");
 
     result
-
 }
 
-
 //function used to create the .map() operation
-pub fn create_map(projection_clauses: &[ProjectionColumn], acc_info: &AccumulatorInfo, stream_name: &String, query_object: &QueryObject) -> String {
+pub fn create_map(
+    projection_clauses: &[ProjectionColumn],
+    acc_info: &AccumulatorInfo,
+    stream_name: &String,
+    query_object: &QueryObject,
+) -> String {
     let mut result = String::new();
     let stream = query_object.get_stream(stream_name);
     let is_grouped = stream.is_keyed;
     let mut all_streams = Vec::new();
     let mut keys = Vec::new();
-    if stream.join_tree.is_some(){
+    if stream.join_tree.is_some() {
         all_streams.extend(stream.join_tree.as_ref().unwrap().get_involved_streams());
     } else {
         all_streams.push(stream_name.clone());
@@ -332,7 +344,7 @@ pub fn create_map(projection_clauses: &[ProjectionColumn], acc_info: &Accumulato
                         // Only compute average if sum is Some
                         format!("if let Some(sum) = x{}.{} {{ Some(sum as f64 / x{}.{} as f64) }} else {{ None }}", 
                             if is_grouped { ".1" } else { "" },
-                            sum_pos, 
+                            sum_pos,
                             if is_grouped { ".1" } else { "" },
                             count_pos)
                     }
@@ -369,9 +381,7 @@ pub fn create_map(projection_clauses: &[ProjectionColumn], acc_info: &Accumulato
                         if is_single_acc {
                             format!("Some(x{})", if is_grouped { ".1" } else { "" })
                         } else {
-                            format!("Some(x{}.{})",
-                            if is_grouped { ".1" } else { "" },
-                             pos)
+                            format!("Some(x{}.{})", if is_grouped { ".1" } else { "" }, pos)
                         }
                     }
                 }
@@ -397,10 +407,11 @@ pub fn create_map(projection_clauses: &[ProjectionColumn], acc_info: &Accumulato
                 }
             }
             ProjectionColumn::Column(col, _) => {
-                let col_stream_name = if col.table.is_some(){
-                    query_object.get_stream_from_alias(col.table.as_ref().unwrap()).unwrap()
-                }
-                else{
+                let col_stream_name = if col.table.is_some() {
+                    query_object
+                        .get_stream_from_alias(col.table.as_ref().unwrap())
+                        .unwrap()
+                } else {
                     stream_name
                 };
                 //we need to check if the stream is grouped and if the column is a key column
@@ -408,8 +419,7 @@ pub fn create_map(projection_clauses: &[ProjectionColumn], acc_info: &Accumulato
                     if !keys.contains(col) {
                         panic!("Cannot use key column in projection clause in grouped query");
                     }
-                }
-                else{
+                } else {
                     //no grouping, there cannot be a column in the final projection that is not a key column. Because we have aggregates
                     panic!("Cannot use column in projection clause in non-grouped query");
                 };
@@ -417,21 +427,27 @@ pub fn create_map(projection_clauses: &[ProjectionColumn], acc_info: &Accumulato
                 let col_type = query_object.get_type(col);
 
                 let col_stream = query_object.get_stream(col_stream_name);
-                        col_stream.check_if_column_exists(&col.column);
-                        let key_position = keys.iter().position(|x| x == col).unwrap();
-                        let is_single_key = keys.len() == 1;
-                        if is_single_key {
-                            if col_type == "f64" {
-                                "if x.0.is_some() { x.0.unwrap().into_inner() } else { None }".to_string()
-                            } else {
-                                format!("x.0{}", if col_type == "String" { ".clone()" } else { "" })
-                            }
-                            
-                        } else if col_type == "f64" {
-                            format!("if x.0.{}.is_some() {{ x.0.{}.unwrap().into_inner() }} else {{ None }}", key_position, key_position)
-                        } else {
-                            format!("x.0.{}{}", key_position, if col_type == "String" { ".clone()" } else { "" })
-                        }
+                col_stream.check_if_column_exists(&col.column);
+                let key_position = keys.iter().position(|x| x == col).unwrap();
+                let is_single_key = keys.len() == 1;
+                if is_single_key {
+                    if col_type == "f64" {
+                        "if x.0.is_some() { x.0.unwrap().into_inner() } else { None }".to_string()
+                    } else {
+                        format!("x.0{}", if col_type == "String" { ".clone()" } else { "" })
+                    }
+                } else if col_type == "f64" {
+                    format!(
+                        "if x.0.{}.is_some() {{ x.0.{}.unwrap().into_inner() }} else {{ None }}",
+                        key_position, key_position
+                    )
+                } else {
+                    format!(
+                        "x.0.{}{}",
+                        key_position,
+                        if col_type == "String" { ".clone()" } else { "" }
+                    )
+                }
             }
             ProjectionColumn::StringLiteral(value, _) => {
                 format!("Some(\"{}\".to_string())", value)
@@ -443,16 +459,21 @@ pub fn create_map(projection_clauses: &[ProjectionColumn], acc_info: &Accumulato
 
     result.push_str("})");
 
-
     result
 }
 
-fn process_complex_field_for_map(field: &ComplexField, stream_name: &String, acc_info: &AccumulatorInfo, query_object: &QueryObject, check_list: &mut Vec<String>) -> String {
+fn process_complex_field_for_map(
+    field: &ComplexField,
+    stream_name: &String,
+    acc_info: &AccumulatorInfo,
+    query_object: &QueryObject,
+    check_list: &mut Vec<String>,
+) -> String {
     let stream = query_object.get_stream(stream_name);
-        let mut all_streams = Vec::new();
+    let mut all_streams = Vec::new();
     let mut keys = Vec::new();
     let is_keyed = stream.is_keyed;
-    if stream.join_tree.is_some(){
+    if stream.join_tree.is_some() {
         all_streams.extend(stream.join_tree.as_ref().unwrap().get_involved_streams());
     } else {
         all_streams.push(stream_name.clone());
@@ -462,8 +483,6 @@ fn process_complex_field_for_map(field: &ComplexField, stream_name: &String, acc
         keys.extend(query_object.get_stream(stream).key_columns.clone());
     }
 
-    
-    
     if let Some(ref nested) = field.nested_expr {
         // Handle nested expression (left_field OP right_field)
         let (left, op, right) = &**nested;
@@ -473,21 +492,47 @@ fn process_complex_field_for_map(field: &ComplexField, stream_name: &String, acc
 
         // Different types case
         if left_type != right_type {
-            if (left_type == "f64" || left_type == "i64") && (right_type == "f64" || right_type == "i64") {
+            if (left_type == "f64" || left_type == "i64")
+                && (right_type == "f64" || right_type == "i64")
+            {
                 // Division always results in f64
                 if op == "/" {
                     return format!(
                         "({} as f64) {} ({} as f64)",
-                        process_complex_field_for_map(left, stream_name, acc_info, query_object, check_list),
+                        process_complex_field_for_map(
+                            left,
+                            stream_name,
+                            acc_info,
+                            query_object,
+                            check_list
+                        ),
                         op,
-                        process_complex_field_for_map(right, stream_name, acc_info, query_object, check_list)
+                        process_complex_field_for_map(
+                            right,
+                            stream_name,
+                            acc_info,
+                            query_object,
+                            check_list
+                        )
                     );
                 }
 
                 // Special handling for power operation (^)
                 if op == "^" {
-                    let left_expr = process_complex_field_for_map(left, stream_name, acc_info, query_object, check_list);
-                    let right_expr = process_complex_field_for_map(right, stream_name, acc_info, query_object, check_list);
+                    let left_expr = process_complex_field_for_map(
+                        left,
+                        stream_name,
+                        acc_info,
+                        query_object,
+                        check_list,
+                    );
+                    let right_expr = process_complex_field_for_map(
+                        right,
+                        stream_name,
+                        acc_info,
+                        query_object,
+                        check_list,
+                    );
 
                     if left_type == "f64" || right_type == "f64" {
                         return format!(
@@ -504,22 +549,30 @@ fn process_complex_field_for_map(field: &ComplexField, stream_name: &String, acc
                     }
                 }
 
-                let left_expr = process_complex_field_for_map(left, stream_name, acc_info, query_object, check_list);
-                let right_expr = process_complex_field_for_map(right, stream_name, acc_info, query_object, check_list);
+                let left_expr = process_complex_field_for_map(
+                    left,
+                    stream_name,
+                    acc_info,
+                    query_object,
+                    check_list,
+                );
+                let right_expr = process_complex_field_for_map(
+                    right,
+                    stream_name,
+                    acc_info,
+                    query_object,
+                    check_list,
+                );
 
                 // Add proper type conversions
                 let processed_left = if let Some(IrLiteral::Integer(_)) = left.literal {
-                   
-                        format!("{} as f64", left_expr)
-                    
+                    format!("{} as f64", left_expr)
                 } else {
                     left_expr
                 };
 
                 let processed_right = if let Some(IrLiteral::Integer(_)) = right.literal {
-                   
-                        format!("{} as f64", right_expr)
-                    
+                    format!("{} as f64", right_expr)
                 } else {
                     right_expr
                 };
@@ -532,26 +585,59 @@ fn process_complex_field_for_map(field: &ComplexField, stream_name: &String, acc
 
                 format!("({} {} {})", processed_left, op, processed_right)
             } else {
-                panic!("Invalid arithmetic expression - incompatible types: {} and {}", left_type, right_type);
+                panic!(
+                    "Invalid arithmetic expression - incompatible types: {} and {}",
+                    left_type, right_type
+                );
             }
         } else {
             // Same type case
-            if (op == "+" || op == "-" || op == "*" || op == "/" || op == "^") && left_type != "f64" && left_type != "i64" {
-                panic!("Invalid arithmetic expression - non-numeric types: {} and {}", left_type, right_type);
+            if (op == "+" || op == "-" || op == "*" || op == "/" || op == "^")
+                && left_type != "f64"
+                && left_type != "i64"
+            {
+                panic!(
+                    "Invalid arithmetic expression - non-numeric types: {} and {}",
+                    left_type, right_type
+                );
             }
 
             if op == "/" {
                 return format!(
                     "({} as f64) {} ({} as f64)",
-                    process_complex_field_for_map(left, stream_name, acc_info, query_object, check_list),
+                    process_complex_field_for_map(
+                        left,
+                        stream_name,
+                        acc_info,
+                        query_object,
+                        check_list
+                    ),
                     op,
-                    process_complex_field_for_map(right, stream_name, acc_info, query_object, check_list)
+                    process_complex_field_for_map(
+                        right,
+                        stream_name,
+                        acc_info,
+                        query_object,
+                        check_list
+                    )
                 );
             }
 
             if op == "^" {
-                let left_expr = process_complex_field_for_map(left, stream_name, acc_info, query_object, check_list);
-                let right_expr = process_complex_field_for_map(right, stream_name, acc_info, query_object, check_list);
+                let left_expr = process_complex_field_for_map(
+                    left,
+                    stream_name,
+                    acc_info,
+                    query_object,
+                    check_list,
+                );
+                let right_expr = process_complex_field_for_map(
+                    right,
+                    stream_name,
+                    acc_info,
+                    query_object,
+                    check_list,
+                );
 
                 if left_type == "f64" {
                     return format!("({}).powf({})", left_expr, right_expr);
@@ -562,23 +648,40 @@ fn process_complex_field_for_map(field: &ComplexField, stream_name: &String, acc
 
             format!(
                 "({} {} {})",
-                process_complex_field_for_map(left, stream_name, acc_info, query_object, check_list),
+                process_complex_field_for_map(
+                    left,
+                    stream_name,
+                    acc_info,
+                    query_object,
+                    check_list
+                ),
                 op,
-                process_complex_field_for_map(right, stream_name, acc_info, query_object, check_list)
+                process_complex_field_for_map(
+                    right,
+                    stream_name,
+                    acc_info,
+                    query_object,
+                    check_list
+                )
             )
         }
     } else if let Some(ref col) = field.column_ref {
         // Handle column reference - must be a key column in grouped context
         // Verify this is a key column
         if !keys.iter().any(|key| key.column == col.column) {
-            panic!("Column {} must be a key column when used with aggregates", col.column);
+            panic!(
+                "Column {} must be a key column when used with aggregates",
+                col.column
+            );
         }
 
         let is_single_key = keys.len() == 1;
         let col_type = query_object.get_type(col);
 
         // Get position in key tuple
-        let key_position = keys.iter().position(|key| key.column == col.column)
+        let key_position = keys
+            .iter()
+            .position(|key| key.column == col.column)
             .expect("Key column not found");
 
         // Key columns are accessed via x.0 and don't need safety checks
@@ -589,16 +692,16 @@ fn process_complex_field_for_map(field: &ComplexField, stream_name: &String, acc
             } else {
                 return format!("x.0{}", if col_type == "String" { ".clone()" } else { "" });
             }
-            
-        }
-        else if col_type == "f64" {
+        } else if col_type == "f64" {
             check_list.push(format!("x.0.{}.is_some()", key_position));
             return format!("x.0.{}.unwrap().into_inner()", key_position);
         } else {
-            return format!("x.0.{}{}", key_position, if col_type == "String" { ".clone()" } else { "" });
-
+            return format!(
+                "x.0.{}{}",
+                key_position,
+                if col_type == "String" { ".clone()" } else { "" }
+            );
         }
-
     } else if let Some(ref lit) = field.literal {
         // Handle literal values
         match lit {
@@ -606,59 +709,104 @@ fn process_complex_field_for_map(field: &ComplexField, stream_name: &String, acc
             IrLiteral::Float(f) => format!("{:.2}", f),
             IrLiteral::String(s) => format!("\"{}\"", s),
             IrLiteral::Boolean(b) => b.to_string(),
-            IrLiteral::ColumnRef(_) => panic!("Column ref should have been handled earlier")
+            IrLiteral::ColumnRef(_) => panic!("Column ref should have been handled earlier"),
         }
     } else if let Some(ref agg) = field.aggregate {
         // Handle aggregate access
         let is_single_acc = acc_info.value_positions.len() == 1;
-        
+
         match agg.function {
             AggregateType::Avg => {
                 // Get sum and count positions
                 let (sum_pos, count_pos) = (
-                    acc_info.value_positions.get(&AccumulatorValue::Aggregate(
-                        AggregateType::Sum,
-                        agg.column.clone()
-                    )).unwrap().0,
-                    acc_info.value_positions.get(&AccumulatorValue::Aggregate(
-                        AggregateType::Count,
-                        agg.column.clone()
-                    )).unwrap().0
+                    acc_info
+                        .value_positions
+                        .get(&AccumulatorValue::Aggregate(
+                            AggregateType::Sum,
+                            agg.column.clone(),
+                        ))
+                        .unwrap()
+                        .0,
+                    acc_info
+                        .value_positions
+                        .get(&AccumulatorValue::Aggregate(
+                            AggregateType::Count,
+                            agg.column.clone(),
+                        ))
+                        .unwrap()
+                        .0,
                 );
 
-                check_list.push(format!("x{}.{}.is_some()", if is_keyed {".1"} else {""} , sum_pos));
+                check_list.push(format!(
+                    "x{}.{}.is_some()",
+                    if is_keyed { ".1" } else { "" },
+                    sum_pos
+                ));
                 format!(
                     "(x{}.{} as f64) / (x{}.{} as f64)",
-                    if is_keyed {".1"} else {""},
-                    if is_single_acc { "".to_string() } else { format!(".{}", sum_pos) },
-                    if is_keyed {".1"} else {""},
-                    if is_single_acc { "".to_string() } else { format!(".{}", count_pos) }
+                    if is_keyed { ".1" } else { "" },
+                    if is_single_acc {
+                        "".to_string()
+                    } else {
+                        format!(".{}", sum_pos)
+                    },
+                    if is_keyed { ".1" } else { "" },
+                    if is_single_acc {
+                        "".to_string()
+                    } else {
+                        format!(".{}", count_pos)
+                    }
                 )
-            },
+            }
             AggregateType::Count => {
-                let pos = acc_info.value_positions.get(&AccumulatorValue::Aggregate(
-                    agg.function.clone(),
-                    agg.column.clone()
-                )).unwrap().0;
+                let pos = acc_info
+                    .value_positions
+                    .get(&AccumulatorValue::Aggregate(
+                        agg.function.clone(),
+                        agg.column.clone(),
+                    ))
+                    .unwrap()
+                    .0;
 
                 // Count doesn't need a safety check as it's always available
-                format!("x{}{}",
-                    if is_keyed {".1"} else {""},
-                 if is_single_acc { "".to_string() } else { format!(".{}", pos) })
-            },
-            _ => {  // MAX, MIN, SUM
-                let pos = acc_info.value_positions.get(&AccumulatorValue::Aggregate(
-                    agg.function.clone(),
-                    agg.column.clone()
-                )).unwrap().0;
+                format!(
+                    "x{}{}",
+                    if is_keyed { ".1" } else { "" },
+                    if is_single_acc {
+                        "".to_string()
+                    } else {
+                        format!(".{}", pos)
+                    }
+                )
+            }
+            _ => {
+                // MAX, MIN, SUM
+                let pos = acc_info
+                    .value_positions
+                    .get(&AccumulatorValue::Aggregate(
+                        agg.function.clone(),
+                        agg.column.clone(),
+                    ))
+                    .unwrap()
+                    .0;
 
-                check_list.push(format!("x{}{}.is_some()", 
-                    if is_keyed {".1"} else {""},
-                    if is_single_acc { "".to_string() } else { format!(".{}", pos) }
+                check_list.push(format!(
+                    "x{}{}.is_some()",
+                    if is_keyed { ".1" } else { "" },
+                    if is_single_acc {
+                        "".to_string()
+                    } else {
+                        format!(".{}", pos)
+                    }
                 ));
-                format!("x{}{}.unwrap()", 
-                    if is_keyed {".1"} else {""},
-                    if is_single_acc { "".to_string() } else { format!(".{}", pos) }
+                format!(
+                    "x{}{}.unwrap()",
+                    if is_keyed { ".1" } else { "" },
+                    if is_single_acc {
+                        "".to_string()
+                    } else {
+                        format!(".{}", pos)
+                    }
                 )
             }
         }

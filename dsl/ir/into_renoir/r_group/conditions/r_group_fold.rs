@@ -1,14 +1,14 @@
-use indexmap::IndexMap;
 use crate::dsl::ir::ir_ast_structure::AggregateType;
 use crate::dsl::ir::r_group::r_group_keys::{GroupAccumulatorInfo, GroupAccumulatorValue};
 use crate::dsl::ir::{AggregateFunction, QueryObject};
+use indexmap::IndexMap;
 
 // Function to create fold operation if needed
 pub fn create_fold_operation(
     acc_info: &GroupAccumulatorInfo,
-    stream_name : &String,
+    stream_name: &String,
     query_object: &mut QueryObject,
-)-> String{
+) -> String {
     let mut tuple_types = Vec::new();
     let mut tuple_inits = Vec::new();
     let mut update_code = String::new();
@@ -59,7 +59,7 @@ pub fn create_fold_operation(
                                     .unwrap()
                             } else if query_object.streams.len() == 1 {
                                 query_object.streams.first().unwrap().0
-                            } else{
+                            } else {
                                 panic!("Missing stream reference: {}", col.column);
                             };
 
@@ -278,7 +278,6 @@ pub fn create_fold_operation(
 
     let stream = query_object.get_mut_stream(stream_name);
     stream.update_agg_position(agg_map);
-    
-    fold_str
 
+    fold_str
 }

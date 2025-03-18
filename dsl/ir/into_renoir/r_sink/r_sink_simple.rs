@@ -78,26 +78,26 @@ pub fn create_simple_map(
                         if keys.len() == 1 {
                             if col_type == "f64" {
                                 value = "if x.0.is_some() { Some(x.0.unwrap().into_inner() as f64) } else { None }".to_string();
-                        
+
                             } else {
                                 value = format!(
                                     "x.0{}",
                                     if col_type == "String" { ".clone()" } else { "" }
                                 );
-                                
+
                             }
                             format!("{}: {}", field_name, value)
                         } else {
                             if col_type == "f64" {
                                 value = format!(
                                     "if x.0.{}.is_some() {{ Some(x.0.{}.unwrap().into_inner() as f64) }} else {{ None }}",
-        
+
                                     key_pos,
                                     key_pos
                                 );
                             } else {
                                 value = format!("x.0.{}{}", key_pos, if col_type == "String" { ".clone()" } else { "" });
-                                
+
                             }
                             format!("{}: {}", field_name, value)
                         }
@@ -254,17 +254,13 @@ pub fn process_complex_field(
 
                 // Add as f64 to integer literals when needed
                 let processed_left = if let Some(IrLiteral::Integer(_)) = left.literal {
-                   
-                        format!("{} as f64", left_expr)
-                   
+                    format!("{} as f64", left_expr)
                 } else {
                     left_expr
                 };
 
                 let processed_right = if let Some(IrLiteral::Integer(_)) = right.literal {
-                   
-                        format!("{} as f64", right_expr)
-                   
+                    format!("{} as f64", right_expr)
                 } else {
                     right_expr
                 };
@@ -286,7 +282,10 @@ pub fn process_complex_field(
         } else {
             //case same type
             //if operation is plus, minus, multiply, division, or power and types are not numeric, panic
-            if (op == "+" || op == "-" || op == "*" || op == "/" || op == "^") && left_type != "f64" && left_type != "i64" {
+            if (op == "+" || op == "-" || op == "*" || op == "/" || op == "^")
+                && left_type != "f64"
+                && left_type != "i64"
+            {
                 panic!(
                     "Invalid arithmetic expression - non-numeric types: {} and {}",
                     left_type, right_type
@@ -373,18 +372,13 @@ pub fn process_complex_field(
                 if col_type == "f64" {
                     check_list.push("x.0.is_some()".to_string());
                     return "x.0.unwrap().into_inner()".to_string();
-                } else  {
+                } else {
                     return format!("x.0{}", if col_type == "String" { ".clone()" } else { "" });
                 }
             } else if col_type == "f64" {
-                check_list.push(format!(
-                    "x.0.{}.is_some()", key_pos
-                ));
-                return format!(
-                    "x.0.{}.unwrap().into_inner()",
-                    key_pos,
-                );
-            } else  {
+                check_list.push(format!("x.0.{}.is_some()", key_pos));
+                return format!("x.0.{}.unwrap().into_inner()", key_pos,);
+            } else {
                 return format!(
                     "x.0.{}{}",
                     key_pos,

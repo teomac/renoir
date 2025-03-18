@@ -13,7 +13,7 @@ pub struct IrASTBuilder;
 impl IrASTBuilder {
     pub fn build_ast_from_pairs(pairs: Pairs<Rule>) -> Result<Arc<IrPlan>, Box<IrParseError>> {
         let mut current_plan: Option<Arc<IrPlan>> = None;
-        
+
         // Process each clause in the query
         for pair in pairs {
             match pair.as_rule() {
@@ -29,28 +29,23 @@ impl IrASTBuilder {
                                 // Build filter on top of current plan
                                 let filter_predicate = ConditionParser::parse(clause)?;
                                 if let Some(input) = current_plan {
-                                    current_plan = Some(Arc::new(IrPlan::filter(
-                                        input, 
-                                        filter_predicate
-                                    )));
+                                    current_plan =
+                                        Some(Arc::new(IrPlan::filter(input, filter_predicate)));
                                 } else {
                                     return Err(Box::new(IrParseError::InvalidInput(
-                                        "Filter clause before scan clause".to_string()
+                                        "Filter clause before scan clause".to_string(),
                                     )));
                                 }
                             }
                             Rule::group_clause => {
-                                // Build group by on top of current plan  
+                                // Build group by on top of current plan
                                 let group = GroupParser::parse(clause)?;
                                 if let Some(input) = current_plan {
-                                    current_plan = Some(Arc::new(IrPlan::group_by(
-                                        input,
-                                        group.0,
-                                        group.1
-                                    )));
+                                    current_plan =
+                                        Some(Arc::new(IrPlan::group_by(input, group.0, group.1)));
                                 } else {
                                     return Err(Box::new(IrParseError::InvalidInput(
-                                        "Group clause before scan clause".to_string()
+                                        "Group clause before scan clause".to_string(),
                                     )));
                                 }
                             }
@@ -59,13 +54,11 @@ impl IrASTBuilder {
                                 let project = ProjectionParser::parse(clause)?;
                                 if let Some(input) = current_plan {
                                     current_plan = Some(Arc::new(IrPlan::project(
-                                        input,
-                                        project.0,
-                                        project.1
+                                        input, project.0, project.1,
                                     )));
                                 } else {
                                     return Err(Box::new(IrParseError::InvalidInput(
-                                        "Projection clause before scan clause".to_string()
+                                        "Projection clause before scan clause".to_string(),
                                     )));
                                 }
                             }
@@ -73,13 +66,10 @@ impl IrASTBuilder {
                                 // Build order by on top of current plan
                                 let order = OrderParser::parse(clause)?;
                                 if let Some(input) = current_plan {
-                                    current_plan = Some(Arc::new(IrPlan::order_by(
-                                        input,
-                                        order
-                                    )));
+                                    current_plan = Some(Arc::new(IrPlan::order_by(input, order)));
                                 } else {
                                     return Err(Box::new(IrParseError::InvalidInput(
-                                        "Order clause before scan clause".to_string()
+                                        "Order clause before scan clause".to_string(),
                                     )));
                                 }
                             }
@@ -87,14 +77,11 @@ impl IrASTBuilder {
                                 // Build limit on top of current plan
                                 let limit = LimitParser::parse(clause)?;
                                 if let Some(input) = current_plan {
-                                    current_plan = Some(Arc::new(IrPlan::limit(
-                                        input,
-                                        limit.0,
-                                        limit.1
-                                    )));
+                                    current_plan =
+                                        Some(Arc::new(IrPlan::limit(input, limit.0, limit.1)));
                                 } else {
                                     return Err(Box::new(IrParseError::InvalidInput(
-                                        "Limit clause before scan clause".to_string()
+                                        "Limit clause before scan clause".to_string(),
                                     )));
                                 }
                             }
@@ -108,7 +95,11 @@ impl IrASTBuilder {
                         }
                     }
                 }
-                _ => return Err(Box::new(IrParseError::InvalidInput("Expected query".to_string()))),
+                _ => {
+                    return Err(Box::new(IrParseError::InvalidInput(
+                        "Expected query".to_string(),
+                    )))
+                }
             }
         }
 

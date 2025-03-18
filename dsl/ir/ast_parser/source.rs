@@ -9,11 +9,10 @@ impl SourceParser {
     pub fn parse(pair: Pair<Rule>) -> Result<Arc<IrPlan>, Box<IrParseError>> {
         let has_join = pair.as_str().contains("join");
 
-
         let mut inner = pair.into_inner();
 
         // Skip 'scan' keyword if present
-        if inner.peek().map_or(false, |p| p.as_str() == "from") {
+        if inner.peek().is_some_and(|p| p.as_str() == "from") {
             inner.next();
         }
 
@@ -56,8 +55,10 @@ impl SourceParser {
             let right_plan = Arc::new(Self::parse_scan(join_scan_expr, has_join)?);
 
             // Expect and skip 'on' keyword
-            if inner.next().map_or(true, |p| p.as_str() != "on") {
-                return Err(Box::new(IrParseError::InvalidInput("Missing ON in join clause".to_string())));
+            if inner.next().is_none_or(|p| p.as_str() != "on") {
+                return Err(Box::new(IrParseError::InvalidInput(
+                    "Missing ON in join clause".to_string(),
+                )));
             }
 
             // Parse join condition
@@ -108,19 +109,20 @@ impl SourceParser {
             )));
         }
 
-        
-
         match table_name.as_rule() {
             Rule::identifier => {
-                if alias.is_none() && has_join{
+                if alias.is_none() && has_join {
                     alias = Some(table_name.as_str().to_string().clone());
                 }
 
-                return Ok(IrPlan::Scan {
+                Ok(IrPlan::Scan {
                     stream_name: stream_input.unwrap(),
                     alias,
-                    input: IrPlan::Table { table_name: table_name.as_str().to_string() }.into(),
-                });
+                    input: IrPlan::Table {
+                        table_name: table_name.as_str().to_string(),
+                    }
+                    .into(),
+                })
             }
             Rule::subquery => {
                 let subquery = IrParser::parse_subquery(table_name)?;
@@ -130,12 +132,9 @@ impl SourceParser {
                     input: subquery,
                 })
             }
-            _ => {
-                Err(Box::new(IrParseError::InvalidInput(
-                    "Invalid input source for stream".to_string(),
-                )))
-            }
-
+            _ => Err(Box::new(IrParseError::InvalidInput(
+                "Invalid input source for stream".to_string(),
+            ))),
         }
     }
 

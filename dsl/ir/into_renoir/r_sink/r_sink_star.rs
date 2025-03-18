@@ -48,9 +48,9 @@ pub fn create_star_map(stream_name: &String, query_object: &QueryObject) -> Stri
         //grouped case
         //retrieve the key columns
         let mut key_columns = Vec::new();
-    for stream in all_streams.iter() {
-        key_columns.extend(query_object.get_stream(stream).key_columns.clone());
-    }
+        for stream in all_streams.iter() {
+            key_columns.extend(query_object.get_stream(stream).key_columns.clone());
+        }
 
         for (index, key_column) in key_columns.iter().enumerate() {
             let is_single_key = key_columns.len() == 1;
@@ -65,8 +65,7 @@ pub fn create_star_map(stream_name: &String, query_object: &QueryObject) -> Stri
 
             let col_stream = query_object.get_stream(col_stream_name);
             if col_stream.check_if_column_exists(&key_column.column) {
-
-                if is_single_key{
+                if is_single_key {
                     if col_type == "f64" {
                         result.push_str(&format!(
                             "{}: if x.0.is_some() {{ Some(x.0.unwrap().into_inner() as f64) }} else {{ None }},",
@@ -84,15 +83,10 @@ pub fn create_star_map(stream_name: &String, query_object: &QueryObject) -> Stri
                                 .get_index(offset)
                                 .unwrap()
                                 .0,
-                            if col_type == "String"{
-                                ".clone()"
-                            } else {
-                                ""
-                            }
+                            if col_type == "String" { ".clone()" } else { "" }
                         ));
                     }
-                }
-                else if col_type == "f64" {
+                } else if col_type == "f64" {
                     result.push_str(&format!(
                         "{}: if x.0.{}.is_some() {{ Some(x.0.{}.unwrap().into_inner() as f64) }} else {{ None }},",
                         query_object
@@ -112,14 +106,9 @@ pub fn create_star_map(stream_name: &String, query_object: &QueryObject) -> Stri
                             .unwrap()
                             .0,
                         index,
-                        if col_type == "String"{
-                            ".clone()"
-                        } else {
-                            ""
-                        }
+                        if col_type == "String" { ".clone()" } else { "" }
                     ));
                 }
-               
             } else {
                 panic!(
                     "Column {} does not exist in stream {}",

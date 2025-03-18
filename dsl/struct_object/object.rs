@@ -85,14 +85,10 @@ impl QueryObject {
     }
 
     //method to create a new stream
-    pub fn create_new_stream(
-        &mut self,
-        stream_name: &String,
-        source_table: &String,
-        alias: &str,
-    ) {
+    pub fn create_new_stream(&mut self, stream_name: &String, source_table: &String, alias: &str) {
         //create the StreamInfo object
-        let mut stream = StreamInfo::new(stream_name.clone(), source_table.clone(), alias.to_owned());
+        let mut stream =
+            StreamInfo::new(stream_name.clone(), source_table.clone(), alias.to_owned());
 
         //check if the stream already exists
         if self.check_stream(&stream) {
@@ -121,7 +117,7 @@ impl QueryObject {
     pub fn is_alias_valid(&self, alias: &String) -> bool {
         //first check if the alias is already in the list of aliases
         if self.alias_to_stream.get(alias).is_some() {
-            return false
+            return false;
         }
 
         true
@@ -273,12 +269,9 @@ impl QueryObject {
             _ => panic!("Error: this is not a scan node"),
         };
 
-
         //check if main table is a table name or a subquery
         let main_table = match &**main_table_arc {
-            IrPlan::Table { table_name } => {
-                table_name.clone()
-            }
+            IrPlan::Table { table_name } => table_name.clone(),
             _ => panic!("Main table is not a table name."),
         };
 
@@ -309,16 +302,16 @@ impl QueryObject {
 
             //check if main table is a table name or a subquery
             let join_table = match &**join_table_arc {
-                IrPlan::Table { table_name } => {
-                    table_name.clone()
-                }
+                IrPlan::Table { table_name } => table_name.clone(),
                 _ => panic!("Main table is not a table name."),
             };
 
-
             //check if the table is in the tables_info
             if self.tables_info.get(&join_table).is_none() {
-                panic!("Table {} is not present in the list of tables.", &join_table);
+                panic!(
+                    "Table {} is not present in the list of tables.",
+                    &join_table
+                );
             }
 
             //create the stream
@@ -485,8 +478,6 @@ impl QueryObject {
                 ProjectionColumn::Column(col_ref, alias) => {
                     // Handle SELECT * case
                     if col_ref.column == "*" {
-                        
-
                         if stream.is_keyed {
                             // If stream is keyed, only include GROUP BY keys
                             for key_col in &stream.key_columns {
@@ -496,9 +487,7 @@ impl QueryObject {
                                 } else if all_streams.len() == 1 {
                                     &all_streams[0]
                                 } else {
-                                    panic!(
-                                        "Column reference must have table name in JOIN query"
-                                    );
+                                    panic!("Column reference must have table name in JOIN query");
                                 };
 
                                 let table = self.get_stream(stream_name).source_table.clone();
@@ -638,7 +627,8 @@ impl QueryObject {
                     self.result_column_types.insert(col_name, result_type);
                 }
                 ProjectionColumn::StringLiteral(value, alias) => {
-                    let col_name = self.get_unique_name(alias.as_ref().unwrap_or(value), &mut used_names);
+                    let col_name =
+                        self.get_unique_name(alias.as_ref().unwrap_or(value), &mut used_names);
                     self.result_column_types
                         .insert(col_name, "String".to_string());
                 }
@@ -647,7 +637,6 @@ impl QueryObject {
         }
     }
 
-    
     // Helper method to generate unique column names
     fn get_unique_name(
         &self,
@@ -704,7 +693,7 @@ impl QueryObject {
             }
         } else if let Some(ref agg) = field.aggregate {
             //check if the column is valid (not when it's count(*))
-            if !(agg.function == AggregateType::Count  && agg.column.column == "*") {
+            if !(agg.function == AggregateType::Count && agg.column.column == "*") {
                 let stream_name = if agg.column.table.is_some() {
                     self.get_stream_from_alias(agg.column.table.as_ref().unwrap())
                         .unwrap()

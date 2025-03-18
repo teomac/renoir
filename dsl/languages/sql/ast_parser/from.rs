@@ -14,7 +14,7 @@ impl FromParser {
         let scan_expr = inner
             .next()
             .ok_or_else(|| SqlParseError::InvalidInput("Missing scan expression".to_string()))?;
-        
+
         // Parse the scan source
         let scan = Self::parse_scan_source(scan_expr)?;
 
@@ -37,19 +37,20 @@ impl FromParser {
     fn parse_scan_source(pair: Pair<Rule>) -> Result<FromSource, Box<SqlParseError>> {
         if pair.as_rule() != Rule::scan_expr {
             return Err(Box::new(SqlParseError::InvalidInput(format!(
-                "Expected scan expression, got {:?}", pair.as_rule()
+                "Expected scan expression, got {:?}",
+                pair.as_rule()
             ))));
         }
 
         let mut inner = pair.into_inner();
-        let first_item = inner.next().ok_or_else(|| 
-            SqlParseError::InvalidInput("Empty scan expression".to_string())
-        )?;
+        let first_item = inner
+            .next()
+            .ok_or_else(|| SqlParseError::InvalidInput("Empty scan expression".to_string()))?;
 
         match first_item.as_rule() {
             Rule::variable => {
                 let table_name = first_item.as_str().to_string();
-                
+
                 // Check for alias
                 let mut alias = None;
                 while let Some(next_token) = inner.next() {
@@ -65,16 +66,16 @@ impl FromParser {
                         _ => {}
                     }
                 }
-                
+
                 Ok(FromSource::Table(ScanClause {
                     variable: table_name,
                     alias,
                 }))
-            },
+            }
             Rule::subquery_expr => {
                 // This is a subquery
                 let subquery = SqlParser::parse_subquery(first_item)?;
-                
+
                 // Check for alias
                 let mut alias = None;
                 while let Some(next_token) = inner.next() {
@@ -90,16 +91,16 @@ impl FromParser {
                         _ => {}
                     }
                 }
-                
+
                 Ok(FromSource::Subquery(Box::new(subquery), alias))
-            },
+            }
             _ => Err(Box::new(SqlParseError::InvalidInput(format!(
-                "Expected variable or subquery in scan expression, got {:?}", first_item.as_rule()
-            ))))
+                "Expected variable or subquery in scan expression, got {:?}",
+                first_item.as_rule()
+            )))),
         }
     }
 
-    
     fn parse_join(pair: Pair<Rule>) -> Result<JoinClause, Box<SqlParseError>> {
         let mut inner = pair.into_inner();
 
@@ -151,7 +152,7 @@ impl FromParser {
         let join_source_pair = inner
             .next()
             .ok_or_else(|| SqlParseError::InvalidInput("Missing join source".to_string()))?;
-        
+
         // Parse the join source
         let join_scan = Self::parse_scan_source(join_source_pair)?;
 
@@ -187,8 +188,7 @@ impl FromParser {
 
             // Skip the AND operator if present
             if condition_pairs
-                .peek()
-                .map_or(false, |p| p.as_str().to_uppercase() == "AND")
+                .peek().is_some_and(|p| p.as_str().to_uppercase() == "AND")
             {
                 condition_pairs.next();
             }

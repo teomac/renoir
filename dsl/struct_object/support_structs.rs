@@ -1,36 +1,34 @@
-use indexmap::IndexMap;
-use crate::dsl::struct_object::object::QueryObject;
 use crate::dsl::ir::{AggregateFunction, ColumnRef, JoinType};
+use crate::dsl::struct_object::object::QueryObject;
+use indexmap::IndexMap;
 
 #[derive(Debug, Clone)]
 pub struct StreamInfo {
-    pub id: String,                           // Unique stream identifier
-    pub source_table: String,                 // Original table/CSV source
-    pub alias: String,                // Single, unique alias. If my query does not have a join, this is empty. Otherwise it is the alias of the table or the table name.
-    pub initial_columns: IndexMap<String, String>,    // Column name → type mappings
-    pub access: AccessPath,                   // Access path for tuple
-    pub is_keyed: bool,                        // Whether the stream is keyed
-    pub key_columns: Vec<ColumnRef>,              // Key columns
-    pub op_chain: Vec<String>,                  // Operator chain
+    pub id: String,                                        // Unique stream identifier
+    pub source_table: String,                              // Original table/CSV source
+    pub alias: String, // Single, unique alias. If my query does not have a join, this is empty. Otherwise it is the alias of the table or the table name.
+    pub initial_columns: IndexMap<String, String>, // Column name → type mappings
+    pub access: AccessPath, // Access path for tuple
+    pub is_keyed: bool, // Whether the stream is keyed
+    pub key_columns: Vec<ColumnRef>, // Key columns
+    pub op_chain: Vec<String>, // Operator chain
     pub final_struct: IndexMap<String, String>, // Final structure of the stream
-    pub final_struct_name: String,              // Name of the final structure
-    pub join_tree :Option<JoinTree>,            // Join tree
-    pub agg_position: IndexMap<AggregateFunction, String> // Aggregate function → position mappings
+    pub final_struct_name: String, // Name of the final structure
+    pub join_tree: Option<JoinTree>, // Join tree
+    pub agg_position: IndexMap<AggregateFunction, String>, // Aggregate function → position mappings
 }
-
-
 
 #[derive(Debug, Clone)]
 pub struct AccessPath {
-    pub base_path: String,          // Base tuple access (e.g., ".0.1")
-    pub null_check_required: bool   // Whether code needs to check is_some() first
+    pub base_path: String,         // Base tuple access (e.g., ".0.1")
+    pub null_check_required: bool, // Whether code needs to check is_some() first
 }
 
 impl AccessPath {
     pub fn new(base_path: String, null_check_required: bool) -> Self {
         AccessPath {
             base_path,
-            null_check_required
+            null_check_required,
         }
     }
 
@@ -48,9 +46,7 @@ impl AccessPath {
 }
 
 impl StreamInfo {
-    pub fn new(id: String, source_table: String, alias: String,
-        
-        ) -> Self {
+    pub fn new(id: String, source_table: String, alias: String) -> Self {
         StreamInfo {
             id,
             source_table,
@@ -58,7 +54,7 @@ impl StreamInfo {
             initial_columns: IndexMap::new(),
             access: AccessPath {
                 base_path: String::new(),
-                null_check_required: false
+                null_check_required: false,
             },
             is_keyed: false,
             key_columns: Vec::new(),
@@ -66,7 +62,7 @@ impl StreamInfo {
             final_struct: IndexMap::new(),
             final_struct_name: String::new(),
             join_tree: None,
-            agg_position: IndexMap::new()
+            agg_position: IndexMap::new(),
         }
     }
 
@@ -125,17 +121,16 @@ impl StreamInfo {
     pub fn update_agg_position(&mut self, agg: IndexMap<AggregateFunction, String>) {
         self.agg_position = agg;
     }
-
 }
 
 #[derive(Debug, Clone)]
 pub enum JoinTree {
-    Leaf(String),  // Stream name
+    Leaf(String), // Stream name
     Join {
         left: Box<JoinTree>,
         right: Box<JoinTree>,
-        join_type: JoinType
-    }
+        join_type: JoinType,
+    },
 }
 
 impl JoinTree {
@@ -154,7 +149,7 @@ impl JoinTree {
     // Helper method to update access paths based on the join tree
     pub fn update_access_paths(&self, query_object: &mut QueryObject) {
         match self {
-            JoinTree::Leaf(_) => {},
+            JoinTree::Leaf(_) => {}
             JoinTree::Join { left, right, .. } => {
                 // Update the access paths for this join
                 let left_streams = left.get_involved_streams();
@@ -165,24 +160,37 @@ impl JoinTree {
                     JoinTree::Leaf(_) => {
                         for stream in left_streams {
                             //println!("Updating access path for {} to .0", stream);
-                            query_object.get_mut_stream(&stream).access.update_base_path(".0".to_string());
+                            query_object
+                                .get_mut_stream(&stream)
+                                .access
+                                .update_base_path(".0".to_string());
                         }
-                    },
-                    JoinTree::Join { left: nested_left, right: nested_right, .. } => {
+                    }
+                    JoinTree::Join {
+                        left: nested_left,
+                        right: nested_right,
+                        ..
+                    } => {
                         // Get the streams from nested join
                         let nested_left_streams = nested_left.get_involved_streams();
                         let nested_right_streams = nested_right.get_involved_streams();
-                        
+
                         // Update nested left streams with .0.0
                         for stream in nested_left_streams {
                             //println!("Updating access path for {} to .0.0", stream);
-                            query_object.get_mut_stream(&stream).access.update_base_path(".0.0".to_string());
+                            query_object
+                                .get_mut_stream(&stream)
+                                .access
+                                .update_base_path(".0.0".to_string());
                         }
-                        
+
                         // Update nested right streams with .0.1
                         for stream in nested_right_streams {
                             //println!("Updating access path for {} to .0.1", stream);
-                            query_object.get_mut_stream(&stream).access.update_base_path(".0.1".to_string());
+                            query_object
+                                .get_mut_stream(&stream)
+                                .access
+                                .update_base_path(".0.1".to_string());
                         }
                     }
                 }
@@ -190,8 +198,12 @@ impl JoinTree {
                 // For right side - always append .1
                 for stream in right_streams {
                     //println!("Updating access path for {} to .1", stream);
-                    query_object.get_mut_stream(&stream).access.update_base_path(".1".to_string());
+                    query_object
+                        .get_mut_stream(&stream)
+                        .access
+                        .update_base_path(".1".to_string());
                 }
+            }
         }
     }
-    }}
+}

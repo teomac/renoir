@@ -313,11 +313,12 @@ impl std::fmt::Display for ComplexField {
                 IrLiteral::Integer(i) => write!(f, "{}", i),
                 IrLiteral::Float(fl) => write!(f, "{:.2}", fl),
                 IrLiteral::String(s) => write!(f, "{}", s.clone()),
-                IrLiteral::Boolean(b) => write!(f, "{}" , b),
+                IrLiteral::Boolean(b) => write!(f, "{}", b),
                 IrLiteral::ColumnRef(cr) => write!(f, "{}", cr),
             }
         } else if let Some(ref agg) = self.aggregate {
-            write!(f, 
+            write!(
+                f,
                 "{}({})",
                 match agg.function {
                     AggregateType::Max => "max",
