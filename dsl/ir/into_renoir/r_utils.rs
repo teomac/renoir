@@ -27,10 +27,10 @@ pub fn convert_column_ref(column_ref: &ColumnRef, query_object: &QueryObject) ->
     if !query_object.has_join {
         let all_streams = query_object.streams.keys().cloned().collect::<Vec<String>>();
         let stream_name = all_streams.first().unwrap();
-        let stream = query_object.get_stream(&stream_name);
+        let stream = query_object.get_stream(stream_name);
 
         let col = if stream.check_if_column_exists(&column_ref.column) {
-            format!("{}", column_ref.column)
+            column_ref.column.to_string()
         } else {
             //throw error
             panic!(
@@ -51,7 +51,7 @@ pub fn convert_column_ref(column_ref: &ColumnRef, query_object: &QueryObject) ->
         let stream = query_object.get_stream(&stream_name);
 
         let col = if stream.check_if_column_exists(&column_ref.column) {
-            format!("{}", column_ref.column)
+            column_ref.column.to_string()
         } else {
             //throw error
             panic!(

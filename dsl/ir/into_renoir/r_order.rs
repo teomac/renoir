@@ -12,7 +12,7 @@ use super::r_utils::find_matching_result_column;
 ///
 /// # Returns
 /// A String containing the Rust code to sort the CSV
-pub fn process_order_by(order_by: &Vec<OrderByItem>, query_object: &mut QueryObject) -> String {
+pub fn process_order_by(order_by: &[OrderByItem], query_object: &mut QueryObject) -> String {
     let mut order_string = String::new();
 
     let csv_path = query_object.output_path.replace("\\", "/");
@@ -30,7 +30,7 @@ pub fn process_order_by(order_by: &Vec<OrderByItem>, query_object: &mut QueryObj
         csv_path
     ));
 
-    let mut order_by_items = order_by.clone();
+    let mut order_by_items = order_by.to_owned();
 
     for item in &mut order_by_items {
         // Find the matching result column that correctly corresponds to this ORDER BY item
@@ -60,7 +60,7 @@ pub fn process_order_by(order_by: &Vec<OrderByItem>, query_object: &mut QueryObj
     let length = &order_by_items.len();
 
     // Generate comparison chain for each column
-    for i in 0..*length {
+    for (i, _) in order_by_items.iter().enumerate().take(*length) {
         let column_name = order_by_items[i].column.column.clone();
         let column_type = query_object.result_column_types.get(&column_name).unwrap();
         let comparison = match (column_type.as_str(), &order_by_items[i].direction) {
@@ -102,7 +102,7 @@ pub fn process_order_by(order_by: &Vec<OrderByItem>, query_object: &mut QueryObj
         if i > 0 {
             order_string.push_str(".then_with(|| ");
         }
-        order_string.push_str(&format!("{}", comparison));
+        order_string.push_str(&comparison.to_string());
         if i > 0 {
             order_string.push(')');
         }

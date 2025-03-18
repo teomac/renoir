@@ -5,7 +5,7 @@ use pest::iterators::Pair;
 pub struct LimitParser;
 
 impl LimitParser {
-    pub fn parse(pair: Pair<Rule>) -> Result<LimitClause, SqlParseError> {
+    pub fn parse(pair: Pair<Rule>) -> Result<LimitClause, Box<SqlParseError>> {
         let mut inner = pair.into_inner();
 
         // Parse LIMIT clause
@@ -24,29 +24,29 @@ impl LimitParser {
         Ok(LimitClause { limit, offset })
     }
 
-    fn parse_limit(pair: Pair<Rule>) -> Result<i64, SqlParseError> {
+    fn parse_limit(pair: Pair<Rule>) -> Result<i64, Box<SqlParseError>> {
         let mut inner = pair.into_inner();
         inner.next(); // Skip LIMIT keyword
         let number = inner
             .next()
             .ok_or_else(|| SqlParseError::InvalidInput("Missing limit value".to_string()))?;
 
-        number
+        Ok(number
             .as_str()
             .parse::<i64>()
-            .map_err(|_| SqlParseError::InvalidInput("Invalid limit value".to_string()))
+            .map_err(|_| SqlParseError::InvalidInput("Invalid limit value".to_string()))?)
     }
 
-    fn parse_offset(pair: Pair<Rule>) -> Result<i64, SqlParseError> {
+    fn parse_offset(pair: Pair<Rule>) -> Result<i64, Box<SqlParseError>> {
         let mut inner = pair.into_inner();
         inner.next(); // Skip OFFSET keyword
         let number = inner
             .next()
             .ok_or_else(|| SqlParseError::InvalidInput("Missing offset value".to_string()))?;
 
-        number
+        Ok(number
             .as_str()
             .parse::<i64>()
-            .map_err(|_| SqlParseError::InvalidInput("Invalid offset value".to_string()))
+            .map_err(|_| SqlParseError::InvalidInput("Invalid offset value".to_string()))?)
     }
 }

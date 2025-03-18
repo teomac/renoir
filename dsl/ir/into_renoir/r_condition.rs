@@ -14,7 +14,7 @@ pub fn process_filter_clause(clause: &FilterClause, stream_name: &String, query_
     
     let final_string = format!(".filter(|x| {})", filter_string);
 
-    let stream = query_object.get_mut_stream(&stream_name);
+    let stream = query_object.get_mut_stream(stream_name);
     stream.insert_op(final_string);
 
     Ok(())
@@ -62,10 +62,10 @@ pub fn process_filter(clause: &FilterClause, query_object: &mut QueryObject) -> 
                 process_filter(right, query_object)
             };
 
-            return format!(
+            format!(
                 "{} {} {}",
                 left_str, op_str, right_str
-            );
+            )
         }
     }
 }
@@ -147,7 +147,7 @@ fn process_arithmetic_expression(field: &ComplexField, query_object: &QueryObjec
                     return format!("({} {} {} as f64)", processed_left, op, processed_right);
                 }
 
-                return format!("({} {} {})", processed_left, op, processed_right);
+                format!("({} {} {})", processed_left, op, processed_right)
             } else {
                 panic!(
                     "Invalid arithmetic expression - incompatible types: {} and {}",
@@ -157,13 +157,11 @@ fn process_arithmetic_expression(field: &ComplexField, query_object: &QueryObjec
         } else {
             //case same type
             //if operation is plus, minus, multiply, division, or power and types are not numeric, panic
-            if op == "+" || op == "-" || op == "*" || op == "/" || op == "^" {
-                if left_type != "f64" && left_type != "i64" {
-                    panic!(
-                        "Invalid arithmetic expression - non-numeric types: {} and {}",
-                        left_type, right_type
-                    );
-                }
+            if (op == "+" || op == "-" || op == "*" || op == "/" || op == "^") && left_type != "f64" && left_type != "i64" {
+                panic!(
+                    "Invalid arithmetic expression - non-numeric types: {} and {}",
+                    left_type, right_type
+                );
             }
 
             // Division always results in f64
@@ -211,7 +209,7 @@ fn process_arithmetic_expression(field: &ComplexField, query_object: &QueryObjec
             all_streams.first().unwrap().0
         };
         // Validate column
-        check_column_validity(col, &stream_name, query_object);
+        check_column_validity(col, stream_name, query_object);
 
         let stream = query_object.get_stream(stream_name);
         let c_type = query_object.get_type(col);
@@ -276,7 +274,7 @@ fn process_null_check_condition(condition: &NullCondition, query_object: &QueryO
     
         let field = if condition.field.column_ref.is_some() {
             //validate column
-            check_column_validity(&col_ref, stream_name, query_object);
+            check_column_validity(col_ref, stream_name, query_object);
             format!(
                 "x{}.{}",
                 stream.get_access().get_base_path(),
@@ -298,15 +296,15 @@ fn process_null_check_condition(condition: &NullCondition, query_object: &QueryO
         match lit {
             IrLiteral::Boolean(_) => {
                 match condition.operator {
-                    NullOp::IsNull => format!("false"),
-                    NullOp::IsNotNull => format!("true"),
+                    NullOp::IsNull => "false".to_string(),
+                    NullOp::IsNotNull => "true".to_string(),
                 }
             }
 
             IrLiteral::Float(_) | IrLiteral::Integer(_) => {
                 match condition.operator {
-                    NullOp::IsNull => format!("false"),
-                    NullOp::IsNotNull => format!("true"),
+                    NullOp::IsNull => "false".to_string(),
+                    NullOp::IsNotNull => "true".to_string(),
                 }
             }
 
@@ -376,18 +374,14 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
         }
     } else {
         //if operand is plus, minus, multiply, division, or power and types are not numeric, panic
-        if operator_str == "+"
+        if (operator_str == "+"
             || operator_str == "-"
             || operator_str == "*"
-            || operator_str == "/"
-            || operator_str == "^"
-        {
-            if left_type != "f64" && left_type != "i64" {
-                panic!(
-                    "Invalid arithmetic expression - non-numeric types: {} and {}",
-                    left_type, right_type
-                );
-            }
+            || operator_str == "/" || operator_str == "^") && left_type != "f64" && left_type != "i64" {
+            panic!(
+                "Invalid arithmetic expression - non-numeric types: {} and {}",
+                left_type, right_type
+            );
         }
     }
 
@@ -545,7 +539,7 @@ fn collect_column_null_checks(
             all_streams.first().unwrap().0
         };
 
-        check_column_validity(col, &stream_name, query_object);
+        check_column_validity(col, stream_name, query_object);
 
         let stream = query_object.get_stream(stream_name);
 
@@ -560,7 +554,7 @@ fn collect_column_null_checks(
         collect_column_null_checks(left, query_object, checks);
         collect_column_null_checks(right, query_object, checks);
     }
-    if let Some(_) = field.literal {
+    if field.literal.is_some() {
         panic!("Invalid ComplexField - literal not expected here");
     }
     if let Some(ref agg) = field.aggregate {

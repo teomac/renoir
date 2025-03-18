@@ -51,7 +51,7 @@ pub fn parse_type_string(input: &str) -> Result<Vec<String>, ParseTypeError> {
             };
 
             // Create the indexed type string
-            Ok(format!("{}", base_type))
+            Ok(base_type.to_string())
         })
         .collect();
 

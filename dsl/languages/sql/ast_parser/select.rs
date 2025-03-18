@@ -7,7 +7,7 @@ use pest::iterators::Pair;
 pub struct SelectParser;
 
 impl SelectParser {
-    pub fn parse(pair: Pair<Rule>) -> Result<SelectType, SqlParseError> {
+    pub fn parse(pair: Pair<Rule>) -> Result<SelectType, Box<SqlParseError>> {
         // First, handle the column_with_alias rule
         match pair.as_rule() {
             Rule::asterisk => Ok(SelectType::Simple(ColumnRef {
@@ -26,15 +26,15 @@ impl SelectParser {
                 Self::parse_column_item(column_item)
             }
             _ => {
-                Err(SqlParseError::InvalidInput(format!(
+                Err(Box::new(SqlParseError::InvalidInput(format!(
                     "Expected column_with_alias, got {:?}",
                     pair.as_rule()
-                )))
+                ))))
             }
         }
     }
 
-    fn parse_column_item(pair: Pair<Rule>) -> Result<SelectType, SqlParseError> {
+    fn parse_column_item(pair: Pair<Rule>) -> Result<SelectType, Box<SqlParseError>> {
         let mut inner = pair.into_inner();
         let item = inner
             .next()
@@ -57,9 +57,9 @@ impl SelectParser {
                 
                 // Validate that the subquery only returns one column
                 if subquery.select.select.len() != 1 {
-                    return Err(SqlParseError::InvalidInput(
+                    return Err(Box::new(SqlParseError::InvalidInput(
                         "Subquery in SELECT must return exactly one column".to_string()
-                    ));
+                    )));
                 }
                 
                 Ok(SelectType::Subquery(Box::new(subquery)))
@@ -70,15 +70,15 @@ impl SelectParser {
                 let clean_str = inner_str[1..inner_str.len() - 1].to_string();
                 Ok(SelectType::StringLiteral(clean_str))
             },
-            _ => Err(SqlParseError::InvalidInput(format!(
+            _ => Err(Box::new(SqlParseError::InvalidInput(format!(
                 "Invalid column item: {:?}",
                 item.as_rule()
-            ))),
+            )))),
         }
     }
 
     //function to parse column references
-    fn parse_column_ref(pair: Pair<Rule>) -> Result<ColumnRef, SqlParseError> {
+    fn parse_column_ref(pair: Pair<Rule>) -> Result<ColumnRef, Box<SqlParseError>> {
         match pair.as_rule() {
             Rule::asterisk => Ok(ColumnRef {
                 table: None,
@@ -107,14 +107,14 @@ impl SelectParser {
                 column: pair.as_str().to_string(),
             }),
 
-            _ => Err(SqlParseError::InvalidInput(format!(
+            _ => Err(Box::new(SqlParseError::InvalidInput(format!(
                 "Expected column reference, got {:?}",
                 pair.as_rule()
-            ))),
+            )))),
         }
     }
 
-    fn parse_aggregate(pair: Pair<Rule>) -> Result<(AggregateFunction, ColumnRef), SqlParseError> {
+    fn parse_aggregate(pair: Pair<Rule>) -> Result<(AggregateFunction, ColumnRef), Box<SqlParseError>> {
         let mut agg = pair.into_inner();
         let func = match agg
             .next()
@@ -129,9 +129,9 @@ impl SelectParser {
             "COUNT" => AggregateFunction::Count,
             "AVG" => AggregateFunction::Avg,
             _ => {
-                return Err(SqlParseError::InvalidInput(
+                return Err(Box::new(SqlParseError::InvalidInput(
                     "Unknown aggregate function".to_string(),
-                ))
+                )))
             }
         };
 
@@ -142,15 +142,15 @@ impl SelectParser {
 
         //if aggregation is different than COUNT and column is *, return error
         if func != AggregateFunction::Count && col_ref.column == "*" {
-            return Err(SqlParseError::InvalidInput(
+            return Err(Box::new(SqlParseError::InvalidInput(
                 "Invalid aggregation".to_string(),
-            ));
+            )));
         }
 
         Ok((func, col_ref))
     }
 
-    fn parse_complex_expression(pair: Pair<Rule>) -> Result<SelectType, SqlParseError> {
+    fn parse_complex_expression(pair: Pair<Rule>) -> Result<SelectType, Box<SqlParseError>> {
         let mut pairs = pair.into_inner().peekable();
 
         // Get first operand
@@ -162,10 +162,10 @@ impl SelectParser {
             Rule::parenthesized_expr => Self::parse_parenthesized_expr(first)?,
             Rule::column_operand => Self::parse_operand(first)?,
             _ => {
-                return Err(SqlParseError::InvalidInput(format!(
+                return Err(Box::new(SqlParseError::InvalidInput(format!(
                     "Invalid first operand: {:?}",
                     first.as_rule()
-                )))
+                ))))
             }
         };
 
@@ -181,10 +181,10 @@ impl SelectParser {
                 Rule::parenthesized_expr => Self::parse_parenthesized_expr(right)?,
                 Rule::column_operand => Self::parse_operand(right)?,
                 _ => {
-                    return Err(SqlParseError::InvalidInput(format!(
+                    return Err(Box::new(SqlParseError::InvalidInput(format!(
                         "Invalid right operand: {:?}",
                         right.as_rule()
-                    )))
+                    ))))
                 }
             };
 
@@ -212,7 +212,7 @@ impl SelectParser {
     }
 
     // New helper function to parse operands
-    fn parse_parenthesized_expr(pair: Pair<Rule>) -> Result<ComplexField, SqlParseError> {
+    fn parse_parenthesized_expr(pair: Pair<Rule>) -> Result<ComplexField, Box<SqlParseError>> {
         let mut inner = pair.into_inner();
 
         // Skip left parenthesis
@@ -237,13 +237,13 @@ impl SelectParser {
                     })
                 }
             }
-            _ => Err(SqlParseError::InvalidInput(
+            _ => Err(Box::new(SqlParseError::InvalidInput(
                 "Invalid parenthesized expression".to_string(),
-            )),
+            ))),
         }
     }
 
-    fn parse_operand(pair: Pair<Rule>) -> Result<ComplexField, SqlParseError> {
+    fn parse_operand(pair: Pair<Rule>) -> Result<ComplexField, Box<SqlParseError>> {
         let inner = pair
             .into_inner()
             .next()
@@ -295,10 +295,10 @@ impl SelectParser {
                     subquery: Some(Box::new(subquery)),
                 })
             },
-            _ => Err(SqlParseError::InvalidInput(format!(
+            _ => Err(Box::new(SqlParseError::InvalidInput(format!(
                 "Invalid operand: {:?}",
                 inner.as_rule()
-            ))),
+            )))),
         }
     }
 }

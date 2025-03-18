@@ -24,20 +24,20 @@ use std::sync::Arc;
 pub struct IrParser;
 
 impl IrParser {
-    pub fn parse_query(input: &str) -> Result<Arc<IrPlan>, IrParseError> {
-        let pairs = Self::parse(Rule::query, input).map_err(|e| IrParseError::PestError(e))?;
+    pub fn parse_query(input: &str) -> Result<Arc<IrPlan>, Box<IrParseError>> {
+        let pairs = Self::parse(Rule::query, input).map_err(IrParseError::PestError)?;
 
         let ast = IrASTBuilder::build_ast_from_pairs(pairs)?;
 
         Ok(ast)
     }
 
-    pub fn parse_subquery(pair: Pair<Rule>) -> Result<Arc<IrPlan>, IrParseError> {
+    pub fn parse_subquery(pair: Pair<Rule>) -> Result<Arc<IrPlan>, Box<IrParseError>> {
         if pair.as_rule() != Rule::subquery {
-            return Err(IrParseError::InvalidInput(format!(
+            return Err(Box::new(IrParseError::InvalidInput(format!(
                 "Expected subquery expression, got {:?}",
                 pair.as_rule()
-            )));
+            ))));
         }        
         
         let subquery_text = pair.as_str();

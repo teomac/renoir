@@ -26,7 +26,7 @@ pub fn create_simple_map(
         all_streams.push(stream_name.clone());
     }
 
-    let is_grouped = main_stream.is_keyed && main_stream.key_columns.len() > 0;
+    let is_grouped = main_stream.is_keyed && !main_stream.key_columns.is_empty();
     let mut keys = Vec::new();
     for stream in all_streams.iter() {
         keys.extend(query_object.get_stream(stream).key_columns.clone());
@@ -43,12 +43,12 @@ pub fn create_simple_map(
                     let field_name = query_object
                         .result_column_types
                         .get_index(i)
-                        .unwrap_or_else(|| (&empty_string, &empty_string))
+                        .unwrap_or((&empty_string, &empty_string))
                         .0;
 
                     let col_stream_name = if col_ref.table.is_some() {
                         query_object
-                            .get_stream_from_alias(&col_ref.table.as_ref().unwrap())
+                            .get_stream_from_alias(col_ref.table.as_ref().unwrap())
                             .unwrap()
                     } else {
                         stream_name
@@ -77,9 +77,7 @@ pub fn create_simple_map(
                         let value: String;
                         if keys.len() == 1 {
                             if col_type == "f64" {
-                                value = format!(
-                                    "if x.0.is_some() {{ Some(x.0.unwrap().into_inner() as f64) }} else {{ None }}",
-                                );
+                                value = "if x.0.is_some() { Some(x.0.unwrap().into_inner() as f64) } else { None }".to_string();
                         
                             } else {
                                 value = format!(
@@ -282,7 +280,7 @@ pub fn process_complex_field(
                     return format!("({} {} {} as f64)", processed_left, op, processed_right);
                 }
 
-                return format!("({} {} {})", processed_left, op, processed_right);
+                format!("({} {} {})", processed_left, op, processed_right)
             } else {
                 panic!(
                     "Invalid arithmetic expression - incompatible types: {} and {}",
@@ -292,13 +290,11 @@ pub fn process_complex_field(
         } else {
             //case same type
             //if operation is plus, minus, multiply, division, or power and types are not numeric, panic
-            if op == "+" || op == "-" || op == "*" || op == "/" || op == "^" {
-                if left_type != "f64" && left_type != "i64" {
-                    panic!(
-                        "Invalid arithmetic expression - non-numeric types: {} and {}",
-                        left_type, right_type
-                    );
-                }
+            if (op == "+" || op == "-" || op == "*" || op == "/" || op == "^") && left_type != "f64" && left_type != "i64" {
+                panic!(
+                    "Invalid arithmetic expression - non-numeric types: {} and {}",
+                    left_type, right_type
+                );
             }
 
             // Division always results in f64
@@ -350,7 +346,7 @@ pub fn process_complex_field(
         // Handle column reference
         let col_stream_name = if col.table.is_some() {
             query_object
-                .get_stream_from_alias(&col.table.as_ref().unwrap())
+                .get_stream_from_alias(col.table.as_ref().unwrap())
                 .unwrap()
         } else {
             stream_name
@@ -379,30 +375,25 @@ pub fn process_complex_field(
             let key_pos = keys.iter().position(|key| key == col).unwrap();
             if keys.len() == 1 {
                 if col_type == "f64" {
-                    check_list.push(format!(
-                        "x.0.is_some()",
-                    ));
-                    return format!("x.0.unwrap().into_inner()");
+                    check_list.push("x.0.is_some()".to_string());
+                    return "x.0.unwrap().into_inner()".to_string();
                 } else  {
                     return format!("x.0{}", if col_type == "String" { ".clone()" } else { "" });
                 }
-            } else {
-                if col_type == "f64" {
-                    check_list.push(format!(
-                        "x.0.{}.is_some()", key_pos
-                    ));
-                    return format!(
-                        "x.0.{}.unwrap().into_inner()",
-                        key_pos,
-                    );
-                } else  {
-                    return format!(
-                        "x.0.{}{}",
-                        key_pos,
-                        if col_type == "String" { ".clone()" } else { "" }
-                    );
-                }
-                
+            } else if col_type == "f64" {
+                check_list.push(format!(
+                    "x.0.{}.is_some()", key_pos
+                ));
+                return format!(
+                    "x.0.{}.unwrap().into_inner()",
+                    key_pos,
+                );
+            } else  {
+                return format!(
+                    "x.0.{}{}",
+                    key_pos,
+                    if col_type == "String" { ".clone()" } else { "" }
+                );
             }
         } else {
             check_list.push(format!(

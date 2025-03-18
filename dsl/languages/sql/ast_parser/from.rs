@@ -6,7 +6,7 @@ use pest::iterators::Pair;
 pub struct FromParser;
 
 impl FromParser {
-    pub fn parse(pair: Pair<Rule>) -> Result<FromClause, SqlParseError> {
+    pub fn parse(pair: Pair<Rule>) -> Result<FromClause, Box<SqlParseError>> {
         let mut inner = pair.into_inner();
         inner.next(); // Skip FROM keyword
 
@@ -21,7 +21,7 @@ impl FromParser {
         let mut joins = Vec::new();
 
         // Process any JOIN expressions
-        while let Some(join_expr) = inner.next() {
+        for join_expr in inner {
             if join_expr.as_rule() == Rule::join_expr {
                 joins.push(Self::parse_join(join_expr)?);
             }
@@ -34,11 +34,11 @@ impl FromParser {
     }
 
     // Parse scan source (variable or subquery with optional alias)
-    fn parse_scan_source(pair: Pair<Rule>) -> Result<FromSource, SqlParseError> {
+    fn parse_scan_source(pair: Pair<Rule>) -> Result<FromSource, Box<SqlParseError>> {
         if pair.as_rule() != Rule::scan_expr {
-            return Err(SqlParseError::InvalidInput(format!(
+            return Err(Box::new(SqlParseError::InvalidInput(format!(
                 "Expected scan expression, got {:?}", pair.as_rule()
-            )));
+            ))));
         }
 
         let mut inner = pair.into_inner();
@@ -93,14 +93,14 @@ impl FromParser {
                 
                 Ok(FromSource::Subquery(Box::new(subquery), alias))
             },
-            _ => Err(SqlParseError::InvalidInput(format!(
+            _ => Err(Box::new(SqlParseError::InvalidInput(format!(
                 "Expected variable or subquery in scan expression, got {:?}", first_item.as_rule()
-            )))
+            ))))
         }
     }
 
     
-    fn parse_join(pair: Pair<Rule>) -> Result<JoinClause, SqlParseError> {
+    fn parse_join(pair: Pair<Rule>) -> Result<JoinClause, Box<SqlParseError>> {
         let mut inner = pair.into_inner();
 
         // Default join type
@@ -122,10 +122,10 @@ impl FromParser {
             } else if kind_str == "OUTER" {
                 join_type = JoinType::Outer;
             } else {
-                return Err(SqlParseError::InvalidInput(format!(
+                return Err(Box::new(SqlParseError::InvalidInput(format!(
                     "Unknown join type: {}",
                     kind_str
-                )));
+                ))));
             }
 
             // Get the JOIN keyword
@@ -134,17 +134,17 @@ impl FromParser {
                 .ok_or_else(|| SqlParseError::InvalidInput("Missing JOIN keyword".to_string()))?;
 
             if join_keyword.as_rule() != Rule::join {
-                return Err(SqlParseError::InvalidInput(format!(
+                return Err(Box::new(SqlParseError::InvalidInput(format!(
                     "Expected JOIN keyword, got {:?}",
                     join_keyword.as_rule()
-                )));
+                ))));
             }
         } else if first.as_rule() != Rule::join {
             // If it's not a join_kind or JOIN keyword, error
-            return Err(SqlParseError::InvalidInput(format!(
+            return Err(Box::new(SqlParseError::InvalidInput(format!(
                 "Expected JOIN keyword or join type, got {:?}",
                 first.as_rule()
-            )));
+            ))));
         }
 
         // Parse the join source (scan_expr)
@@ -195,9 +195,9 @@ impl FromParser {
         }
 
         if conditions.is_empty() {
-            return Err(SqlParseError::InvalidInput(
+            return Err(Box::new(SqlParseError::InvalidInput(
                 "No valid join conditions found".to_string(),
-            ));
+            )));
         }
 
         Ok(JoinClause {

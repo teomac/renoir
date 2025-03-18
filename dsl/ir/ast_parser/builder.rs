@@ -11,7 +11,7 @@ use std::sync::Arc;
 pub struct IrASTBuilder;
 
 impl IrASTBuilder {
-    pub fn build_ast_from_pairs(pairs: Pairs<Rule>) -> Result<Arc<IrPlan>, IrParseError> {
+    pub fn build_ast_from_pairs(pairs: Pairs<Rule>) -> Result<Arc<IrPlan>, Box<IrParseError>> {
         let mut current_plan: Option<Arc<IrPlan>> = None;
         
         // Process each clause in the query
@@ -34,9 +34,9 @@ impl IrASTBuilder {
                                         filter_predicate
                                     )));
                                 } else {
-                                    return Err(IrParseError::InvalidInput(
+                                    return Err(Box::new(IrParseError::InvalidInput(
                                         "Filter clause before scan clause".to_string()
-                                    ));
+                                    )));
                                 }
                             }
                             Rule::group_clause => {
@@ -49,9 +49,9 @@ impl IrASTBuilder {
                                         group.1
                                     )));
                                 } else {
-                                    return Err(IrParseError::InvalidInput(
+                                    return Err(Box::new(IrParseError::InvalidInput(
                                         "Group clause before scan clause".to_string()
-                                    ));
+                                    )));
                                 }
                             }
                             Rule::projection_clause => {
@@ -64,9 +64,9 @@ impl IrASTBuilder {
                                         project.1
                                     )));
                                 } else {
-                                    return Err(IrParseError::InvalidInput(
+                                    return Err(Box::new(IrParseError::InvalidInput(
                                         "Projection clause before scan clause".to_string()
-                                    ));
+                                    )));
                                 }
                             }
                             Rule::order_clause => {
@@ -78,9 +78,9 @@ impl IrASTBuilder {
                                         order
                                     )));
                                 } else {
-                                    return Err(IrParseError::InvalidInput(
+                                    return Err(Box::new(IrParseError::InvalidInput(
                                         "Order clause before scan clause".to_string()
-                                    ));
+                                    )));
                                 }
                             }
                             Rule::limit_expr => {
@@ -93,26 +93,26 @@ impl IrASTBuilder {
                                         limit.1
                                     )));
                                 } else {
-                                    return Err(IrParseError::InvalidInput(
+                                    return Err(Box::new(IrParseError::InvalidInput(
                                         "Limit clause before scan clause".to_string()
-                                    ));
+                                    )));
                                 }
                             }
                             Rule::EOI => {}
                             _ => {
-                                return Err(IrParseError::InvalidInput(format!(
+                                return Err(Box::new(IrParseError::InvalidInput(format!(
                                     "Unexpected clause: {:?}",
                                     clause.as_rule()
-                                )))
+                                ))))
                             }
                         }
                     }
                 }
-                _ => return Err(IrParseError::InvalidInput("Expected query".to_string())),
+                _ => return Err(Box::new(IrParseError::InvalidInput("Expected query".to_string()))),
             }
         }
 
         // Ensure we built a complete plan
-        current_plan.ok_or_else(|| IrParseError::InvalidInput("Empty query".to_string()))
+        Ok(current_plan.ok_or_else(|| IrParseError::InvalidInput("Empty query".to_string()))?)
     }
 }

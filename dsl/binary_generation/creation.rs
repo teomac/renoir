@@ -77,7 +77,7 @@ pub fn create_template(query_object: &QueryObject, is_subquery: bool) -> String 
     table_names.reverse();
 
     // Generate struct definitions for input and output tables
-    let struct_definitions = generate_struct_declarations(&table_names, &query_object);
+    let struct_definitions = generate_struct_declarations(&table_names, query_object);
 
     let mut stream_declarations: Vec<String> = Vec::new();
 
@@ -100,11 +100,11 @@ pub fn create_template(query_object: &QueryObject, is_subquery: bool) -> String 
                         query_object.output_path
                     )
                 } else {
-                    format!(".collect_vec()")
+                    ".collect_vec()".to_string()
                 }
             );
 
-            stream.push_str(&format!("ctx.execute_blocking();"));
+            stream.push_str(&"ctx.execute_blocking();".to_string());
 
             //insert order by string
             stream.push_str(&query_object.order_by_string);

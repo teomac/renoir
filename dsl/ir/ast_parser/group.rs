@@ -6,7 +6,7 @@ use pest::iterators::Pair;
 pub struct GroupParser;
 
 impl GroupParser {
-    pub fn parse(pair: Pair<Rule>) -> Result<(Vec<ColumnRef>, Option<GroupClause>), IrParseError> {
+    pub fn parse(pair: Pair<Rule>) -> Result<(Vec<ColumnRef>, Option<GroupClause>), Box<IrParseError>> {
         let mut inner = pair.into_inner();
 
         inner
@@ -27,7 +27,7 @@ impl GroupParser {
         }
 
         if columns.is_empty() {
-            return Err(IrParseError::InvalidInput("Empty group clause".to_string()));
+            return Err(Box::new(IrParseError::InvalidInput("Empty group clause".to_string())));
         }
 
         // Check for having condition (inside curly braces)
@@ -41,7 +41,7 @@ impl GroupParser {
     //////////////////////////////////////////////////////////////////////////////////
 
     //function to parse having conditions
-    fn parse_group_conditions(pair: Pair<Rule>) -> Result<GroupClause, IrParseError> {
+    fn parse_group_conditions(pair: Pair<Rule>) -> Result<GroupClause, Box<IrParseError>> {
         // Get the content between curly braces
         let mut inner = pair.into_inner();
         let group_expr = inner
@@ -51,7 +51,7 @@ impl GroupParser {
         Self::parse_group_expr(group_expr)
     }
 
-    fn parse_group_expr(pair: Pair<Rule>) -> Result<GroupClause, IrParseError> {
+    fn parse_group_expr(pair: Pair<Rule>) -> Result<GroupClause, Box<IrParseError>> {
         let mut pairs = pair.into_inner().peekable();
 
         let first = pairs
@@ -66,10 +66,10 @@ impl GroupParser {
                 "&&" => BinaryOp::And,
                 "||" => BinaryOp::Or,
                 _ => {
-                    return Err(IrParseError::InvalidInput(format!(
+                    return Err(Box::new(IrParseError::InvalidInput(format!(
                         "Invalid binary operator: {}",
                         op.as_str()
-                    )))
+                    ))))
                 }
             };
 
@@ -89,7 +89,7 @@ impl GroupParser {
         Ok(left)
     }
 
-    fn parse_group_term(pair: Pair<Rule>) -> Result<GroupClause, IrParseError> {
+    fn parse_group_term(pair: Pair<Rule>) -> Result<GroupClause, Box<IrParseError>> {
         match pair.as_rule() {
             Rule::having_term => {
                 let mut inner = pair.into_inner();
@@ -106,20 +106,20 @@ impl GroupParser {
                         Self::parse_group_expr(expr)
                     }
                     Rule::condition => Self::parse_single_condition(first),
-                    _ => Err(IrParseError::InvalidInput(format!(
+                    _ => Err(Box::new(IrParseError::InvalidInput(format!(
                         "Invalid term type: {:?}",
                         first.as_rule()
-                    ))),
+                    )))),
                 }
             }
-            _ => Err(IrParseError::InvalidInput(format!(
+            _ => Err(Box::new(IrParseError::InvalidInput(format!(
                 "Expected having_term, got {:?}",
                 pair.as_rule()
-            ))),
+            )))),
         }
     }
 
-    fn parse_single_condition(condition_pair: Pair<Rule>) -> Result<GroupClause, IrParseError> {
+    fn parse_single_condition(condition_pair: Pair<Rule>) -> Result<GroupClause, Box<IrParseError>> {
         let mut inner = condition_pair.into_inner();
 
         // Get the first field
@@ -145,10 +145,10 @@ impl GroupParser {
                     "==" => ComparisonOp::Equal,
                     "!=" => ComparisonOp::NotEqual,
                     op => {
-                        return Err(IrParseError::InvalidInput(format!(
+                        return Err(Box::new(IrParseError::InvalidInput(format!(
                             "Invalid operator: {}",
                             op
-                        )))
+                        ))))
                     }
                 };
 
@@ -171,10 +171,10 @@ impl GroupParser {
                         "is null" => NullOp::IsNull,
                         "is not null" => NullOp::IsNotNull,
                         _ => {
-                            return Err(IrParseError::InvalidInput(format!(
+                            return Err(Box::new(IrParseError::InvalidInput(format!(
                                 "Invalid null operator: {}",
                                 operator_pair.as_str()
-                            )))
+                            ))))
                         }
                     };
 
@@ -185,19 +185,19 @@ impl GroupParser {
                         },
                     )))
                 } else {
-                    Err(IrParseError::InvalidInput(
+                    Err(Box::new(IrParseError::InvalidInput(
                         "Expected null operator".to_string(),
-                    ))
+                    )))
                 }
             }
-            _ => Err(IrParseError::InvalidInput(format!(
+            _ => Err(Box::new(IrParseError::InvalidInput(format!(
                 "Invalid condition type: {:?}",
                 first.as_rule()
-            ))),
+            )))),
         }
     }
 
-    fn parse_arithmetic_expr(pair: Pair<Rule>) -> Result<ComplexField, IrParseError> {
+    fn parse_arithmetic_expr(pair: Pair<Rule>) -> Result<ComplexField, Box<IrParseError>> {
         let mut inner = pair.into_inner();
         let first_term = inner
             .next()
@@ -221,7 +221,7 @@ impl GroupParser {
         Ok(result)
     }
 
-    fn parse_arithmetic_term(pair: Pair<Rule>) -> Result<ComplexField, IrParseError> {
+    fn parse_arithmetic_term(pair: Pair<Rule>) -> Result<ComplexField, Box<IrParseError>> {
         let inner = pair
             .clone()
             .into_inner()
@@ -243,14 +243,14 @@ impl GroupParser {
                 nested_expr: None,
                 subquery: Some(IrParser::parse_subquery(inner)?),
             }),
-            _ => Err(IrParseError::InvalidInput(format!(
+            _ => Err(Box::new(IrParseError::InvalidInput(format!(
                 "Unexpected token in arithmetic term: {:?}",
                 inner.as_rule()
-            ))),
+            )))),
         }
     }
 
-    fn parse_arithmetic_factor(pair: Pair<Rule>) -> Result<ComplexField, IrParseError> {
+    fn parse_arithmetic_factor(pair: Pair<Rule>) -> Result<ComplexField, Box<IrParseError>> {
         let operand = pair
             .into_inner()
             .next()
@@ -298,10 +298,10 @@ impl GroupParser {
                 nested_expr: None,
                 subquery: Some(IrParser::parse_subquery(operand)?),
             }),
-            _ => Err(IrParseError::InvalidInput(format!(
+            _ => Err(Box::new(IrParseError::InvalidInput(format!(
                 "Invalid operand type: {:?}",
                 operand.as_rule()
-            ))),
+            )))),
         }
     }
     // Helper methods for parsing basic elements
@@ -416,7 +416,7 @@ impl GroupParser {
         }
     }
 
-    fn parse_field_reference(pair: Pair<Rule>) -> Result<ComplexField, IrParseError> {
+    fn parse_field_reference(pair: Pair<Rule>) -> Result<ComplexField, Box<IrParseError>> {
         match pair.as_rule() {
             Rule::qualified_column => {
                 let col_ref = Self::parse_column_ref(pair)?;
@@ -445,10 +445,10 @@ impl GroupParser {
                 nested_expr: None,
                 subquery: Some(IrParser::parse_subquery(pair)?),
             }),
-            _ => Err(IrParseError::InvalidInput(format!(
+            _ => Err(Box::new(IrParseError::InvalidInput(format!(
                 "Expected field reference, got {:?}",
                 pair.as_rule()
-            ))),
+            )))),
         }
     }
 }

@@ -6,7 +6,7 @@ use pest::iterators::Pair;
 pub struct ConditionParser;
 
 impl ConditionParser {
-    pub fn parse(pair: Pair<Rule>) -> Result<WhereClause, SqlParseError> {
+    pub fn parse(pair: Pair<Rule>) -> Result<WhereClause, Box<SqlParseError>> {
         let mut inner = pair.into_inner();
         inner.next(); // Skip WHERE keyword
 
@@ -17,7 +17,7 @@ impl ConditionParser {
         Self::parse_where_conditions(conditions)
     }
 
-    fn parse_where_conditions(pair: Pair<Rule>) -> Result<WhereClause, SqlParseError> {
+    fn parse_where_conditions(pair: Pair<Rule>) -> Result<WhereClause, Box<SqlParseError>> {
         let mut pairs = pair.into_inner().peekable();
 
         // Get the first condition or term
@@ -29,10 +29,10 @@ impl ConditionParser {
             Rule::where_term => Self::parse_where_term(first)?,
             Rule::condition => Self::parse_condition(first)?,
             _ => {
-                return Err(SqlParseError::InvalidInput(format!(
+                return Err(Box::new(SqlParseError::InvalidInput(format!(
                     "Unexpected rule: {:?}",
                     first.as_rule()
-                )))
+                ))))
             }
         };
 
@@ -42,10 +42,10 @@ impl ConditionParser {
                 "AND" => BinaryOp::And,
                 "OR" => BinaryOp::Or,
                 _ => {
-                    return Err(SqlParseError::InvalidInput(format!(
+                    return Err(Box::new(SqlParseError::InvalidInput(format!(
                         "Invalid binary operator: {}",
                         op.as_str()
-                    )))
+                    ))))
                 }
             };
 
@@ -57,10 +57,10 @@ impl ConditionParser {
                 Rule::where_term => Self::parse_where_term(right_term)?,
                 Rule::condition => Self::parse_condition(right_term)?,
                 _ => {
-                    return Err(SqlParseError::InvalidInput(format!(
+                    return Err(Box::new(SqlParseError::InvalidInput(format!(
                         "Unexpected rule: {:?}",
                         right_term.as_rule()
-                    )))
+                    ))))
                 }
             };
 
@@ -74,7 +74,7 @@ impl ConditionParser {
         Ok(left)
     }
 
-    fn parse_where_term(pair: Pair<Rule>) -> Result<WhereClause, SqlParseError> {
+    fn parse_where_term(pair: Pair<Rule>) -> Result<WhereClause, Box<SqlParseError>> {
         let mut inner = pair.into_inner();
 
         // Get first element
@@ -91,15 +91,15 @@ impl ConditionParser {
                 Self::parse_where_conditions(conditions)
             }
             Rule::condition => Self::parse_condition(first),
-            _ => Err(SqlParseError::InvalidInput(format!(
+            _ => Err(Box::new(SqlParseError::InvalidInput(format!(
                 "Invalid where term: {:?}",
                 first.as_rule()
-            ))),
+            )))),
         }
     }
 
 
-fn parse_condition(pair: Pair<Rule>) -> Result<WhereClause, SqlParseError> {
+fn parse_condition(pair: Pair<Rule>) -> Result<WhereClause, Box<SqlParseError>> {
     // Check the condition type by examining the first child rule
     let mut check_pairs = pair.clone().into_inner();
     let first_rule = check_pairs.next();
@@ -125,10 +125,10 @@ fn parse_condition(pair: Pair<Rule>) -> Result<WhereClause, SqlParseError> {
             
             // Now parse the subquery from the subquery expression
             if subquery_expr.as_rule() != Rule::subquery_expr {
-                return Err(SqlParseError::InvalidInput(format!(
+                return Err(Box::new(SqlParseError::InvalidInput(format!(
                     "Expected subquery expression after EXISTS, got {:?}",
                     subquery_expr.as_rule()
-                )));
+                ))));
             }
             
             // Process the subquery
@@ -154,10 +154,10 @@ fn parse_condition(pair: Pair<Rule>) -> Result<WhereClause, SqlParseError> {
                     column: column_ref.as_str().to_string(),
                 },
                 Rule::table_column => Self::parse_column_ref(column_ref)?,
-                _ => return Err(SqlParseError::InvalidInput(format!(
+                _ => return Err(Box::new(SqlParseError::InvalidInput(format!(
                     "Expected column reference in IN expression, got {:?}",
                     column_ref.as_rule()
-                ))),
+                )))),
             };
             
             // Next part is the IN keyword
@@ -196,10 +196,10 @@ fn parse_condition(pair: Pair<Rule>) -> Result<WhereClause, SqlParseError> {
                 "IS NULL" => NullOp::IsNull,
                 "IS NOT NULL" => NullOp::IsNotNull,
                 _ => {
-                    return Err(SqlParseError::InvalidInput(format!(
+                    return Err(Box::new(SqlParseError::InvalidInput(format!(
                         "Invalid null operator: {}",
                         operator.as_str()
-                    )))
+                    ))))
                 }
             };
 
@@ -223,10 +223,10 @@ fn parse_condition(pair: Pair<Rule>) -> Result<WhereClause, SqlParseError> {
                 "=" => ComparisonOp::Equal,
                 "!=" | "<>" => ComparisonOp::NotEqual,
                 _ => {
-                    return Err(SqlParseError::InvalidInput(format!(
+                    return Err(Box::new(SqlParseError::InvalidInput(format!(
                         "Invalid operator: {}",
                         operator.as_str()
-                    )))
+                    ))))
                 }
             };
 
@@ -238,16 +238,16 @@ fn parse_condition(pair: Pair<Rule>) -> Result<WhereClause, SqlParseError> {
                 },
             )))
         }
-        _ => Err(SqlParseError::InvalidInput(format!(
+        _ => Err(Box::new(SqlParseError::InvalidInput(format!(
             "Expected operator, got {:?}",
             operator.as_rule()
-        ))),
+        )))),
     }
 }
 
 
 
-    fn parse_arithmetic_expr(pair: Pair<Rule>) -> Result<ArithmeticExpr, SqlParseError> {
+    fn parse_arithmetic_expr(pair: Pair<Rule>) -> Result<ArithmeticExpr, Box<SqlParseError>> {
         match pair.as_rule() {
             Rule::arithmetic_expr => {
                 let mut pairs = pair.into_inner().peekable();
@@ -277,14 +277,14 @@ fn parse_condition(pair: Pair<Rule>) -> Result<WhereClause, SqlParseError> {
                 let subquery = SqlParser::parse_subquery(pair)?;
                 Ok(ArithmeticExpr::Subquery(Box::new(subquery)))
             }
-            _ => Err(SqlParseError::InvalidInput(format!(
+            _ => Err(Box::new(SqlParseError::InvalidInput(format!(
                 "Expected arithmetic expression, got {:?}",
                 pair.as_rule()
-            ))),
+            )))),
         }
     }
 
-    fn parse_arithmetic_term(pair: Pair<Rule>) -> Result<ArithmeticExpr, SqlParseError> {
+    fn parse_arithmetic_term(pair: Pair<Rule>) -> Result<ArithmeticExpr, Box<SqlParseError>> {
         match pair.as_rule() {
             Rule::arithmetic_term => {
                 let mut inner = pair.into_inner();
@@ -312,14 +312,14 @@ fn parse_condition(pair: Pair<Rule>) -> Result<WhereClause, SqlParseError> {
                 let subquery = SqlParser::parse_subquery(pair)?;
                 Ok(ArithmeticExpr::Subquery(Box::new(subquery)))
             }
-            _ => Err(SqlParseError::InvalidInput(format!(
+            _ => Err(Box::new(SqlParseError::InvalidInput(format!(
                 "Expected arithmetic primary, got {:?}",
                 pair.as_rule()
-            ))),
+            )))),
         }
     }
 
-    fn parse_arithmetic_factor(pair: Pair<Rule>) -> Result<ArithmeticExpr, SqlParseError> {
+    fn parse_arithmetic_factor(pair: Pair<Rule>) -> Result<ArithmeticExpr, Box<SqlParseError>> {
         let factor = pair
             .into_inner()
             .next()
@@ -333,9 +333,9 @@ fn parse_condition(pair: Pair<Rule>) -> Result<WhereClause, SqlParseError> {
                 } else if let Ok(float_val) = factor.as_str().parse::<f64>() {
                     SqlLiteral::Float(float_val)
                 } else {
-                    return Err(SqlParseError::InvalidInput(
+                    return Err(Box::new(SqlParseError::InvalidInput(
                         "Invalid number format".to_string(),
-                    ));
+                    )));
                 };
                 Ok(ArithmeticExpr::Literal(value))
             }
@@ -344,9 +344,9 @@ fn parse_condition(pair: Pair<Rule>) -> Result<WhereClause, SqlParseError> {
                     "true" => SqlLiteral::Boolean(true),
                     "false" => SqlLiteral::Boolean(false),
                     _ => {
-                        return Err(SqlParseError::InvalidInput(
+                        return Err(Box::new(SqlParseError::InvalidInput(
                             "Invalid boolean value".to_string(),
-                        ))
+                        )))
                     }
                 };
                 Ok(ArithmeticExpr::Literal(value))
@@ -394,9 +394,9 @@ fn parse_condition(pair: Pair<Rule>) -> Result<WhereClause, SqlParseError> {
                     "COUNT" => AggregateFunction::Count,
                     "AVG" => AggregateFunction::Avg,
                     _ => {
-                        return Err(SqlParseError::InvalidInput(
+                        return Err(Box::new(SqlParseError::InvalidInput(
                             "Unknown aggregate function".to_string(),
-                        ))
+                        )))
                     }
                 };
 
@@ -411,14 +411,14 @@ fn parse_condition(pair: Pair<Rule>) -> Result<WhereClause, SqlParseError> {
                 let subquery = SqlParser::parse_subquery(factor)?;
                 Ok(ArithmeticExpr::Subquery(Box::new(subquery)))
             }
-            _ => Err(SqlParseError::InvalidInput(format!(
+            _ => Err(Box::new(SqlParseError::InvalidInput(format!(
                 "Invalid arithmetic factor: {:?}",
                 factor.as_rule()
-            ))),
+            )))),
         }
     }
 
-    fn parse_column_ref(pair: Pair<Rule>) -> Result<ColumnRef, SqlParseError> {
+    fn parse_column_ref(pair: Pair<Rule>) -> Result<ColumnRef, Box<SqlParseError>> {
         match pair.as_rule() {
             Rule::asterisk => Ok(ColumnRef {
                 table: None,
@@ -445,14 +445,14 @@ fn parse_condition(pair: Pair<Rule>) -> Result<WhereClause, SqlParseError> {
                 table: None,
                 column: pair.as_str().to_string(),
             }),
-            _ => Err(SqlParseError::InvalidInput(format!(
+            _ => Err(Box::new(SqlParseError::InvalidInput(format!(
                 "Expected column reference, got {:?}",
                 pair.as_rule()
-            ))),
+            )))),
         }
     }
 
-    fn parse_where_field(pair: Pair<Rule>) -> Result<WhereField, SqlParseError> {
+    fn parse_where_field(pair: Pair<Rule>) -> Result<WhereField, Box<SqlParseError>> {
         match pair.as_rule() {
             Rule::arithmetic_expr => Ok(WhereField {
                 column: None,
@@ -475,9 +475,9 @@ fn parse_condition(pair: Pair<Rule>) -> Result<WhereClause, SqlParseError> {
                     "true" => SqlLiteral::Boolean(true),
                     "false" => SqlLiteral::Boolean(false),
                     _ => {
-                        return Err(SqlParseError::InvalidInput(
+                        return Err(Box::new(SqlParseError::InvalidInput(
                             "Invalid boolean value".to_string(),
-                        ))
+                        )))
                     }
                 };
                 Ok(WhereField {
@@ -559,10 +559,10 @@ fn parse_condition(pair: Pair<Rule>) -> Result<WhereClause, SqlParseError> {
                 arithmetic: None,
                 subquery: None,
             }),
-            _ => Err(SqlParseError::InvalidInput(format!(
+            _ => Err(Box::new(SqlParseError::InvalidInput(format!(
                 "Expected where field, got {:?}",
                 pair.as_rule()
-            ))),
+            )))),
         }
     }
 }

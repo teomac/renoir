@@ -6,7 +6,7 @@ use std::sync::Arc;
 pub struct SourceParser;
 
 impl SourceParser {
-    pub fn parse(pair: Pair<Rule>) -> Result<Arc<IrPlan>, IrParseError> {
+    pub fn parse(pair: Pair<Rule>) -> Result<Arc<IrPlan>, Box<IrParseError>> {
         let has_join = pair.as_str().contains("join");
 
 
@@ -34,19 +34,19 @@ impl SourceParser {
                     "left" => JoinType::Left,
                     "outer" => JoinType::Outer,
                     _ => {
-                        return Err(IrParseError::InvalidInput(format!(
+                        return Err(Box::new(IrParseError::InvalidInput(format!(
                             "Invalid join type: {}",
                             pair.as_str()
-                        )))
+                        ))))
                     }
                 };
                 // Get next token which should be 'join'
                 inner.next();
             } else if pair.as_str() != "join" {
-                return Err(IrParseError::InvalidInput(format!(
+                return Err(Box::new(IrParseError::InvalidInput(format!(
                     "Expected join keyword, got {}",
                     pair.as_str()
-                )));
+                ))));
             }
 
             // Parse the join scan
@@ -57,7 +57,7 @@ impl SourceParser {
 
             // Expect and skip 'on' keyword
             if inner.next().map_or(true, |p| p.as_str() != "on") {
-                return Err(IrParseError::InvalidInput("Missing ON in join clause".to_string()));
+                return Err(Box::new(IrParseError::InvalidInput("Missing ON in join clause".to_string())));
             }
 
             // Parse join condition
@@ -78,7 +78,7 @@ impl SourceParser {
         Ok(current_plan)
     }
 
-    fn parse_scan(pair: Pair<Rule>, has_join: bool) -> Result<IrPlan, IrParseError> {
+    fn parse_scan(pair: Pair<Rule>, has_join: bool) -> Result<IrPlan, Box<IrParseError>> {
         let mut inner = pair.into_inner();
         let table_name = inner
             .next()
@@ -87,7 +87,7 @@ impl SourceParser {
         let mut alias = None;
         let mut stream_input = None;
 
-        while let Some(pair) = inner.next() {
+        for pair in inner {
             match pair.as_rule() {
                 Rule::identifier => {
                     if alias.is_none() {
@@ -103,9 +103,9 @@ impl SourceParser {
 
         // Input source is required
         if stream_input.is_none() {
-            return Err(IrParseError::InvalidInput(
+            return Err(Box::new(IrParseError::InvalidInput(
                 "Missing input source for stream".to_string(),
-            ));
+            )));
         }
 
         
@@ -124,26 +124,26 @@ impl SourceParser {
             }
             Rule::subquery => {
                 let subquery = IrParser::parse_subquery(table_name)?;
-                return Ok(IrPlan::Scan {
+                Ok(IrPlan::Scan {
                     stream_name: stream_input.unwrap(),
                     alias,
                     input: subquery,
-                });
+                })
             }
             _ => {
-                return Err(IrParseError::InvalidInput(
+                Err(Box::new(IrParseError::InvalidInput(
                     "Invalid input source for stream".to_string(),
-                ));
+                )))
             }
 
         }
     }
 
-    fn parse_qualified_column(pair: Pair<Rule>) -> Result<ColumnRef, IrParseError> {
+    fn parse_qualified_column(pair: Pair<Rule>) -> Result<ColumnRef, Box<IrParseError>> {
         if pair.as_rule() != Rule::qualified_column {
-            return Err(IrParseError::InvalidInput(
+            return Err(Box::new(IrParseError::InvalidInput(
                 "Join condition must use qualified column references".to_string(),
-            ));
+            )));
         }
 
         let mut inner = pair.into_inner();
@@ -166,7 +166,7 @@ impl SourceParser {
 }
 
 impl JoinCondition {
-    fn parse(pair: Pair<Rule>) -> Result<Vec<JoinCondition>, IrParseError> {
+    fn parse(pair: Pair<Rule>) -> Result<Vec<JoinCondition>, Box<IrParseError>> {
         let mut conditions = Vec::new();
         let mut pairs = pair.into_inner().peekable();
 

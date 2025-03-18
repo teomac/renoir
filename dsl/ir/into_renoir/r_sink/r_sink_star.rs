@@ -21,7 +21,7 @@ pub fn create_star_map(stream_name: &String, query_object: &QueryObject) -> Stri
         all_streams.push(stream_name.clone());
     }
 
-    let is_grouped = stream.is_keyed && stream.key_columns.len() > 0;
+    let is_grouped = stream.is_keyed && !stream.key_columns.is_empty();
 
     if !is_grouped {
         for stream in all_streams.iter() {
@@ -92,34 +92,32 @@ pub fn create_star_map(stream_name: &String, query_object: &QueryObject) -> Stri
                         ));
                     }
                 }
-                else{
-                    if col_type == "f64" {
-                        result.push_str(&format!(
-                            "{}: if x.0.{}.is_some() {{ Some(x.0.{}.unwrap().into_inner() as f64) }} else {{ None }},",
-                            query_object
-                                .result_column_types
-                                .get_index(offset)
-                                .unwrap()
-                                .0,
-                            index,
-                            index
-                        ));
-                    } else {
-                        result.push_str(&format!(
-                            "{}: x.0.{}{},",
-                            query_object
-                                .result_column_types
-                                .get_index(offset)
-                                .unwrap()
-                                .0,
-                            index,
-                            if col_type == "String"{
-                                ".clone()"
-                            } else {
-                                ""
-                            }
-                        ));
-                    }
+                else if col_type == "f64" {
+                    result.push_str(&format!(
+                        "{}: if x.0.{}.is_some() {{ Some(x.0.{}.unwrap().into_inner() as f64) }} else {{ None }},",
+                        query_object
+                            .result_column_types
+                            .get_index(offset)
+                            .unwrap()
+                            .0,
+                        index,
+                        index
+                    ));
+                } else {
+                    result.push_str(&format!(
+                        "{}: x.0.{}{},",
+                        query_object
+                            .result_column_types
+                            .get_index(offset)
+                            .unwrap()
+                            .0,
+                        index,
+                        if col_type == "String"{
+                            ".clone()"
+                        } else {
+                            ""
+                        }
+                    ));
                 }
                
             } else {

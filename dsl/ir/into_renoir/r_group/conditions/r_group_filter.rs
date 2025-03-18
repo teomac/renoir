@@ -23,7 +23,7 @@ pub fn create_filter_operation(
         acc_info,
     ));
 
-    filter_str.push_str(")");
+    filter_str.push(')');
 
     filter_str
 }
@@ -94,25 +94,10 @@ fn process_filter_condition(
                                     right_expr
                                 )
                             }
-                        } else {
-                            if is_check_list_empty {
-                                format!("{} {} {}", left_expr, operator, right_expr)
-                            } else {
-                                // Different non-numeric types - this should already be caught during validation
-                                format!(
-                                    "if {} {{({}) {} ({})}} else {{ false }}",
-                                    check_list.join(" && "),
-                                    left_expr,
-                                    operator,
-                                    right_expr
-                                )
-                            }
-                        }
-                    } else {
-                        if is_check_list_empty {
+                        } else if is_check_list_empty {
                             format!("{} {} {}", left_expr, operator, right_expr)
                         } else {
-                            // Same types
+                            // Different non-numeric types - this should already be caught during validation
                             format!(
                                 "if {} {{({}) {} ({})}} else {{ false }}",
                                 check_list.join(" && "),
@@ -121,6 +106,17 @@ fn process_filter_condition(
                                 right_expr
                             )
                         }
+                    } else if is_check_list_empty {
+                        format!("{} {} {}", left_expr, operator, right_expr)
+                    } else {
+                        // Same types
+                        format!(
+                            "if {} {{({}) {} ({})}} else {{ false }}",
+                            check_list.join(" && "),
+                            left_expr,
+                            operator,
+                            right_expr
+                        )
                     }
                 }
                 GroupBaseCondition::NullCheck(null_check) => {
@@ -167,14 +163,12 @@ fn process_filter_condition(
                             query_object
                                 .get_stream_from_alias(col_ref.table.as_ref().unwrap())
                                 .unwrap()
+                        } else if query_object.streams.len() == 1 {
+                            query_object.streams.first().unwrap().0
                         } else {
-                            if query_object.streams.len() == 1 {
-                                query_object.streams.first().unwrap().0
-                            } else {
-                                panic!("Column reference must have a table reference")
-                            }
+                            panic!("Column reference must have a table reference")
                         };
-                        let stream = query_object.get_stream(&stream_name);
+                        let stream = query_object.get_stream(stream_name);
                         stream.check_if_column_exists(&col_ref.column);
 
                         format!(
@@ -196,8 +190,8 @@ fn process_filter_condition(
                     match lit {
                         IrLiteral::Boolean(_) | IrLiteral::Integer(_) | IrLiteral::Float(_) => {
                             match null_check.operator {
-                                NullOp::IsNull => format!("false"),
-                                NullOp::IsNotNull => format!("true"),
+                                NullOp::IsNull => "false".to_string(),
+                                NullOp::IsNotNull => "true".to_string(),
                             }
                         }
                         IrLiteral::String(string) => {
@@ -213,8 +207,8 @@ fn process_filter_condition(
                 }
                 else if null_check.field.aggregate.is_some(){
                     match null_check.operator {
-                        NullOp::IsNull => format!("false"),
-                        NullOp::IsNotNull => format!("true"),
+                        NullOp::IsNull => "false".to_string(),
+                        NullOp::IsNotNull => "true".to_string(),
                     }
                 }
                 else {
@@ -247,7 +241,7 @@ fn process_filter_field(
     keys: &Vec<ColumnRef>,
     query_object: &QueryObject,
     acc_info: &GroupAccumulatorInfo,
-    mut check_list: &mut Vec<String>, // Added parameter
+    check_list: &mut Vec<String>, // Added parameter
 ) -> String {
     if let Some(ref nested) = field.nested_expr {
         let (left, op, right) = &**nested;
@@ -255,8 +249,8 @@ fn process_filter_field(
         let left_type = query_object.get_complex_field_type(left);
         let right_type = query_object.get_complex_field_type(right);
 
-        let left_expr = process_filter_field(left, keys, query_object, acc_info, &mut check_list);
-        let right_expr = process_filter_field(right, keys, query_object, acc_info, &mut check_list);
+        let left_expr = process_filter_field(left, keys, query_object, acc_info, check_list);
+        let right_expr = process_filter_field(right, keys, query_object, acc_info, check_list);
 
         // Improved type handling for arithmetic operations
         if left_type != right_type {
@@ -350,15 +344,13 @@ fn process_filter_field(
                 query_object
                     .get_stream_from_alias(col.table.as_ref().unwrap())
                     .unwrap()
+            } else if query_object.streams.len() == 1 {
+                query_object.streams.first().unwrap().0
             } else {
-                if query_object.streams.len() == 1 {
-                    query_object.streams.first().unwrap().0
-                } else {
-                    panic!("Column reference must have a table reference")
-                }
+                panic!("Column reference must have a table reference")
             };
 
-            let stream = query_object.get_stream(&stream_name);
+            let stream = query_object.get_stream(stream_name);
 
             stream.check_if_column_exists(&col.column);
 
@@ -392,7 +384,7 @@ fn process_filter_field(
         // Aggregates are always in x.1
         let col = &agg.column;
         let col_access = if acc_info.agg_positions.len() == 1 {
-            format!("x.1")
+            "x.1".to_string()
         } else {
             format!("x.1.{}", agg_pos)
         };
@@ -403,7 +395,7 @@ fn process_filter_field(
 
         match agg.function {
             AggregateType::Count => {
-                format!("{}", col_access)
+                col_access.to_string()
             }
             AggregateType::Max | AggregateType::Min | AggregateType::Sum => {
                 format!("{}.unwrap()", col_access)

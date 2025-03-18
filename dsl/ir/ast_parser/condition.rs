@@ -7,7 +7,7 @@ use pest::iterators::Pair;
 pub struct ConditionParser;
 
 impl ConditionParser {
-    pub fn parse(pair: Pair<Rule>) -> Result<FilterClause, IrParseError> {
+    pub fn parse(pair: Pair<Rule>) -> Result<FilterClause, Box<IrParseError>> {
         let mut inner = pair.into_inner();
 
         // Skip 'where' keyword if present
@@ -22,7 +22,7 @@ impl ConditionParser {
         Self::parse_conditions(conditions)
     }
 
-    pub fn parse_conditions(conditions_pair: Pair<Rule>) -> Result<FilterClause, IrParseError> {
+    pub fn parse_conditions(conditions_pair: Pair<Rule>) -> Result<FilterClause, Box<IrParseError>> {
         let mut pairs = conditions_pair.into_inner().peekable();
 
         let first = pairs
@@ -33,10 +33,10 @@ impl ConditionParser {
             Rule::filter_term => Self::parse_term(first)?,
             Rule::condition => Self::parse_single_condition(first)?,
             _ => {
-                return Err(IrParseError::InvalidInput(format!(
+                return Err(Box::new(IrParseError::InvalidInput(format!(
                     "Unexpected rule: {:?}",
                     first.as_rule()
-                )))
+                ))))
             }
         };
 
@@ -46,10 +46,10 @@ impl ConditionParser {
                 "&&" => BinaryOp::And,
                 "||" => BinaryOp::Or,
                 _ => {
-                    return Err(IrParseError::InvalidInput(format!(
+                    return Err(Box::new(IrParseError::InvalidInput(format!(
                         "Invalid binary operator: {}",
                         op.as_str()
-                    )))
+                    ))))
                 }
             };
 
@@ -61,10 +61,10 @@ impl ConditionParser {
                 Rule::filter_term => Self::parse_term(right_term)?,
                 Rule::condition => Self::parse_single_condition(right_term)?,
                 _ => {
-                    return Err(IrParseError::InvalidInput(format!(
+                    return Err(Box::new(IrParseError::InvalidInput(format!(
                         "Unexpected rule: {:?}",
                         right_term.as_rule()
-                    )))
+                    ))))
                 }
             };
 
@@ -78,7 +78,7 @@ impl ConditionParser {
         Ok(left)
     }
 
-    fn parse_term(pair: Pair<Rule>) -> Result<FilterClause, IrParseError> {
+    fn parse_term(pair: Pair<Rule>) -> Result<FilterClause, Box<IrParseError>> {
         let mut inner = pair.into_inner();
 
         let first = inner
@@ -94,14 +94,14 @@ impl ConditionParser {
                 Self::parse_conditions(conditions)
             }
             Rule::condition => Self::parse_single_condition(first),
-            _ => Err(IrParseError::InvalidInput(format!(
+            _ => Err(Box::new(IrParseError::InvalidInput(format!(
                 "Invalid term: {:?}",
                 first.as_rule()
-            ))),
+            )))),
         }
     }
 
-    fn parse_single_condition(condition_pair: Pair<Rule>) -> Result<FilterClause, IrParseError> {
+    fn parse_single_condition(condition_pair: Pair<Rule>) -> Result<FilterClause, Box<IrParseError>> {
         let mut inner = condition_pair.into_inner();
 
         // Get the first field
@@ -127,10 +127,10 @@ impl ConditionParser {
                     "==" => ComparisonOp::Equal, // Changed from = to ==
                     "!=" => ComparisonOp::NotEqual,
                     op => {
-                        return Err(IrParseError::InvalidInput(format!(
+                        return Err(Box::new(IrParseError::InvalidInput(format!(
                             "Invalid operator: {}",
                             op
-                        )))
+                        ))))
                     }
                 };
 
@@ -153,10 +153,10 @@ impl ConditionParser {
                         "is null" => NullOp::IsNull,
                         "is not null" => NullOp::IsNotNull,
                         _ => {
-                            return Err(IrParseError::InvalidInput(format!(
+                            return Err(Box::new(IrParseError::InvalidInput(format!(
                                 "Invalid null operator: {}",
                                 operator_pair.as_str()
-                            )))
+                            ))))
                         }
                     };
 
@@ -167,19 +167,19 @@ impl ConditionParser {
                         },
                     )))
                 } else {
-                    Err(IrParseError::InvalidInput(
+                    Err(Box::new(IrParseError::InvalidInput(
                         "Expected null operator".to_string(),
-                    ))
+                    )))
                 }
             }
-            _ => Err(IrParseError::InvalidInput(format!(
+            _ => Err(Box::new(IrParseError::InvalidInput(format!(
                 "Unexpected token in condition: {:?}",
                 first.as_rule()
-            ))),
+            )))),
         }
     }
 
-    fn parse_arithmetic_expr(pair: Pair<Rule>) -> Result<ComplexField, IrParseError> {
+    fn parse_arithmetic_expr(pair: Pair<Rule>) -> Result<ComplexField, Box<IrParseError>> {
         let mut inner = pair.into_inner();
         let first_term = inner
             .next()
@@ -204,7 +204,7 @@ impl ConditionParser {
         Ok(result)
     }
 
-    fn parse_arithmetic_term(pair: Pair<Rule>) -> Result<ComplexField, IrParseError> {
+    fn parse_arithmetic_term(pair: Pair<Rule>) -> Result<ComplexField, Box<IrParseError>> {
         let inner = pair
             .clone()
             .into_inner()
@@ -233,14 +233,14 @@ impl ConditionParser {
                     subquery: Some(subquery),
                 })
             }
-            _ => Err(IrParseError::InvalidInput(format!(
+            _ => Err(Box::new(IrParseError::InvalidInput(format!(
                 "Unexpected token in arithmetic term: {:?}",
                 inner.as_rule()
-            ))),
+            )))),
         }
     }
 
-    fn parse_arithmetic_operand(pair: Pair<Rule>) -> Result<ComplexField, IrParseError> {
+    fn parse_arithmetic_operand(pair: Pair<Rule>) -> Result<ComplexField, Box<IrParseError>> {
         let operand = pair
             .into_inner()
             .next()
@@ -284,10 +284,10 @@ impl ConditionParser {
                     subquery: None,
                 })
             }
-            _ => Err(IrParseError::InvalidInput(format!(
+            _ => Err(Box::new(IrParseError::InvalidInput(format!(
                 "Invalid operand type: {:?}",
                 operand.as_rule()
-            ))),
+            )))),
         }
     }
 
@@ -406,7 +406,7 @@ impl ConditionParser {
         Ok(AggregateFunction { function, column })
     }
 
-    fn parse_field_reference(pair: Pair<Rule>) -> Result<ComplexField, IrParseError> {
+    fn parse_field_reference(pair: Pair<Rule>) -> Result<ComplexField, Box<IrParseError>> {
         match pair.as_rule() {
             Rule::qualified_column => {
                 let col_ref = Self::parse_qualified_column(pair)?;
@@ -449,10 +449,10 @@ impl ConditionParser {
                     subquery: Some(subquery),
                 })
             }
-            _ => Err(IrParseError::InvalidInput(format!(
+            _ => Err(Box::new(IrParseError::InvalidInput(format!(
                 "Expected field reference, got {:?}",
                 pair.as_rule()
-            ))),
+            )))),
         }
     }
 }

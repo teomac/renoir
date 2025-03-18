@@ -140,7 +140,7 @@ pub fn process_group_by(
     
             // Generate operations using the collected information
             if !acc_info.agg_positions.is_empty(){
-                group_string_condition.push_str(&create_fold_operation(&acc_info, &stream_name, query_object));
+                group_string_condition.push_str(&create_fold_operation(&acc_info, stream_name, query_object));
             }
             group_string_condition.push_str(&create_filter_operation(condition, keys, query_object, &acc_info));
         }
@@ -163,7 +163,7 @@ pub fn process_group_by(
 /// # Returns
 ///
 /// A String containing the tuple of column references for group by
-fn process_group_by_keys(columns: &Vec<ColumnRef>, query_object: &mut QueryObject) -> String {
+fn process_group_by_keys(columns: &[ColumnRef], query_object: &mut QueryObject) -> String {
     if !query_object.has_join {
         let stream_name = query_object.streams.keys().cloned().collect::<Vec<String>>()[0].clone();
         let stream  = query_object.get_stream(&stream_name).clone();
@@ -172,7 +172,7 @@ fn process_group_by_keys(columns: &Vec<ColumnRef>, query_object: &mut QueryObjec
             .iter()
             .map(|col| {
                 let col_stream = col.table.as_ref().unwrap_or(&stream_name);
-                check_column_validity(col, &col_stream, query_object);
+                check_column_validity(col, col_stream, query_object);
                 let needs_casting = stream.get_field_type(&col.column) == "f64";
                 format!("x.{}.clone(){}", col.column, if needs_casting { ".map(OrderedFloat)" } else { "" })
             })
@@ -181,9 +181,9 @@ fn process_group_by_keys(columns: &Vec<ColumnRef>, query_object: &mut QueryObjec
             
             let stream = query_object.get_mut_stream(&stream_name);
             stream.is_keyed = true;
-            stream.key_columns.extend(columns.clone());
+            stream.key_columns.extend(columns.to_owned());
 
-            return final_string;
+            final_string
     } else {
         // With joins - need to handle tuple access
         let final_string = columns
@@ -224,7 +224,7 @@ fn process_group_by_keys(columns: &Vec<ColumnRef>, query_object: &mut QueryObjec
             .collect::<Vec<_>>()
             .join(", ");
 
-        return final_string;
+        final_string
     }
 }
 

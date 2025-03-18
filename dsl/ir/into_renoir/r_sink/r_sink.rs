@@ -31,7 +31,7 @@ pub fn process_projections(
                 final_string = create_simple_map(projections, stream_name, query_object);
             }
         }
-        let stream = query_object.get_mut_stream(&stream_name);
+        let stream = query_object.get_mut_stream(stream_name);
 
         stream.insert_op(final_string.clone());
 
@@ -58,7 +58,7 @@ pub fn process_projections(
         final_string = create_simple_map(projections, stream_name, query_object);
     }
 
-    let stream = query_object.get_mut_stream(&stream_name);
+    let stream = query_object.get_mut_stream(stream_name);
 
     stream.insert_op(final_string.clone());
 

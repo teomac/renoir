@@ -15,6 +15,12 @@ pub struct AccumulatorInfo {
     pub value_positions: IndexMap<AccumulatorValue, (usize, String)>, // (position, type)
 }
 
+impl Default for AccumulatorInfo {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl AccumulatorInfo {
     pub fn new() -> Self {
         AccumulatorInfo {

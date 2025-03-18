@@ -26,8 +26,8 @@ pub fn process_join(
         let mut right_col = condition.right_col.clone();
 
         // Get the stream names from aliases
-        let mut left_stream_name = query_object.get_stream_from_alias(&left_col.table.as_ref().unwrap()).unwrap().clone();
-        let mut right_stream_name = query_object.get_stream_from_alias(&right_col.table.as_ref().unwrap()).unwrap().clone();
+        let mut left_stream_name = query_object.get_stream_from_alias(left_col.table.as_ref().unwrap()).unwrap().clone();
+        let mut right_stream_name = query_object.get_stream_from_alias(right_col.table.as_ref().unwrap()).unwrap().clone();
 
         // Validate columns
         check_column_validity(&left_col, &left_stream_name, query_object);

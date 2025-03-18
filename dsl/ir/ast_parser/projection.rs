@@ -7,7 +7,7 @@ use pest::iterators::Pair;
 pub struct ProjectionParser;
 
 impl ProjectionParser {
-    pub fn parse(pair: Pair<Rule>) -> Result<(Vec<ProjectionColumn>, bool), IrParseError> {
+    pub fn parse(pair: Pair<Rule>) -> Result<(Vec<ProjectionColumn>, bool), Box<IrParseError>> {
         let mut inner = pair.into_inner();
         let mut distinct = false;
 
@@ -51,13 +51,10 @@ impl ProjectionParser {
                         // Look for alias - will be after AS keyword
                         let mut alias = None;
                         while let Some(next) = inner_pairs.next() {
-                            match next.as_rule() {
-                                Rule::as_keyword => {
-                                    if let Some(alias_ident) = inner_pairs.next() {
-                                        alias = Some(alias_ident.as_str().to_string());
-                                    }
+                            if next.as_rule() == Rule::as_keyword {
+                                if let Some(alias_ident) = inner_pairs.next() {
+                                    alias = Some(alias_ident.as_str().to_string());
                                 }
-                                _ => {}
                             }
                         }
 
@@ -88,26 +85,26 @@ impl ProjectionParser {
                                 let subquery = IrParser::parse_subquery(expr)?;
                                 Ok(ProjectionColumn::Subquery(subquery, alias))
                             }
-                            _ => Err(IrParseError::InvalidInput(format!(
+                            _ => Ok(Err(IrParseError::InvalidInput(format!(
                                 "Invalid column expression: {:?}",
                                 expr.as_rule()
-                            ))),
+                            )))?),
                         }
                     })
                     .collect::<Result<Vec<_>, _>>()?
             }
             _ => {
-                return Err(IrParseError::InvalidInput(format!(
+                return Err(Box::new(IrParseError::InvalidInput(format!(
                     "Invalid sink expression: {:?}",
                     sink_expr.as_rule()
-                )))
+                ))))
             }
         };
 
         Ok((proj_columns, distinct))
     }
 
-    fn parse_column_ref(pair: Pair<Rule>) -> Result<ColumnRef, IrParseError> {
+    fn parse_column_ref(pair: Pair<Rule>) -> Result<ColumnRef, Box<IrParseError>> {
         match pair.as_rule() {
             Rule::qualified_column => {
                 let mut inner = pair.into_inner();
@@ -130,14 +127,14 @@ impl ProjectionParser {
                 table: None,
                 column: pair.as_str().to_string(),
             }),
-            _ => Err(IrParseError::InvalidInput(format!(
+            _ => Err(Box::new(IrParseError::InvalidInput(format!(
                 "Expected field reference, got {:?}",
                 pair.as_rule()
-            ))),
+            )))),
         }
     }
 
-    fn parse_aggregate_function(pair: Pair<Rule>) -> Result<AggregateFunction, IrParseError> {
+    fn parse_aggregate_function(pair: Pair<Rule>) -> Result<AggregateFunction, Box<IrParseError>> {
         let mut agg = pair.into_inner();
 
         let func = match agg
@@ -153,10 +150,10 @@ impl ProjectionParser {
             "sum" => AggregateType::Sum,
             "count" => AggregateType::Count,
             unknown => {
-                return Err(IrParseError::InvalidInput(format!(
+                return Err(Box::new(IrParseError::InvalidInput(format!(
                     "Unknown aggregate function: {}",
                     unknown
-                )))
+                ))))
             }
         };
 
@@ -174,7 +171,7 @@ impl ProjectionParser {
     fn parse_complex_operation(
         pair: Pair<Rule>,
         alias: Option<String>,
-    ) -> Result<ProjectionColumn, IrParseError> {
+    ) -> Result<ProjectionColumn, Box<IrParseError>> {
         let mut pairs = pair.into_inner().peekable();
 
         // Parse first operand
@@ -183,13 +180,13 @@ impl ProjectionParser {
                 Rule::parenthesized_expr => Self::parse_parenthesized_expr(first)?,
                 Rule::column_operand => Self::parse_operand(first)?,
                 _ => {
-                    return Err(IrParseError::InvalidInput(format!(
+                    return Err(Box::new(IrParseError::InvalidInput(format!(
                         "Invalid first operand: {:?}",
                         first.as_rule()
-                    )))
+                    ))))
                 }
             },
-            None => return Err(IrParseError::InvalidInput("Missing operand".to_string())),
+            None => return Err(Box::new(IrParseError::InvalidInput("Missing operand".to_string()))),
         };
 
         // Process operators and operands in pairs
@@ -204,16 +201,16 @@ impl ProjectionParser {
                     Rule::parenthesized_expr => Self::parse_parenthesized_expr(right_pair)?,
                     Rule::column_operand => Self::parse_operand(right_pair)?,
                     _ => {
-                        return Err(IrParseError::InvalidInput(format!(
+                        return Err(Box::new(IrParseError::InvalidInput(format!(
                             "Invalid right operand: {:?}",
                             right_pair.as_rule()
-                        )))
+                        ))))
                     }
                 },
                 None => {
-                    return Err(IrParseError::InvalidInput(
+                    return Err(Box::new(IrParseError::InvalidInput(
                         "Missing right operand".to_string(),
-                    ))
+                    )))
                 }
             };
 
@@ -229,7 +226,7 @@ impl ProjectionParser {
         Ok(ProjectionColumn::ComplexValue(left_field, alias))
     }
 
-    fn parse_parenthesized_expr(pair: Pair<Rule>) -> Result<ComplexField, IrParseError> {
+    fn parse_parenthesized_expr(pair: Pair<Rule>) -> Result<ComplexField, Box<IrParseError>> {
         let mut inner = pair.into_inner();
 
         // Skip left parenthesis
@@ -253,23 +250,23 @@ impl ProjectionParser {
                         {
                             Ok(left_field)
                         } else {
-                            Err(IrParseError::InvalidInput(
+                            Err(Box::new(IrParseError::InvalidInput(
                                 "Invalid complex operation".to_string(),
-                            ))
+                            )))
                         }
                     }
-                    _ => Err(IrParseError::InvalidInput(
+                    _ => Err(Box::new(IrParseError::InvalidInput(
                         "Invalid parenthesized expression".to_string(),
-                    )),
+                    ))),
                 }
             }
-            _ => Err(IrParseError::InvalidInput(
+            _ => Err(Box::new(IrParseError::InvalidInput(
                 "Invalid parenthesized expression content".to_string(),
-            )),
+            ))),
         }
     }
 
-    fn parse_operand(pair: Pair<Rule>) -> Result<ComplexField, IrParseError> {
+    fn parse_operand(pair: Pair<Rule>) -> Result<ComplexField, Box<IrParseError>> {
         let operand = pair
             .into_inner()
             .next()
@@ -314,10 +311,10 @@ impl ProjectionParser {
                 nested_expr: None,
                 subquery: Some(IrParser::parse_subquery(operand)?),
             }),
-            _ => Err(IrParseError::InvalidInput(format!(
+            _ => Err(Box::new(IrParseError::InvalidInput(format!(
                 "Invalid operand: {:?}",
                 operand.as_rule()
-            ))),
+            )))),
         }
     }
 }

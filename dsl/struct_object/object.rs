@@ -54,6 +54,12 @@ pub struct QueryObject {
                                                //Here we store ONLY the aggregates in the final projection, that we will need to generate the fold in case of a group by
 }
 
+impl Default for QueryObject {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl QueryObject {
     pub fn new() -> Self {
         QueryObject {
@@ -487,14 +493,12 @@ impl QueryObject {
                                 let stream_name = if key_col.table.is_some() {
                                     self.get_stream_from_alias(key_col.table.as_ref().unwrap())
                                         .unwrap()
+                                } else if all_streams.len() == 1 {
+                                    &all_streams[0]
                                 } else {
-                                    if all_streams.len() == 1 {
-                                        &all_streams[0]
-                                    } else {
-                                        panic!(
-                                            "Column reference must have table name in JOIN query"
-                                        );
-                                    }
+                                    panic!(
+                                        "Column reference must have table name in JOIN query"
+                                    );
                                 };
 
                                 let table = self.get_stream(stream_name).source_table.clone();

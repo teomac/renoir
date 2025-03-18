@@ -27,7 +27,7 @@ use pest_derive::Parser;
 pub struct SqlParser;
 
 impl SqlParser {
-    pub fn parse_query(input: &str) -> Result<SqlAST, SqlParseError> {
+    pub fn parse_query(input: &str) -> Result<SqlAST, Box<SqlParseError>> {
         let pairs = Self::parse(Rule::query, input).map_err(SqlParseError::PestError)?;
 
         //println!("Pairs: {:?}", pairs);
@@ -35,12 +35,12 @@ impl SqlParser {
         SqlASTBuilder::build_ast_from_pairs(pairs)
     }
 
-    pub fn parse_subquery(pair: Pair<Rule>) -> Result<SqlAST, SqlParseError> {
+    pub fn parse_subquery(pair: Pair<Rule>) -> Result<SqlAST, Box<SqlParseError>> {
         if pair.as_rule() != Rule::subquery_expr {
-            return Err(SqlParseError::InvalidInput(format!(
+            return Err(Box::new(SqlParseError::InvalidInput(format!(
                 "Expected subquery expression, got {:?}",
                 pair.as_rule()
-            )));
+            ))));
         }
                 
         // For subqueries, we need to create a new parser instance

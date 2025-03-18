@@ -264,10 +264,8 @@ fn create_fold(acc_info: &mut AccumulatorInfo, stream_name: &String, query_objec
                 if !is_grouped{
                     panic!("Cannot use column in projection clause in non-grouped query");
                 }
-                else {
-                    if !keys.contains(col) {
-                        panic!("Cannot use column in projection clause in grouped query that is not a key column");
-                    }
+                else if !keys.contains(col) {
+                    panic!("Cannot use column in projection clause in grouped query that is not a key column");
                 }
             }
             AccumulatorValue::Literal(_) => {
@@ -382,7 +380,7 @@ pub fn create_map(projection_clauses: &Vec<ProjectionColumn>, acc_info: &Accumul
                 let temp = process_complex_field_for_map(
                     field,
                     stream_name,
-                    &acc_info,
+                    acc_info,
                     query_object,
                     &mut check_list,
                 );
@@ -424,18 +422,15 @@ pub fn create_map(projection_clauses: &Vec<ProjectionColumn>, acc_info: &Accumul
                         let is_single_key = keys.len() == 1;
                         if is_single_key {
                             if col_type == "f64" {
-                                format!("if x.0.is_some() {{ x.0.unwrap().into_inner() }} else {{ None }}")
+                                "if x.0.is_some() { x.0.unwrap().into_inner() } else { None }".to_string()
                             } else {
                                 format!("x.0{}", if col_type == "String" { ".clone()" } else { "" })
                             }
                             
+                        } else if col_type == "f64" {
+                            format!("if x.0.{}.is_some() {{ x.0.{}.unwrap().into_inner() }} else {{ None }}", key_position, key_position)
                         } else {
-                            if col_type == "f64" {
-                                format!("if x.0.{}.is_some() {{ x.0.{}.unwrap().into_inner() }} else {{ None }}", key_position, key_position)
-                            } else {
-                                format!("x.0.{}{}", key_position, if col_type == "String" { ".clone()" } else { "" })
-                            }
-                            
+                            format!("x.0.{}{}", key_position, if col_type == "String" { ".clone()" } else { "" })
                         }
             }
             ProjectionColumn::StringLiteral(value, _) => {
@@ -539,16 +534,14 @@ fn process_complex_field_for_map(field: &ComplexField, stream_name: &String, acc
                     return format!("({} {} {} as f64)", processed_left, op, processed_right);
                 }
 
-                return format!("({} {} {})", processed_left, op, processed_right);
+                format!("({} {} {})", processed_left, op, processed_right)
             } else {
                 panic!("Invalid arithmetic expression - incompatible types: {} and {}", left_type, right_type);
             }
         } else {
             // Same type case
-            if op == "+" || op == "-" || op == "*" || op == "/" || op == "^" {
-                if left_type != "f64" && left_type != "i64" {
-                    panic!("Invalid arithmetic expression - non-numeric types: {} and {}", left_type, right_type);
-                }
+            if (op == "+" || op == "-" || op == "*" || op == "/" || op == "^") && left_type != "f64" && left_type != "i64" {
+                panic!("Invalid arithmetic expression - non-numeric types: {} and {}", left_type, right_type);
             }
 
             if op == "/" {
@@ -595,22 +588,19 @@ fn process_complex_field_for_map(field: &ComplexField, stream_name: &String, acc
         // Key columns are accessed via x.0 and don't need safety checks
         if is_single_key {
             if col_type == "f64" {
-                check_list.push(format!("x.0.is_some()"));
-                return format!("x.0.unwrap().into_inner()");
+                check_list.push("x.0.is_some()".to_string());
+                return "x.0.unwrap().into_inner()".to_string();
             } else {
                 return format!("x.0{}", if col_type == "String" { ".clone()" } else { "" });
             }
             
         }
-        else{
-            if col_type == "f64" {
-                check_list.push(format!("x.0.{}.is_some()", key_position));
-                return format!("x.0.{}.unwrap().into_inner()", key_position);
-            } else {
-                return format!("x.0.{}{}", key_position, if col_type == "String" { ".clone()" } else { "" });
+        else if col_type == "f64" {
+            check_list.push(format!("x.0.{}.is_some()", key_position));
+            return format!("x.0.{}.unwrap().into_inner()", key_position);
+        } else {
+            return format!("x.0.{}{}", key_position, if col_type == "String" { ".clone()" } else { "" });
 
-            }
-            
         }
 
     } else if let Some(ref lit) = field.literal {
