@@ -58,15 +58,11 @@ pub fn create_fold_operation(
                                     .get_stream_from_alias(col.table.as_ref().unwrap())
                                     .unwrap()
                             } else {
-                                let all_streams = query_object
-                                    .streams
-                                    .keys()
-                                    .cloned()
-                                    .collect::<Vec<String>>();
-                                if all_streams.len() > 1 {
+                                if query_object.streams.len() == 1 {
+                                    query_object.streams.first().unwrap().0
+                                } else{
                                     panic!("Missing stream reference: {}", col.column);
                                 }
-                                &all_streams[0].clone()
                             };
 
                             let stream = query_object.get_stream(stream_name);

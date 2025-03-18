@@ -5,9 +5,9 @@ use std::sync::Arc;
 pub enum IrPlan {
     // Source operations
     Scan {
+        input: Arc<IrPlan>,
         stream_name: String,
         alias: Option<String>,
-        input_source: Arc<IrPlan>,
     },
     
     // Transformation operations
@@ -196,7 +196,7 @@ pub enum BinaryOp {
 impl IrPlan {
     // Convenience method to create a scan operation
     pub fn scan(stream_name: String, alias: Option<String>, input_source: Arc<IrPlan>) -> Self {
-        IrPlan::Scan { stream_name, alias, input_source }
+        IrPlan::Scan { stream_name, alias, input: input_source }
     }
     
     // Convenience method to create a filter operation

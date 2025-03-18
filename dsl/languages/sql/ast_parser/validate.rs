@@ -243,13 +243,14 @@ fn validate_arithmetic_columns(
                                 && (gb_col.table == col_ref.table || col_ref.table.is_none())
                         });
         
-                        Ok(if !is_in_group_by {
-                            return Err(SqlParseError::InvalidInput(
-                                format!("Column '{}' in HAVING clause must be in GROUP BY or used in an aggregate function", 
-                                    col_ref.to_string()
-                                )
-                            ));
-                        })
+                        if !is_in_group_by {
+                           return Err(SqlParseError::InvalidInput(
+                               format!("Column '{}' in HAVING clause must be in GROUP BY or used in an aggregate function",
+                                   col_ref.to_string()
+                              )
+                           ));
+                       };
+                        Ok(())
             }
         ArithmeticExpr::Aggregate(_, _) => {
                 Ok(())

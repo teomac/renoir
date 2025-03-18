@@ -119,7 +119,7 @@ impl SourceParser {
                 return Ok(IrPlan::Scan {
                     stream_name: stream_input.unwrap(),
                     alias,
-                    input_source: IrPlan::Table { table_name: table_name.as_str().to_string() }.into(),
+                    input: IrPlan::Table { table_name: table_name.as_str().to_string() }.into(),
                 });
             }
             Rule::subquery => {
@@ -127,7 +127,7 @@ impl SourceParser {
                 return Ok(IrPlan::Scan {
                     stream_name: stream_input.unwrap(),
                     alias,
-                    input_source: subquery,
+                    input: subquery,
                 });
             }
             _ => {

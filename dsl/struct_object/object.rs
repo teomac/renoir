@@ -83,10 +83,10 @@ impl QueryObject {
         &mut self,
         stream_name: &String,
         source_table: &String,
-        alias: &String,
+        alias: &str,
     ) {
         //create the StreamInfo object
-        let mut stream = StreamInfo::new(stream_name.clone(), source_table.clone(), alias.clone());
+        let mut stream = StreamInfo::new(stream_name.clone(), source_table.clone(), alias.to_owned());
 
         //check if the stream already exists
         if self.check_stream(&stream) {
@@ -95,7 +95,7 @@ impl QueryObject {
 
         if !alias.is_empty() {
             self.alias_to_stream
-                .insert(alias.clone(), stream_name.clone());
+                .insert(alias.to_owned(), stream_name.clone());
         }
 
         stream.update_columns(self.tables_info.get(source_table).unwrap().clone());
@@ -104,21 +104,21 @@ impl QueryObject {
     }
 
     //method to insert a new stream operator in the chain
-    pub fn insert_stream_op_chain(&mut self, stream_name: &String, op: &String) {
+    pub fn insert_stream_op_chain(&mut self, stream_name: &String, op: &str) {
         self.streams
             .get_mut(stream_name)
             .unwrap()
-            .insert_op(op.clone());
+            .insert_op(op.to_owned());
     }
 
     //method to check the validity of an alias
     pub fn is_alias_valid(&self, alias: &String) -> bool {
         //first check if the alias is already in the list of aliases
         if self.alias_to_stream.get(alias).is_some() {
-            return false;
+            return false
         }
 
-        return true;
+        true
     }
 
     //setter method for output_path
@@ -213,7 +213,7 @@ impl QueryObject {
     //method to get the type of a column ref
     pub fn get_type(&self, column: &ColumnRef) -> String {
         let stream_name: String = if column.table.is_some() {
-            self.get_stream_from_alias(&column.table.as_ref().unwrap())
+            self.get_stream_from_alias(column.table.as_ref().unwrap())
                 .unwrap()
                 .clone()
         } else {
@@ -249,7 +249,7 @@ impl QueryObject {
     pub fn populate(mut self, ir_ast: &Arc<IrPlan>) -> Self {
         self.set_ir_ast(ir_ast);
         // Collect all Scan and Join nodes
-        let mut scans = Self::collect_scan_nodes(&ir_ast);
+        let mut scans = Self::collect_scan_nodes(ir_ast);
         scans.reverse();
 
         //////////////////////////////
@@ -260,22 +260,21 @@ impl QueryObject {
 
         let (main_table_arc, main_stream, main_alias) = match &**main_scan {
             IrPlan::Scan {
-                input_source,
+                input: input_source,
                 stream_name,
                 alias,
             } => (input_source, stream_name, alias),
             _ => panic!("Error: this is not a scan node"),
         };
 
-        let main_table ;
 
         //check if main table is a table name or a subquery
-        match &**main_table_arc {
+        let main_table = match &**main_table_arc {
             IrPlan::Table { table_name } => {
-                main_table = table_name.clone();
+                table_name.clone()
             }
             _ => panic!("Main table is not a table name."),
-        }
+        };
 
         //check if the table is present in the list
         if self.tables_info.get(&main_table).is_none() {
@@ -284,7 +283,7 @@ impl QueryObject {
 
         //create the first stream
         self.create_new_stream(
-            &main_stream,
+            main_stream,
             &main_table,
             &main_alias.clone().unwrap_or(String::new()),
         );
@@ -295,23 +294,20 @@ impl QueryObject {
         for scan in scans.iter().skip(1) {
             let (join_table_arc, join_stream, join_alias) = match &**scan {
                 IrPlan::Scan {
-                    input_source,
+                    input: input_source,
                     stream_name,
                     alias,
                 } => (input_source, stream_name, alias),
                 _ => panic!("Error: this is not a scan node"),
             };
 
-            //check if the table is a table name or a subquery
-            let join_table ;
-
             //check if main table is a table name or a subquery
-            match &**join_table_arc {
+            let join_table = match &**join_table_arc {
                 IrPlan::Table { table_name } => {
-                    join_table = table_name.clone();
+                    table_name.clone()
                 }
                 _ => panic!("Main table is not a table name."),
-            }
+            };
 
 
             //check if the table is in the tables_info
@@ -321,7 +317,7 @@ impl QueryObject {
 
             //create the stream
             self.create_new_stream(
-                &join_stream,
+                join_stream,
                 &join_table,
                 &join_alias
                     .clone()
@@ -638,7 +634,7 @@ impl QueryObject {
                     self.result_column_types.insert(col_name, result_type);
                 }
                 ProjectionColumn::StringLiteral(value, alias) => {
-                    let col_name = self.get_unique_name(&alias.as_ref().unwrap_or(value), &mut used_names);
+                    let col_name = self.get_unique_name(alias.as_ref().unwrap_or(value), &mut used_names);
                     self.result_column_types
                         .insert(col_name, "String".to_string());
                 }
@@ -681,7 +677,7 @@ impl QueryObject {
                 }
             };
             //check if the column is valid
-            check_column_validity(col, &stream_name, &self);
+            check_column_validity(col, &stream_name, self);
             self.get_type(col)
         } else if let Some(ref lit) = field.literal {
             match lit {
@@ -717,7 +713,7 @@ impl QueryObject {
                         panic!("Column reference must have table name in JOIN query");
                     }
                 };
-                check_column_validity(&agg.column, &stream_name, &self);
+                check_column_validity(&agg.column, &stream_name, self);
             }
             match agg.function {
                 AggregateType::Count => "usize".to_string(),

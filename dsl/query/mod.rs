@@ -50,21 +50,21 @@ pub mod subquery_utils;
 /// 6. Compile the binary and save it to the specified output path.
 
 pub fn query_csv(
-    query_str: &String,
+    query_str: &str,
     output_path: &String,
     input_tables: &IndexMap<String, (String, String)>, // key: table name, value: (csv_path, user_defined_types)
 ) -> io::Result<String> {
     // step 0: safety checks
-    if input_tables.len() == 0 {
+    if input_tables.is_empty() {
         panic!("No input tables provided");
     }
 
     // check if every key of input_tables has a value
     for (key, (csv, types)) in input_tables.iter() {
-        if csv == "" {
+        if csv.is_empty() {
             panic!("No CSV path provided for table {}", key);
         }
-        if types == "" {
+        if types.is_empty() {
             panic!("No user-defined types provided for table {}", key);
         }
     }
@@ -132,7 +132,7 @@ pub fn subquery_csv(
     
     // step 1: create query_object
     let mut query_object = QueryObject::new();
-    query_object.set_output_path(&output_path);
+    query_object.set_output_path(output_path);
     query_object.set_tables_info(tables_info);
     query_object.set_table_to_csv(tables_csv);
 
@@ -157,10 +157,10 @@ pub fn subquery_csv(
     let _ = rust_project.update_main_rs(&main);
 
     // step 6: compile the binary and return the output as string
-    let output = binary_execution(&output_path, rust_project);
+    let output = binary_execution(output_path, rust_project);
     if output.is_err() {
         panic!("Error compiling the binary");
     } else {
-        return output.unwrap();
+        output.unwrap()
     }
 }

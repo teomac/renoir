@@ -23,10 +23,10 @@ impl SelectParser {
                 })?;
 
                 // Parse the actual column content
-                return Self::parse_column_item(column_item);
+                Self::parse_column_item(column_item)
             }
             _ => {
-                return Err(SqlParseError::InvalidInput(format!(
+                Err(SqlParseError::InvalidInput(format!(
                     "Expected column_with_alias, got {:?}",
                     pair.as_rule()
                 )))

@@ -33,14 +33,11 @@ impl GroupByParser {
 
         // Check for HAVING clause with group by columns
         while let Some(next_token) = inner.next() {
-            match next_token.as_rule() {
-                Rule::having_keyword => {
-                    if let Some(having_expr) = inner.next() {
-                        having = Some(Self::parse_having_expr(having_expr, &columns)?);
-                    }
-                }
-                _ => {}
-            }
+            if next_token.as_rule() == Rule::having_keyword {
+                           if let Some(having_expr) = inner.next() {
+                                   having = Some(Self::parse_having_expr(having_expr, &columns)?);
+                             }
+                         }
         }
 
         Ok(GroupByClause { columns, having })

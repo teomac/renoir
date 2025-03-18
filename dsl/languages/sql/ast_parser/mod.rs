@@ -28,7 +28,7 @@ pub struct SqlParser;
 
 impl SqlParser {
     pub fn parse_query(input: &str) -> Result<SqlAST, SqlParseError> {
-        let pairs = Self::parse(Rule::query, input).map_err(|e| SqlParseError::PestError(e))?;
+        let pairs = Self::parse(Rule::query, input).map_err(SqlParseError::PestError)?;
 
         //println!("Pairs: {:?}", pairs);
 
@@ -55,7 +55,6 @@ impl SqlParser {
         };
         
         // Parse the inner SQL directly using the main parser
-        use crate::dsl::languages::sql::ast_parser::SqlParser;
         SqlParser::parse_query(inner_sql)
     }
 }

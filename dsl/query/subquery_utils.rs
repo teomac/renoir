@@ -10,20 +10,20 @@ pub fn manage_subqueries(ir_ast: &Arc<IrPlan>, output_path: &String, query_objec
     match &**ir_ast {
         IrPlan::Project { input, columns, distinct } => {
             // First recursively process any subqueries in the input
-            let processed_input = manage_subqueries(input, &output_path, query_object)?;
+            let processed_input = manage_subqueries(input, output_path, query_object)?;
             
             // Process columns to find and replace subqueries
             let processed_columns = columns.iter().map(|col| {
                 match col {
                     ProjectionColumn::Subquery(subquery, alias) => {
                         // Recursively process nested subqueries within this subquery
-                        let processed_subquery = manage_subqueries(subquery, &output_path, query_object)
+                        let processed_subquery = manage_subqueries(subquery, output_path, query_object)
                             .expect("Failed to process nested subquery");
                             
                         // Execute the processed subquery to get its result
                         let mut result = subquery_csv(
                             processed_subquery,
-                            &output_path,
+                            output_path,
                             query_object.tables_info.clone(),
                             query_object.table_to_csv.clone()
                         );
@@ -55,10 +55,10 @@ pub fn manage_subqueries(ir_ast: &Arc<IrPlan>, output_path: &String, query_objec
         // Recursively process other node types
         IrPlan::Filter { input, predicate } => {
             // Process input first
-            let processed_input = manage_subqueries(input, &output_path, query_object)?;
+            let processed_input = manage_subqueries(input, output_path, query_object)?;
             
             // Process the predicate to handle any subqueries
-            let processed_predicate = process_filter_condition(predicate, &output_path, query_object)?;
+            let processed_predicate = process_filter_condition(predicate, output_path, query_object)?;
 
             Ok(Arc::new(IrPlan::Filter {
                 input: processed_input,
@@ -66,11 +66,11 @@ pub fn manage_subqueries(ir_ast: &Arc<IrPlan>, output_path: &String, query_objec
             }))
         },
         IrPlan::GroupBy { input, keys, group_condition } => {
-            let processed_input = manage_subqueries(input, &output_path, query_object)?;
+            let processed_input = manage_subqueries(input, output_path, query_object)?;
             
             // Process the group condition if it exists
             let processed_condition = if let Some(condition) = group_condition {
-                Some(process_group_condition(condition, &output_path, query_object)?)
+                Some(process_group_condition(condition, output_path, query_object)?)
             } else {
                 None
             };
@@ -82,8 +82,8 @@ pub fn manage_subqueries(ir_ast: &Arc<IrPlan>, output_path: &String, query_objec
             }))
         },
         IrPlan::Join { left, right, condition, join_type } => {
-            let processed_left = manage_subqueries(left, &output_path, query_object)?;
-            let processed_right = manage_subqueries(right, &output_path, query_object)?;
+            let processed_left = manage_subqueries(left, output_path, query_object)?;
+            let processed_right = manage_subqueries(right, output_path, query_object)?;
             Ok(Arc::new(IrPlan::Join {
                 left: processed_left,
                 right: processed_right,
@@ -92,14 +92,14 @@ pub fn manage_subqueries(ir_ast: &Arc<IrPlan>, output_path: &String, query_objec
             }))
         },
         IrPlan::OrderBy { input, items } => {
-            let processed_input = manage_subqueries(input, &output_path, query_object)?;
+            let processed_input = manage_subqueries(input, output_path, query_object)?;
             Ok(Arc::new(IrPlan::OrderBy {
                 input: processed_input,
                 items: items.clone()
             }))
         },
         IrPlan::Limit { input, limit, offset } => {
-            let processed_input = manage_subqueries(input, &output_path, query_object)?;
+            let processed_input = manage_subqueries(input, output_path, query_object)?;
             Ok(Arc::new(IrPlan::Limit {
                 input: processed_input,
                 limit: *limit,
