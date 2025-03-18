@@ -508,22 +508,18 @@ fn process_complex_field_for_map(field: &ComplexField, stream_name: &String, acc
                 let right_expr = process_complex_field_for_map(right, stream_name, acc_info, query_object, check_list);
 
                 // Add proper type conversions
-                let processed_left = if let Some(ref lit) = left.literal {
-                    if let IrLiteral::Integer(_) = lit {
+                let processed_left = if let Some(IrLiteral::Integer(_)) = left.literal {
+                   
                         format!("{} as f64", left_expr)
-                    } else {
-                        left_expr
-                    }
+                    
                 } else {
                     left_expr
                 };
 
-                let processed_right = if let Some(ref lit) = right.literal {
-                    if let IrLiteral::Integer(_) = lit {
+                let processed_right = if let Some(IrLiteral::Integer(_)) = right.literal {
+                   
                         format!("{} as f64", right_expr)
-                    } else {
-                        right_expr
-                    }
+                    
                 } else {
                     right_expr
                 };

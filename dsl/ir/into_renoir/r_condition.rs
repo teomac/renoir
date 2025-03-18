@@ -1,17 +1,20 @@
 use crate::dsl::ir::ir_ast_structure::ComplexField;
 use crate::dsl::ir::ir_ast_structure::{
-    ColumnRef, IrLiteral, NullCondition, NullOp, FilterConditionType,
+    ColumnRef, FilterConditionType, IrLiteral, NullCondition, NullOp,
 };
 use crate::dsl::ir::BinaryOp;
-use crate::dsl::ir::QueryObject;
 use crate::dsl::ir::FilterClause;
+use crate::dsl::ir::QueryObject;
 use crate::dsl::ir::{ComparisonOp, Condition};
 use crate::dsl::struct_object::utils::*;
 
-
-pub fn process_filter_clause(clause: &FilterClause, stream_name: &String, query_object: &mut QueryObject) -> Result<(), Box<dyn std::error::Error>> {
+pub fn process_filter_clause(
+    clause: &FilterClause,
+    stream_name: &String,
+    query_object: &mut QueryObject,
+) -> Result<(), Box<dyn std::error::Error>> {
     let filter_string = process_filter(clause, query_object);
-    
+
     let final_string = format!(".filter(|x| {})", filter_string);
 
     let stream = query_object.get_mut_stream(stream_name);
@@ -19,7 +22,6 @@ pub fn process_filter_clause(clause: &FilterClause, stream_name: &String, query_
 
     Ok(())
 }
-
 
 pub fn process_filter(clause: &FilterClause, query_object: &mut QueryObject) -> String {
     match clause {
@@ -62,10 +64,7 @@ pub fn process_filter(clause: &FilterClause, query_object: &mut QueryObject) -> 
                 process_filter(right, query_object)
             };
 
-            format!(
-                "{} {} {}",
-                left_str, op_str, right_str
-            )
+            format!("{} {} {}", left_str, op_str, right_str)
         }
     }
 }
@@ -120,22 +119,14 @@ fn process_arithmetic_expression(field: &ComplexField, query_object: &QueryObjec
                 let right_expr = process_arithmetic_expression(right, query_object);
 
                 // Add as f64 to integer literals when needed
-                let processed_left = if let Some(ref lit) = left.literal {
-                    if let IrLiteral::Integer(_) = lit {
-                        format!("{} as f64", left_expr)
-                    } else {
-                        left_expr
-                    }
+                let processed_left = if let Some(IrLiteral::Integer(_)) = left.literal {
+                    format!("{} as f64", left_expr)
                 } else {
                     left_expr
                 };
 
-                let processed_right = if let Some(ref lit) = right.literal {
-                    if let IrLiteral::Integer(_) = lit {
-                        format!("{} as f64", right_expr)
-                    } else {
-                        right_expr
-                    }
+                let processed_right = if let Some(IrLiteral::Integer(_)) = right.literal {
+                    format!("{} as f64", right_expr)
                 } else {
                     right_expr
                 };
@@ -157,7 +148,10 @@ fn process_arithmetic_expression(field: &ComplexField, query_object: &QueryObjec
         } else {
             //case same type
             //if operation is plus, minus, multiply, division, or power and types are not numeric, panic
-            if (op == "+" || op == "-" || op == "*" || op == "/" || op == "^") && left_type != "f64" && left_type != "i64" {
+            if (op == "+" || op == "-" || op == "*" || op == "/" || op == "^")
+                && left_type != "f64"
+                && left_type != "i64"
+            {
                 panic!(
                     "Invalid arithmetic expression - non-numeric types: {} and {}",
                     left_type, right_type
@@ -251,13 +245,13 @@ fn process_null_check_condition(condition: &NullCondition, query_object: &QueryO
     let field = &condition.field;
 
     //case column reference
-    if field.column_ref.is_some(){
+    if field.column_ref.is_some() {
         let col_ref = if condition.field.column_ref.is_some() {
             condition.field.column_ref.as_ref().unwrap()
         } else {
             panic!("Invalid null check condition - missing column reference")
         };
-    
+
         let stream_name = if col_ref.table.is_some() {
             query_object
                 .get_stream_from_alias(col_ref.table.as_ref().unwrap())
@@ -269,9 +263,9 @@ fn process_null_check_condition(condition: &NullCondition, query_object: &QueryO
             }
             all_streams.first().unwrap().0
         };
-    
+
         let stream = query_object.get_stream(stream_name);
-    
+
         let field = if condition.field.column_ref.is_some() {
             //validate column
             check_column_validity(col_ref, stream_name, query_object);
@@ -289,47 +283,34 @@ fn process_null_check_condition(condition: &NullCondition, query_object: &QueryO
             NullOp::IsNotNull => format!("{}.is_some()", field),
         }
     }
-
     //case it is a literal
-    else if field.literal.is_some(){
+    else if field.literal.is_some() {
         let lit = field.literal.as_ref().unwrap();
         match lit {
-            IrLiteral::Boolean(_) => {
-                match condition.operator {
-                    NullOp::IsNull => "false".to_string(),
-                    NullOp::IsNotNull => "true".to_string(),
-                }
-            }
+            IrLiteral::Boolean(_) => match condition.operator {
+                NullOp::IsNull => "false".to_string(),
+                NullOp::IsNotNull => "true".to_string(),
+            },
 
-            IrLiteral::Float(_) | IrLiteral::Integer(_) => {
-                match condition.operator {
-                    NullOp::IsNull => "false".to_string(),
-                    NullOp::IsNotNull => "true".to_string(),
-                }
-            }
+            IrLiteral::Float(_) | IrLiteral::Integer(_) => match condition.operator {
+                NullOp::IsNull => "false".to_string(),
+                NullOp::IsNotNull => "true".to_string(),
+            },
 
-            IrLiteral::String(string) => {
-                match condition.operator {
-                    NullOp::IsNull => format!("{}", string.is_empty()),
-                    NullOp::IsNotNull => format!("{}", !string.is_empty()),
-                }
-            }
+            IrLiteral::String(string) => match condition.operator {
+                NullOp::IsNull => format!("{}", string.is_empty()),
+                NullOp::IsNotNull => format!("{}", !string.is_empty()),
+            },
 
             _ => {
                 panic!("Invalid null check condition - missing field")
+            }
         }
-    }}
-
+    }
     //case nested_expr: TODO
-
-    else{
+    else {
         panic!("Invalid null check condition - missing field")
     }
-
-
-    
-
-   
 }
 
 /// Process a comparison condition (>, <, =, etc.)
@@ -377,7 +358,11 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
         if (operator_str == "+"
             || operator_str == "-"
             || operator_str == "*"
-            || operator_str == "/" || operator_str == "^") && left_type != "f64" && left_type != "i64" {
+            || operator_str == "/"
+            || operator_str == "^")
+            && left_type != "f64"
+            && left_type != "i64"
+        {
             panic!(
                 "Invalid arithmetic expression - non-numeric types: {} and {}",
                 left_type, right_type
@@ -485,10 +470,10 @@ fn has_column_reference(field: &ComplexField) -> bool {
         let (left, _, right) = &**nested;
         return has_column_reference(left) || has_column_reference(right);
     }
-    if let Some(ref lit) = field.literal {
-        if let IrLiteral::ColumnRef(_) = lit {
+    if let Some(IrLiteral::ColumnRef(_)) = field.literal {
+        
             return true;
-        }
+        
     }
     if let Some(ref _agg) = field.aggregate {
         return true;
@@ -508,9 +493,8 @@ fn collect_columns(field: &ComplexField) -> Vec<ColumnRef> {
         columns.extend(collect_columns(left));
         columns.extend(collect_columns(right));
     }
-    if let IrLiteral::ColumnRef(col) = field.literal.as_ref().unwrap() {
-            columns.push(col.clone());
-        
+    if let Some(IrLiteral::ColumnRef(col)) = field.literal.as_ref() {
+        columns.push(col.clone());
     }
     if let Some(ref agg) = field.aggregate {
         columns.push(agg.column.clone());

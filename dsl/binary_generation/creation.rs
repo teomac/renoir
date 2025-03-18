@@ -1,6 +1,7 @@
 use std::fs;
 use std::io;
 use std::path::PathBuf;
+use std::fmt::Write;
 
 use crate::dsl::struct_object::object::QueryObject;
 
@@ -189,15 +190,15 @@ pub fn generate_struct_declarations(
 
             // Generate field definitions directly from table to struct mapping
 
-            let fields_str: String = query_object
-                .tables_info
-                .get(_table_name)
-                .unwrap()
-                .iter()
-                .map(|(field_name, field_type)| {
-                    format!("    {}: Option<{}>,\n", field_name, field_type)
-                })
-                .collect();
+            let fields_str = query_object
+            .tables_info
+            .get(_table_name)
+            .unwrap()
+            .iter()
+            .fold(String::new(), |mut output,(field_name, field_type) |
+                {let _ = writeln!(output, "{}: Option<{}>,\n", field_name, field_type);
+                output
+            });
 
             struct_def.push_str(&fields_str);
             struct_def.push_str("}\n\n");

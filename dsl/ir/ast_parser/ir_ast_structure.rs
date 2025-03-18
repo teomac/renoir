@@ -305,16 +305,16 @@ impl std::fmt::Display for ComplexField {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         if let Some(ref nested) = self.nested_expr {
             let (left, op, right) = &**nested;
-            write!(f, "({} {} {})", left.to_string(), op, right.to_string())
+            write!(f, "({} {} {})", left, op, right)
         } else if let Some(ref col) = self.column_ref {
             write!(f, "{}", col)
         } else if let Some(ref lit) = self.literal {
             match lit {
-                IrLiteral::Integer(i) => write!(f, "{}", i.to_string()),
+                IrLiteral::Integer(i) => write!(f, "{}", i),
                 IrLiteral::Float(fl) => write!(f, "{:.2}", fl),
                 IrLiteral::String(s) => write!(f, "{}", s.clone()),
-                IrLiteral::Boolean(b) => write!(f, "{}" , b.to_string()),
-                IrLiteral::ColumnRef(cr) => write!(f, "{}", cr.to_string()),
+                IrLiteral::Boolean(b) => write!(f, "{}" , b),
+                IrLiteral::ColumnRef(cr) => write!(f, "{}", cr),
             }
         } else if let Some(ref agg) = self.aggregate {
             write!(f, 
