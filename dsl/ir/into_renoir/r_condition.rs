@@ -508,10 +508,9 @@ fn collect_columns(field: &ComplexField) -> Vec<ColumnRef> {
         columns.extend(collect_columns(left));
         columns.extend(collect_columns(right));
     }
-    if let Some(ref lit) = field.literal {
-        if let IrLiteral::ColumnRef(col) = lit {
+    if let IrLiteral::ColumnRef(col) = field.literal.as_ref().unwrap() {
             columns.push(col.clone());
-        }
+        
     }
     if let Some(ref agg) = field.aggregate {
         columns.push(agg.column.clone());

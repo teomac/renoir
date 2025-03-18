@@ -237,7 +237,7 @@ impl GroupByParser {
                     if !is_in_group_by && field.aggregate.is_none() && field.subquery.is_none() {
                         return Err(Box::new(SqlParseError::InvalidInput(format!(
                             "Column {} must be aggregated or in GROUP BY clause",
-                            col_ref.to_string()
+                            col_ref
                         ))));
                     }
                 }
@@ -300,8 +300,8 @@ impl GroupByParser {
                             {
                                 return Err(Box::new(SqlParseError::InvalidInput(format!(
                                     "Either {} or {} must be aggregated or in GROUP BY clause",
-                                    left_col.to_string(),
-                                    right_col.to_string()
+                                    left_col,
+                                    right_col
                                 ))));
                             }
                         }
@@ -658,7 +658,7 @@ impl GroupByParser {
                 } else {
                     Err(Box::new(SqlParseError::InvalidInput(format!(
                         "Column {} must be aggregated in HAVING clause",
-                        col_ref.to_string()
+                        col_ref
                     ))))
                 }
             }

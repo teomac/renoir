@@ -48,7 +48,7 @@ impl SqlToIr {
                             AggregateFunction::Avg => "avg",
                             AggregateFunction::Count => "count",
                         };
-                        format!("{}({})", agg, col_ref.to_string())
+                        format!("{}({})", agg, col_ref)
                     }
                     SelectType::ComplexValue(left, op, right) => format!(
                         "{} {} {}",
@@ -289,7 +289,7 @@ impl SqlToIr {
                     AggregateFunction::Avg => "avg",
                     AggregateFunction::Count => "count",
                 };
-                format!("{}({})", agg, col_ref.to_string())
+                format!("{}({})", agg, col_ref)
             },
             ArithmeticExpr::BinaryOp(left, op, right) => {
                 let left_str = Self::arithmetic_expr_to_string(left);
@@ -346,7 +346,7 @@ impl SqlToIr {
                         format!(
                             "{}({})",
                             aggregate,
-                            cond.left_field.aggregate.as_ref().unwrap().1.to_string()
+                            cond.left_field.aggregate.as_ref().unwrap().1
                         )
                     } else if let Some(ref subquery) = cond.left_field.subquery {
                         format!("({})", Self::convert(subquery))
