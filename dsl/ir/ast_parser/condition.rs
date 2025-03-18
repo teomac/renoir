@@ -11,7 +11,7 @@ impl ConditionParser {
         let mut inner = pair.into_inner();
 
         // Skip 'where' keyword if present
-        if inner.peek().map_or(false, |p| p.as_str() == "where") {
+        if inner.peek().is_some_and(|p| p.as_str() == "where") {
             inner.next();
         }
 

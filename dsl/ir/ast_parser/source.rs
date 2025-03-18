@@ -180,7 +180,7 @@ impl JoinCondition {
             });
 
             // Skip the AND if present
-            if pairs.peek().map_or(false, |p| p.as_str() == "AND") {
+            if pairs.peek().is_some_and(|p| p.as_str() == "AND") {
                 pairs.next();
             }
         }
