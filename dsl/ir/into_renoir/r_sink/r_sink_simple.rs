@@ -4,7 +4,7 @@ use crate::dsl::struct_object::object::QueryObject;
 use core::panic;
 
 pub fn create_simple_map(
-    projection_clauses: &Vec<ProjectionColumn>,
+    projection_clauses: &[ProjectionColumn],
     stream_name: &String,
     query_object: &QueryObject,
 ) -> String {

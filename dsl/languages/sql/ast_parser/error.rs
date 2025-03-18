@@ -5,7 +5,7 @@ use std::fmt::{self, Display};
 
 #[derive(Debug)]
 pub enum SqlParseError {
-    PestError(PestError<Rule>),
+    PestError(Box<PestError<Rule>>),
     InvalidInput(String),
     InvalidType(String),
     // Add other error types as needed
@@ -22,3 +22,9 @@ impl Display for SqlParseError {
 }
 
 impl Error for SqlParseError {}
+
+impl From<PestError<Rule>> for SqlParseError {
+    fn from(error: PestError<Rule>) -> Self {
+        SqlParseError::PestError(Box::new(error))
+    }
+}

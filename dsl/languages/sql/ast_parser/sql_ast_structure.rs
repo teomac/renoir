@@ -1,3 +1,5 @@
+use std::fmt;
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct SqlAST {
     pub select: SelectClause,
@@ -243,11 +245,12 @@ pub struct LimitClause {
     pub offset: Option<i64>,
 }
 
-impl ColumnRef {
-    pub fn to_string(&self) -> String {
+//implement display for ColumnRef
+impl fmt::Display for ColumnRef {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self.table {
-            Some(table) => format!("{}.{}", table, self.column),
-            None => self.column.clone(),
+            Some(table) => write!(f, "{}.{}", table, self.column),
+            None => write!(f, "{}", self.column),
         }
     }
 }

@@ -25,7 +25,7 @@ pub struct IrParser;
 
 impl IrParser {
     pub fn parse_query(input: &str) -> Result<Arc<IrPlan>, Box<IrParseError>> {
-        let pairs = Self::parse(Rule::query, input).map_err(IrParseError::PestError)?;
+        let pairs = Self::parse(Rule::query, input).map_err(|e| Box::new(IrParseError::from(e)))?;
 
         let ast = IrASTBuilder::build_ast_from_pairs(pairs)?;
 

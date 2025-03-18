@@ -407,9 +407,9 @@ fn process_filter_field(
                     column: col.clone(),
                 });
                 format!(
-                    "{}.unwrap() / {} as f64",
+                    "{}.unwrap() / x.1.{} as f64",
                     col_access,
-                    format!("x.1.{}", count_pos)
+                    count_pos
                 )
             }
         }

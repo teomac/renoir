@@ -305,7 +305,7 @@ impl GroupParser {
         }
     }
     // Helper methods for parsing basic elements
-    fn parse_column_ref(pair: Pair<Rule>) -> Result<ColumnRef, IrParseError> {
+    fn parse_column_ref(pair: Pair<Rule>) -> Result<ColumnRef, Box<IrParseError>> {
         match pair.as_rule() {
             Rule::qualified_column => {
                 let mut inner = pair.into_inner();
@@ -328,14 +328,14 @@ impl GroupParser {
                 table: None,
                 column: pair.as_str().to_string(),
             }),
-            _ => Err(IrParseError::InvalidInput(format!(
+            _ => Err(Box::new(IrParseError::InvalidInput(format!(
                 "Expected column reference, got {:?}",
                 pair.as_rule()
-            ))),
+            )))),
         }
     }
 
-    fn parse_aggregate_function(pair: Pair<Rule>) -> Result<AggregateFunction, IrParseError> {
+    fn parse_aggregate_function(pair: Pair<Rule>) -> Result<AggregateFunction, Box<IrParseError>> {
         let mut inner = pair.into_inner();
 
         let func_type = inner.next().ok_or_else(|| {
@@ -349,10 +349,10 @@ impl GroupParser {
             "sum" => AggregateType::Sum,
             "count" => AggregateType::Count,
             _ => {
-                return Err(IrParseError::InvalidInput(format!(
+                return Err(Box::new(IrParseError::InvalidInput(format!(
                     "Invalid aggregate function: {}",
                     func_type.as_str()
-                )))
+                ))))
             }
         };
 
@@ -373,10 +373,10 @@ impl GroupParser {
                     column: column_ref.as_str().to_string(),
                 },
                 _ => {
-                    return Err(IrParseError::InvalidInput(format!(
+                    return Err(Box::new(IrParseError::InvalidInput(format!(
                         "Invalid column reference in aggregate: {:?}",
                         column_ref.as_rule()
-                    )))
+                    ))))
                 }
             }
         };
@@ -384,7 +384,7 @@ impl GroupParser {
         Ok(AggregateFunction { function, column })
     }
 
-    fn parse_literal(pair: Pair<Rule>) -> Result<IrLiteral, IrParseError> {
+    fn parse_literal(pair: Pair<Rule>) -> Result<IrLiteral, Box<IrParseError>> {
         let inner = pair
             .into_inner()
             .next()
@@ -396,23 +396,23 @@ impl GroupParser {
                 let clean_str = inner_str[1..inner_str.len() - 1].to_string();
                 Ok(IrLiteral::String(clean_str))
             }
-            Rule::number => inner
+            Rule::number => Ok(inner
                 .as_str()
                 .parse::<i64>()
                 .map(IrLiteral::Integer)
                 .or_else(|_| inner.as_str().parse::<f64>().map(IrLiteral::Float))
-                .map_err(|_| IrParseError::InvalidInput("Invalid number".to_string())),
+                .map_err(|_| IrParseError::InvalidInput("Invalid number".to_string()))?),
             Rule::boolean_keyword => match inner.as_str() {
                 "true" => Ok(IrLiteral::Boolean(true)),
                 "false" => Ok(IrLiteral::Boolean(false)),
-                _ => Err(IrParseError::InvalidInput(
+                _ => Err(Box::new(IrParseError::InvalidInput(
                     "Invalid boolean value".to_string(),
-                )),
+                ))),
             },
-            _ => Err(IrParseError::InvalidInput(format!(
+            _ => Err(Box::new(IrParseError::InvalidInput(format!(
                 "Invalid literal type: {:?}",
                 inner.as_rule()
-            ))),
+            )))),
         }
     }
 

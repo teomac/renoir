@@ -291,7 +291,7 @@ impl ConditionParser {
         }
     }
 
-    fn parse_literal(pair: Pair<Rule>) -> Result<IrLiteral, IrParseError> {
+    fn parse_literal(pair: Pair<Rule>) -> Result<IrLiteral, Box<IrParseError>> {
         match pair.as_rule() {
             Rule::value => {
                 let inner = pair
@@ -308,31 +308,31 @@ impl ConditionParser {
                     }
                     Rule::number => {
                         // Try to parse as integer first, then as float
-                        inner
+                        Ok(inner
                             .as_str()
                             .parse::<i64>()
                             .map(IrLiteral::Integer)
                             .or_else(|_| inner.as_str().parse::<f64>().map(IrLiteral::Float))
-                            .map_err(|_| IrParseError::InvalidInput("Invalid number".to_string()))
+                            .map_err(|_| IrParseError::InvalidInput("Invalid number".to_string()))?)
                     }
                     Rule::boolean_keyword => match inner.as_str() {
                         "true" => Ok(IrLiteral::Boolean(true)),
                         "false" => Ok(IrLiteral::Boolean(false)),
-                        _ => Err(IrParseError::InvalidInput(
+                        _ => Err(Box::new(IrParseError::InvalidInput(
                             "Invalid boolean value".to_string(),
-                        )),
+                        ))),
                     },
-                    _ => Err(IrParseError::InvalidInput(format!(
+                    _ => Err(Box::new(IrParseError::InvalidInput(format!(
                         "Invalid literal type: {:?}",
                         inner.as_rule()
-                    ))),
+                    )))),
                 }
             }
-            _ => Err(IrParseError::InvalidInput("Expected value".to_string())),
+            _ => Err(Box::new(IrParseError::InvalidInput("Expected value".to_string()))),
         }
     }
 
-    fn parse_qualified_column(pair: Pair<Rule>) -> Result<ColumnRef, IrParseError> {
+    fn parse_qualified_column(pair: Pair<Rule>) -> Result<ColumnRef, Box<IrParseError>> {
         let mut inner = pair.into_inner();
         let table = inner
             .next()
@@ -356,7 +356,7 @@ impl ConditionParser {
         })
     }
 
-    fn parse_aggregate_function(pair: Pair<Rule>) -> Result<AggregateFunction, IrParseError> {
+    fn parse_aggregate_function(pair: Pair<Rule>) -> Result<AggregateFunction, Box<IrParseError>> {
         let mut inner = pair.into_inner();
 
         let func_type = inner.next().ok_or_else(|| {
@@ -370,10 +370,10 @@ impl ConditionParser {
             "sum" => AggregateType::Sum,
             "count" => AggregateType::Count,
             _ => {
-                return Err(IrParseError::InvalidInput(format!(
+                return Err(Box::new(IrParseError::InvalidInput(format!(
                     "Invalid aggregate function: {}",
                     func_type.as_str()
-                )))
+                ))))
             }
         };
 
@@ -395,10 +395,10 @@ impl ConditionParser {
                     column: column_ref.as_str().to_string(),
                 },
                 _ => {
-                    return Err(IrParseError::InvalidInput(format!(
+                    return Err(Box::new(IrParseError::InvalidInput(format!(
                         "Invalid column reference in aggregate: {:?}",
                         column_ref.as_rule()
-                    )))
+                    ))))
                 }
             }
         };

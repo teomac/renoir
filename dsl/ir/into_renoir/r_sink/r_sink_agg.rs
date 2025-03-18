@@ -36,7 +36,7 @@ fn create_accumulator_info_from_stream(
 
 /// Function to handle the case where aggregates have already been computed in a previous fold
 pub fn create_aggregate_map_from_previous(
-    projection_clauses: &Vec<ProjectionColumn>,
+    projection_clauses: &[ProjectionColumn],
     stream_name: &String,
     query_object: &QueryObject,
 ) -> String {

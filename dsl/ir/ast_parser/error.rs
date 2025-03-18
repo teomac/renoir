@@ -5,7 +5,7 @@ use std::fmt::{self, Display};
 
 #[derive(Debug)]
 pub enum IrParseError {
-    PestError(PestError<Rule>),
+    PestError(Box<PestError<Rule>>),
     InvalidInput(String),
     InvalidType(String),
 }
@@ -24,6 +24,6 @@ impl Error for IrParseError {}
 
 impl From<PestError<Rule>> for IrParseError {
     fn from(error: PestError<Rule>) -> Self {
-        IrParseError::PestError(error)
+        IrParseError::PestError(Box::new(error))
     }
 }

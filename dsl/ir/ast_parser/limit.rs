@@ -5,7 +5,7 @@ use pest::iterators::Pair;
 pub struct LimitParser;
 
 impl LimitParser {
-    pub fn parse(pair: Pair<Rule>) -> Result<(i64, Option<i64>), IrParseError> {
+    pub fn parse(pair: Pair<Rule>) -> Result<(i64, Option<i64>), Box<IrParseError>> {
         let mut inner = pair.into_inner();
 
         // Parse LIMIT clause
@@ -24,29 +24,29 @@ impl LimitParser {
         Ok( (limit, offset ))
     }
 
-    fn parse_limit(pair: Pair<Rule>) -> Result<i64, IrParseError> {
+    fn parse_limit(pair: Pair<Rule>) -> Result<i64, Box<IrParseError>> {
         let mut inner = pair.into_inner();
         inner.next(); // Skip limit keyword
         let number = inner
             .next()
             .ok_or_else(|| IrParseError::InvalidInput("Missing limit value".to_string()))?;
 
-        number
+        Ok(number
             .as_str()
             .parse::<i64>()
-            .map_err(|_| IrParseError::InvalidInput("Invalid limit value".to_string()))
+            .map_err(|_| IrParseError::InvalidInput("Invalid limit value".to_string()))?)
     }
 
-    fn parse_offset(pair: Pair<Rule>) -> Result<i64, IrParseError> {
+    fn parse_offset(pair: Pair<Rule>) -> Result<i64, Box<IrParseError>> {
         let mut inner = pair.into_inner();
         inner.next(); // Skip offset keyword
         let number = inner
             .next()
             .ok_or_else(|| IrParseError::InvalidInput("Missing offset value".to_string()))?;
 
-        number
+        Ok(number
             .as_str()
             .parse::<i64>()
-            .map_err(|_| IrParseError::InvalidInput("Invalid offset value".to_string()))
+            .map_err(|_| IrParseError::InvalidInput("Invalid offset value".to_string()))?)
     }
 }

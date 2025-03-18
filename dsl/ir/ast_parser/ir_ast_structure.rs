@@ -9,45 +9,45 @@ pub enum IrPlan {
         stream_name: String,
         alias: Option<String>,
     },
-    
+
     // Transformation operations
     Filter {
         input: Arc<IrPlan>,
         predicate: FilterClause,
     },
-    
+
     Project {
         input: Arc<IrPlan>,
         columns: Vec<ProjectionColumn>,
         distinct: bool,
     },
-    
+
     GroupBy {
         input: Arc<IrPlan>,
         keys: Vec<ColumnRef>,
         group_condition: Option<GroupClause>,
     },
-    
+
     Join {
         left: Arc<IrPlan>,
         right: Arc<IrPlan>,
         condition: Vec<JoinCondition>,
         join_type: JoinType,
     },
-    
+
     OrderBy {
         input: Arc<IrPlan>,
         items: Vec<OrderByItem>,
     },
-    
+
     Limit {
         input: Arc<IrPlan>,
         limit: i64,
         offset: Option<i64>,
     },
-    Table{
+    Table {
         table_name: String,
-    }
+    },
 }
 
 // Supporting structures
@@ -196,47 +196,79 @@ pub enum BinaryOp {
 impl IrPlan {
     // Convenience method to create a scan operation
     pub fn scan(stream_name: String, alias: Option<String>, input_source: Arc<IrPlan>) -> Self {
-        IrPlan::Scan { stream_name, alias, input: input_source }
+        IrPlan::Scan {
+            stream_name,
+            alias,
+            input: input_source,
+        }
     }
-    
+
     // Convenience method to create a filter operation
     pub fn filter(input: Arc<IrPlan>, predicate: FilterClause) -> Self {
         IrPlan::Filter { input, predicate }
     }
-    
+
     // Convenience method to create a project operation
     pub fn project(input: Arc<IrPlan>, columns: Vec<ProjectionColumn>, distinct: bool) -> Self {
-        IrPlan::Project { input, columns, distinct }
+        IrPlan::Project {
+            input,
+            columns,
+            distinct,
+        }
     }
-    
+
     // Similar convenience methods for other operations
-    pub fn group_by(input: Arc<IrPlan>, keys: Vec<ColumnRef>, group_condition: Option<GroupClause>) -> Self {
-        IrPlan::GroupBy { input, keys, group_condition }
+    pub fn group_by(
+        input: Arc<IrPlan>,
+        keys: Vec<ColumnRef>,
+        group_condition: Option<GroupClause>,
+    ) -> Self {
+        IrPlan::GroupBy {
+            input,
+            keys,
+            group_condition,
+        }
     }
-    
+
     pub fn order_by(input: Arc<IrPlan>, items: Vec<OrderByItem>) -> Self {
         IrPlan::OrderBy { input, items }
     }
-    
-    pub fn limit(input: Arc<IrPlan>, limit: i64, offset: Option<i64>) -> Self {
-        IrPlan::Limit { input, limit, offset }
-    }
-    
-    pub fn join(left: Arc<IrPlan>, right: Arc<IrPlan>, condition: Vec<JoinCondition>, join_type: JoinType) -> Self {
-        IrPlan::Join { left, right, condition, join_type }
-    }
-}
 
-impl ColumnRef {
-    pub fn to_string(&self) -> String {
-        match &self.table {
-            Some(table) => format!("{}.{}", table, self.column),
-            None => self.column.clone(),
+    pub fn limit(input: Arc<IrPlan>, limit: i64, offset: Option<i64>) -> Self {
+        IrPlan::Limit {
+            input,
+            limit,
+            offset,
+        }
+    }
+
+    pub fn join(
+        left: Arc<IrPlan>,
+        right: Arc<IrPlan>,
+        condition: Vec<JoinCondition>,
+        join_type: JoinType,
+    ) -> Self {
+        IrPlan::Join {
+            left,
+            right,
+            condition,
+            join_type,
         }
     }
 }
 
-impl AggregateFunction{
+//implement display for ColumnRef
+impl std::fmt::Display for ColumnRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        if let Some(ref table) = self.table {
+            write!(f, "{}.{}", table, self.column)
+        } else {
+            write!(f, "{}", self.column)
+        }
+    }
+}
+
+impl AggregateFunction {
     pub fn equals(&self, other: &AggregateFunction) -> bool {
         self.function.equals(&other.function) && self.column == other.column
     }
@@ -244,25 +276,26 @@ impl AggregateFunction{
 
 impl AggregateType {
     pub fn equals(&self, other: &AggregateType) -> bool {
-        match (self, other) {
-            (AggregateType::Max, AggregateType::Max) => true,
-            (AggregateType::Min, AggregateType::Min) => true,
-            (AggregateType::Avg, AggregateType::Avg) => true,
-            (AggregateType::Sum, AggregateType::Sum) => true,
-            (AggregateType::Count, AggregateType::Count) => true,
-            _ => false,
-        }
+        matches!(
+            (self, other),
+            (AggregateType::Max, AggregateType::Max)
+                | (AggregateType::Min, AggregateType::Min)
+                | (AggregateType::Avg, AggregateType::Avg)
+                | (AggregateType::Sum, AggregateType::Sum)
+                | (AggregateType::Count, AggregateType::Count)
+        )
     }
+}
 
-
-
-    pub fn to_string(&self) -> String {
+//implement display for AggregateType
+impl std::fmt::Display for AggregateType {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            AggregateType::Max => "max".to_string(),
-            AggregateType::Min => "min".to_string(),
-            AggregateType::Avg => "avg".to_string(),
-            AggregateType::Sum => "sum".to_string(),
-            AggregateType::Count => "count".to_string(),
+            AggregateType::Max => write!(f, "max"),
+            AggregateType::Min => write!(f, "min"),
+            AggregateType::Avg => write!(f, "avg"),
+            AggregateType::Sum => write!(f, "sum"),
+            AggregateType::Count => write!(f, "count"),
         }
     }
 }
@@ -292,7 +325,7 @@ impl ComplexField {
                     AggregateType::Sum => "sum",
                     AggregateType::Count => "count",
                 },
-                agg.column.to_string()
+                agg.column
             )
         } else {
             String::new()

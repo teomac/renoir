@@ -104,7 +104,7 @@ pub fn create_template(query_object: &QueryObject, is_subquery: bool) -> String 
                 }
             );
 
-            stream.push_str(&"ctx.execute_blocking();".to_string());
+            stream.push_str("ctx.execute_blocking();");
 
             //insert order by string
             stream.push_str(&query_object.order_by_string);
@@ -168,7 +168,7 @@ pub fn create_template(query_object: &QueryObject, is_subquery: bool) -> String 
 }
 
 pub fn generate_struct_declarations(
-    table_names: &Vec<String>,
+    table_names: &[String],
     query_object: &QueryObject,
 ) -> String {
     //Part1: generate struct definitions for input tables

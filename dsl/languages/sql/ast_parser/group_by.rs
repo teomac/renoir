@@ -78,10 +78,6 @@ impl GroupByParser {
         }
     }
 
-    //////////////////////////////////////////////////////////////////////////////////
-    ///
-    ///
-
     // New method to parse having expressions
     fn parse_having_expr(
         pair: Pair<Rule>,

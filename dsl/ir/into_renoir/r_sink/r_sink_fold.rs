@@ -15,7 +15,7 @@ use crate::dsl::struct_object::object::QueryObject;
 use crate::dsl::ir::r_sink::r_sink_utils::{AccumulatorInfo, AccumulatorValue};
 
 //initial function
-pub fn create_aggregate_map(projection_clauses: &Vec<ProjectionColumn>, stream_name: &String, query_object: &QueryObject) -> String {
+pub fn create_aggregate_map(projection_clauses: &[ProjectionColumn], stream_name: &String, query_object: &QueryObject) -> String {
     let mut acc_info = AccumulatorInfo::new();
     let mut result = String::new();
 
@@ -283,7 +283,7 @@ fn create_fold(acc_info: &mut AccumulatorInfo, stream_name: &String, query_objec
 
 
 //function used to create the .map() operation
-pub fn create_map(projection_clauses: &Vec<ProjectionColumn>, acc_info: &AccumulatorInfo, stream_name: &String, query_object: &QueryObject) -> String {
+pub fn create_map(projection_clauses: &[ProjectionColumn], acc_info: &AccumulatorInfo, stream_name: &String, query_object: &QueryObject) -> String {
     let mut result = String::new();
     let stream = query_object.get_stream(stream_name);
     let is_grouped = stream.is_keyed;

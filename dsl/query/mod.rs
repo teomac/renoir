@@ -158,9 +158,9 @@ pub fn subquery_csv(
 
     // step 6: compile the binary and return the output as string
     let output = binary_execution(output_path, rust_project);
-    if output.is_err() {
-        panic!("Error compiling the binary");
+    if let Ok(output) = output {
+        output
     } else {
-        output.unwrap()
+        panic!("Error compiling the binary");
     }
 }

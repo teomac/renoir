@@ -28,7 +28,7 @@ pub struct SqlParser;
 
 impl SqlParser {
     pub fn parse_query(input: &str) -> Result<SqlAST, Box<SqlParseError>> {
-        let pairs = Self::parse(Rule::query, input).map_err(SqlParseError::PestError)?;
+        let pairs = Self::parse(Rule::query, input).map_err(|e| Box::new(SqlParseError::from(e)))?;
 
         //println!("Pairs: {:?}", pairs);
 

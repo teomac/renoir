@@ -384,7 +384,7 @@ impl SqlToIr {
                         format!(
                             "{}({})",
                             aggregate,
-                            cond.right_field.aggregate.as_ref().unwrap().1.to_string()
+                            cond.right_field.aggregate.as_ref().unwrap().1
                         )
                     } else if let Some(ref subquery) = cond.right_field.subquery {
                         format!("({})", Self::convert(subquery))
@@ -422,7 +422,7 @@ impl SqlToIr {
                 },
                 // Handle IN in HAVING
                 HavingBaseCondition::In(column, subquery) => {
-                    format!("{} in ({})", column.to_string(), Self::convert(subquery))
+                    format!("{} in ({})", column, Self::convert(subquery))
                 }
             },
             HavingClause::Expression { left, op, right } => {
@@ -514,7 +514,7 @@ impl SqlToIr {
                 AggregateFunction::Avg => "avg",
                 AggregateFunction::Count => "count",
             };
-            format!("{}({})", agg, col_ref.to_string())
+            format!("{}({})", agg, col_ref)
         } else if let Some(ref subquery) = field.subquery {
             format!("({})", Self::convert(subquery))
         } else {
