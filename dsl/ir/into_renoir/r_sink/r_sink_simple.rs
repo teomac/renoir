@@ -8,11 +8,11 @@ pub fn create_simple_map(
     stream_name: &String,
     query_object: &QueryObject,
 ) -> String {
-    let mut map_string = String::from(".map(|x| OutputStruct { ");
     let empty_string = "".to_string();
     let mut all_streams = Vec::new();
 
     let main_stream = query_object.get_stream(stream_name);
+    let mut map_string = format!(".map(|x| {} {{ ", stream_name);
     //if it has a join tree, get all the streams involved in the join
     if main_stream.join_tree.is_some() {
         all_streams.extend(

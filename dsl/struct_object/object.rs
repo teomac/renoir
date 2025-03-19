@@ -102,6 +102,8 @@ impl QueryObject {
 
         stream.update_columns(self.tables_info.get(source_table).unwrap().clone());
 
+        stream.final_struct_name.push_str(stream_name);
+
         self.streams.insert(stream_name.clone(), stream);
     }
 
@@ -249,10 +251,17 @@ impl QueryObject {
 
     //method to populate the QueryObject with the necessary information
     pub fn populate(mut self, ir_ast: &Arc<IrPlan>) -> Self {
+        // empty result_col_types, projection_agg, has_join, order_by, limit, distinct
+        self.result_column_types.clear();
+        self.projection_agg.clear();
+        self.has_join = false;
+        self.order_by_string.clear();
+        self.limit_string.clear();
+        self.distinct_string.clear();
+
         self.set_ir_ast(ir_ast);
         // Collect all Scan and Join nodes
-        let mut scans = Self::collect_scan_nodes(ir_ast);
-        scans.reverse();
+        let scans = Self::collect_scan_nodes(ir_ast);
 
         //////////////////////////////
         // main table focus
@@ -299,11 +308,12 @@ impl QueryObject {
                 } => (input_source, stream_name, alias),
                 _ => panic!("Error: this is not a scan node"),
             };
+            println!("Join table: {:?}", join_table_arc);
 
-            //check if main table is a table name or a subquery
+            //check if join table is a table name or a subquery
             let join_table = match &**join_table_arc {
                 IrPlan::Table { table_name } => table_name.clone(),
-                _ => panic!("Main table is not a table name."),
+                _ => panic!("Join table: {:?} is not a table name.", join_table_arc),
             };
 
             //check if the table is in the tables_info
@@ -314,15 +324,19 @@ impl QueryObject {
                 );
             }
 
-            //create the stream
-            self.create_new_stream(
-                join_stream,
-                &join_table,
-                &join_alias
-                    .clone()
-                    .unwrap_or_else(|| panic!("Alias not found for table {}", &join_table)),
-            );
+            if self.streams.get(join_stream).is_none() {
+                //create the stream
+                self.create_new_stream(
+                    join_stream,
+                    &join_table,
+                    &join_alias
+                        .clone()
+                        .unwrap_or_else(|| panic!("Alias not found for table {}", &join_table)),
+                );
+            }
         }
+
+        self.streams.sort_unstable_keys();
 
         //////////////////////////////////////////////
         //manipulate the tables_info object.
@@ -383,7 +397,7 @@ impl QueryObject {
         for i in 0..all_tables.len() {
             let name = &all_tables.get(i).unwrap();
             self.table_to_struct_name
-                .insert(name.to_string(), format!("StructVar{}", i));
+                .insert(name.to_string(), format!("Struct_{}", name));
         }
 
         //table_to_csv and tables_info are already updated now.
@@ -395,13 +409,15 @@ impl QueryObject {
 
         for stream in all_stream_names.iter() {
             let stream_obj = self.get_mut_stream(stream);
-            let table_name = stream_obj.source_table.clone();
-            let struct_name = all_structs.get(&table_name).unwrap();
-            stream_obj.insert_op(format!(
-                "ctx.stream_csv::<{}>(\"{}\")",
-                struct_name,
-                csvs.get(&table_name).unwrap()
-            ));
+            if stream_obj.op_chain.is_empty() {
+                let table_name = stream_obj.source_table.clone();
+                let struct_name = all_structs.get(&table_name).unwrap();
+                stream_obj.insert_op(format!(
+                    "ctx.stream_csv::<{}>(\"{}\")",
+                    struct_name,
+                    csvs.get(&table_name).unwrap()
+                ));
+            }
         }
 
         self

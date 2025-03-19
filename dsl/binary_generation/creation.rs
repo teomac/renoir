@@ -68,14 +68,15 @@ impl RustProject {
 }
 
 pub fn create_template(query_object: &QueryObject, is_subquery: bool) -> String {
-    let all_streams = &query_object.streams;
+    let mut all_streams = query_object.streams.clone();
     //streams are returned in reverse order
+    all_streams.reverse();
 
     let mut table_names = Vec::new();
     for (_, stream) in all_streams.iter() {
         table_names.push(stream.source_table.clone());
     }
-    table_names.reverse();
+
 
     // Generate struct definitions for input and output tables
     let struct_definitions = generate_struct_declarations(&table_names, query_object);
@@ -83,6 +84,7 @@ pub fn create_template(query_object: &QueryObject, is_subquery: bool) -> String 
     let mut stream_declarations: Vec<String> = Vec::new();
 
     let all_stream_names = all_streams.keys().cloned().collect::<Vec<String>>();
+
 
     for (i, stream_name) in all_stream_names.iter().enumerate() {
         let mut stream;
@@ -153,12 +155,13 @@ pub fn create_template(query_object: &QueryObject, is_subquery: bool) -> String 
         streams,
         if is_subquery {
             format!(
-                r#"let result = stream0.get();
+                r#"let result = {}.get();
             if result.is_some() && result.as_ref().unwrap().first().is_some() && result.as_ref().unwrap().first().as_ref().unwrap().{}.is_some() {{
                 println!("{{:?}}", result.clone().unwrap().first().unwrap().{}.clone().unwrap());
             }} else {{
                 println!("{{}}", "".to_string());
             }}"#,
+                query_object.streams.first().unwrap().0,
                 query_object.result_column_types.first().unwrap().0,
                 query_object.result_column_types.first().unwrap().0
             )
@@ -205,17 +208,26 @@ pub fn generate_struct_declarations(table_names: &[String], query_object: &Query
         .collect();
 
     //Part2: generate struct definitions for output tables
-    result.push_str(
-        "#[derive(Clone, Debug, Serialize, Deserialize, PartialOrd, PartialEq, Default)]\n",
-    );
-    result.push_str("struct OutputStruct {\n");
 
-    // Add fields from result_column_types
-    for (field_name, field_type) in query_object.result_column_types.clone() {
-        result.push_str(&format!("    {}: Option<{}>,\n", field_name, field_type));
+    let all_streams = query_object.streams.clone();
+
+    for (_stream_name, stream) in all_streams.iter() {
+        if stream.final_struct.is_empty() {
+            continue;
+        } else {
+            result.push_str(
+                "#[derive(Clone, Debug, Serialize, Deserialize, PartialOrd, PartialEq, Default)]\n",
+            );
+            result.push_str(&format!("struct {} {{\n", stream.final_struct_name));
+
+            // Add fields from stream
+            for (field_name, field_type) in stream.final_struct.clone() {
+                result.push_str(&format!("    {}: Option<{}>,\n", field_name, field_type));
+            }
+
+            result.push_str("}\n");
+        }
     }
-
-    result.push_str("}\n");
 
     result
 }

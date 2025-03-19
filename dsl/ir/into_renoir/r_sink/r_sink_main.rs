@@ -13,6 +13,7 @@ pub fn process_projections(
     query_object: &mut QueryObject,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let final_string;
+    let result_column_types = query_object.result_column_types.clone();
 
     // Check if any aggregations are present using recursive traversal
     let has_aggregates: bool = projections.iter().any(|clause| match clause {
@@ -35,9 +36,13 @@ pub fn process_projections(
 
         stream.insert_op(final_string.clone());
 
+
         if stream.is_keyed {
             stream.insert_op(".drop_key()".to_string());
         }
+
+        stream.final_struct = result_column_types;
+
 
         return Ok(());
     }
@@ -64,6 +69,8 @@ pub fn process_projections(
     if stream.is_keyed {
         stream.insert_op(".drop_key()".to_string());
     }
+
+    stream.final_struct = result_column_types;
 
     Ok(())
 }

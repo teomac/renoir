@@ -1,6 +1,8 @@
+use core::panic;
 use std::{io, sync::Arc};
 
 use crate::dsl::ir::ast_parser::ir_ast_structure::ComplexField;
+use crate::dsl::ir::ir_ast_to_renoir;
 use crate::dsl::{
     ir::{
         literal::LiteralParser, Condition, FilterClause, FilterConditionType, GroupBaseCondition,
@@ -14,7 +16,7 @@ use super::subquery_csv;
 pub fn manage_subqueries(
     ir_ast: &Arc<IrPlan>,
     output_path: &String,
-    query_object: &QueryObject,
+    query_object: &mut QueryObject,
 ) -> io::Result<Arc<IrPlan>> {
     match &**ir_ast {
         IrPlan::Project {
@@ -143,8 +145,30 @@ pub fn manage_subqueries(
                 offset: *offset,
             }))
         }
-        // Base case - Scan nodes have no nested queries to process
-        IrPlan::Scan { .. } => Ok(ir_ast.clone()),
+        IrPlan::Scan {
+            input,
+            stream_name,
+            alias,
+        } => {
+            if !matches!(
+                &**input,
+                IrPlan::Project {
+                    input: _,
+                    columns: _,
+                    distinct: _
+                }
+            ) {
+                Ok(ir_ast.clone())
+            } else {
+                let processed_input = manage_nested_join(input, stream_name, alias, query_object);
+                Ok(Arc::new(IrPlan::Scan {
+                    input: processed_input,
+                    stream_name: stream_name.clone(),
+                    alias: alias.clone(),
+                }))
+            }
+        }
+        // Base case - table nodes have no nested queries to process
         IrPlan::Table { .. } => Ok(ir_ast.clone()),
     }
 }
@@ -152,7 +176,7 @@ pub fn manage_subqueries(
 fn process_complex_field(
     field: &ComplexField,
     output_path: &String,
-    query_object: &QueryObject,
+    query_object: &mut QueryObject,
 ) -> io::Result<ComplexField> {
     match field {
         ComplexField {
@@ -212,7 +236,7 @@ fn process_complex_field(
 fn process_filter_condition(
     condition: &FilterClause,
     output_path: &String,
-    query_object: &QueryObject,
+    query_object: &mut QueryObject,
 ) -> io::Result<FilterClause> {
     match condition {
         FilterClause::Base(base_condition) => {
@@ -267,7 +291,7 @@ fn process_filter_condition(
 fn process_group_condition(
     condition: &GroupClause,
     output_path: &String,
-    query_object: &QueryObject,
+    query_object: &mut QueryObject,
 ) -> io::Result<GroupClause> {
     match condition {
         GroupClause::Base(base_condition) => {
@@ -313,4 +337,42 @@ fn process_group_condition(
             })
         }
     }
+}
+
+fn manage_nested_join(
+    input: &Arc<IrPlan>,
+    stream_name: &String,
+    alias: &Option<String>,
+    query_object: &mut QueryObject,
+) -> Arc<IrPlan> {
+    // process all the subqueries in the nested joins
+    let processed_input = manage_subqueries(input, &query_object.output_path.clone(), query_object)
+        .expect("Failed to process nested join subqueries");
+
+    let mut object = query_object.clone().populate(&processed_input);
+    let _ = ir_ast_to_renoir(&mut object);
+    let binding = object.clone();
+    let stream = binding.get_stream(stream_name);
+
+    query_object
+        .streams
+        .insert(stream_name.clone(), stream.clone());
+
+    query_object
+        .table_to_struct_name
+        .insert(alias.clone().unwrap(), format!("Struct_{}", stream.source_table));
+    query_object
+        .alias_to_stream
+        .insert(alias.clone().unwrap(), stream_name.to_string());
+    query_object
+        .tables_info
+        .insert(alias.clone().unwrap(), stream.final_struct.clone());
+
+    println!("query_object.streams {:?}", query_object.streams.clone());
+    println!("query_object.table_to_struct_name {:?}", query_object.table_to_struct_name.clone());
+    println!("query_object.alias_to_stream {:?}", query_object.alias_to_stream.clone());
+
+    Arc::new(IrPlan::Table {
+        table_name: alias.clone().unwrap(),
+    })
 }

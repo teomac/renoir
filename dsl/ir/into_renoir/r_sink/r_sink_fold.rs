@@ -313,7 +313,7 @@ pub fn create_map(
 
     let mut check_list = Vec::new();
 
-    result.push_str(".map(|x| OutputStruct {\n");
+    result.push_str(&format!(".map(|x| {} {{\n", stream_name));
 
     let is_single_acc = acc_info.value_positions.len() == 1;
 

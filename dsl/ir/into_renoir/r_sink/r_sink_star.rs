@@ -2,9 +2,9 @@ use crate::dsl::struct_object::object::QueryObject;
 use core::panic;
 
 pub fn create_star_map(stream_name: &String, query_object: &QueryObject) -> String {
-    let mut result = String::from(".map(|x| OutputStruct { ");
     let stream = query_object.get_stream(stream_name);
-
+    let mut result = format!(".map(|x| {} {{ ", stream_name);
+    
     //cases: JOIN -> WITH GROUP / WITHOUT GROUP
     //and
     // NO JOIN -> WITH GROUP / WITHOUT GROUP

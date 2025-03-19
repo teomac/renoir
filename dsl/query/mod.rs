@@ -99,7 +99,7 @@ pub fn query_csv(
     let ir_query = sql_to_ir(query_str);
     let mut ir_ast = query_ir_to_ast(&ir_query);
     // step 3.5: manage subqueries
-    ir_ast = manage_subqueries(&ir_ast, &output_path.to_string(), &query_object).unwrap();
+    ir_ast = manage_subqueries(&ir_ast, &output_path.to_string(), &mut query_object).unwrap();
 
     query_object = query_object.populate(&ir_ast);
     println!("Ir AST: {:?}", query_object.ir_ast);
@@ -138,7 +138,7 @@ pub fn subquery_csv(
     let rust_project = creation::RustProject::create_empty_project(output_path).unwrap();
 
     // step 3: check if there is a subquery
-    let ir_ast = manage_subqueries(&ir_ast, &output_path.to_string(), &query_object).unwrap();
+    let ir_ast = manage_subqueries(&ir_ast, &output_path.to_string(), &mut query_object).unwrap();
 
     // step 3.5: populate query_object with ir_ast
     query_object = query_object.populate(&ir_ast);
