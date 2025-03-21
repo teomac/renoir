@@ -360,17 +360,14 @@ fn manage_nested_join(
 
     query_object
         .table_to_struct_name
-        .insert(alias.clone().unwrap(), format!("Struct_{}", stream.source_table));
+        .insert(alias.clone().unwrap(), stream.final_struct_name.to_string());
     query_object
         .alias_to_stream
         .insert(alias.clone().unwrap(), stream_name.to_string());
     query_object
         .tables_info
         .insert(alias.clone().unwrap(), stream.final_struct.clone());
-
-    println!("query_object.streams {:?}", query_object.streams.clone());
-    println!("query_object.table_to_struct_name {:?}", query_object.table_to_struct_name.clone());
-    println!("query_object.alias_to_stream {:?}", query_object.alias_to_stream.clone());
+    query_object.structs.insert(stream.final_struct_name.clone(), stream.final_struct.clone());
 
     Arc::new(IrPlan::Table {
         table_name: alias.clone().unwrap(),

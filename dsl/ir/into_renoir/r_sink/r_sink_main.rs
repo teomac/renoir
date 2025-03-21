@@ -40,7 +40,7 @@ pub fn process_projections(
         if stream.is_keyed {
             stream.insert_op(".drop_key()".to_string());
         }
-
+        
         stream.final_struct = result_column_types;
 
 

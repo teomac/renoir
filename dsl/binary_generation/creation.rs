@@ -72,14 +72,8 @@ pub fn create_template(query_object: &QueryObject, is_subquery: bool) -> String 
     //streams are returned in reverse order
     all_streams.reverse();
 
-    let mut table_names = Vec::new();
-    for (_, stream) in all_streams.iter() {
-        table_names.push(stream.source_table.clone());
-    }
-
-
     // Generate struct definitions for input and output tables
-    let struct_definitions = generate_struct_declarations(&table_names, query_object);
+    let struct_definitions = generate_struct_declarations(query_object);
 
     let mut stream_declarations: Vec<String> = Vec::new();
 
@@ -135,7 +129,11 @@ pub fn create_template(query_object: &QueryObject, is_subquery: bool) -> String 
 
     // Create the main.rs content
     format!(
-        r#"use renoir::prelude::*;
+        
+        r#"
+        #![allow(non_camel_case_types)]
+        #![allow(unused_variables)]
+        use renoir::prelude::*;
         use serde::{{Deserialize, Serialize}};
         use serde_json;
         use std::fs;
@@ -171,34 +169,28 @@ pub fn create_template(query_object: &QueryObject, is_subquery: bool) -> String 
     )
 }
 
-pub fn generate_struct_declarations(table_names: &[String], query_object: &QueryObject) -> String {
+pub fn generate_struct_declarations(query_object: &QueryObject) -> String {
     //Part1: generate struct definitions for input tables
 
-    let struct_names = query_object.get_all_structs();
-
     // Use iterators to zip through table_names, struct_names, and field_lists to maintain order
-    let mut result: String = table_names
+    let structs = query_object.structs.clone();
+
+    //iterate and print all structs
+    let mut result: String = structs
         .iter()
-        .enumerate()
-        .map(|(i, _table_name)| {
+        .map(|(struct_name, fields)| {
             // Generate struct definition
             let mut struct_def = String::new();
             struct_def.push_str(
                 "#[derive(Clone, Debug, Serialize, Deserialize, PartialOrd, PartialEq, Default)]\n",
             );
-            struct_def.push_str(&format!("struct {} {{\n", struct_names[i]));
+            struct_def.push_str(&format!("struct {} {{\n", struct_name));
 
             // Generate field definitions directly from table to struct mapping
-
-            let fields_str = query_object
-                .tables_info
-                .get(_table_name)
-                .unwrap()
-                .iter()
-                .fold(String::new(), |mut output, (field_name, field_type)| {
-                    let _ = writeln!(output, "{}: Option<{}>,\n", field_name, field_type);
-                    output
-                });
+            let fields_str = fields.iter().fold(String::new(), |mut output, (field_name, field_type)| {
+                let _ = writeln!(output, "{}: Option<{}>,\n", field_name, field_type);
+                output
+            });
 
             struct_def.push_str(&fields_str);
             struct_def.push_str("}\n\n");

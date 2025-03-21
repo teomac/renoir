@@ -41,7 +41,9 @@ pub fn create_aggregate_map(
         match clause {
             ProjectionColumn::Aggregate(agg, _) => match agg.function {
                 AggregateType::Avg => {
-                    acc_info.add_avg(agg.column.clone(), result_type.clone());
+                    let col_type = query_object.get_type(&agg.column);
+
+                    acc_info.add_avg(agg.column.clone(), col_type);
                 }
                 AggregateType::Count => {
                     acc_info.add_value(
@@ -202,6 +204,7 @@ fn create_fold(
         }
         match value {
             AccumulatorValue::Aggregate(agg_type, col) => {
+                let col_type = query_object.get_type(col);
                 let col_stream_name = if col.table.is_some() {
                     query_object
                         .get_stream_from_alias(col.table.as_ref().unwrap())
@@ -239,31 +242,35 @@ fn create_fold(
                     AggregateType::Sum => {
                         update_code.push_str(&format!(
                             "    if let Some(val) = {} {{ 
-                                {}acc{} = Some(acc{}.unwrap_or(0.0) + val);
+                                {}acc{} = Some(acc{}.unwrap_or(0{}) + val);
                             }}\n",
-                            col_access, asterisk, index_acc, index_acc
+                            col_access, asterisk, index_acc, index_acc, if col_type == "f64" {".0"} else {""}
                         ));
                     }
                     AggregateType::Max => {
                         update_code.push_str(&format!(
-                            "    if let Some(val) = {} {{
+                            "    if let Some({}val) = {} {{
                                 {}acc{} = Some(match acc{} {{
-                                    Some(current_max) => current_max.max(val),
+                                    Some(current_max) => {}current_max.max({}val),
                                     None => val
                                 }});
                             }}\n",
-                            col_access, asterisk, index_acc, index_acc
+                            if asterisk.is_empty() { "" } else { "mut " },
+                            col_access, asterisk, index_acc, index_acc, asterisk,
+                            if asterisk.is_empty() { "" } else { "&mut " }
                         ));
                     }
                     AggregateType::Min => {
                         update_code.push_str(&format!(
-                            "    if let Some(val) = {} {{
+                            "    if let Some({}val) = {} {{
                                 {}acc{} = Some(match acc{} {{
-                                    Some(current_min) => current_min.min(val),
+                                    Some(current_min) => {}current_min.min({}val),
                                     None => val
                                 }});
                             }}\n",
-                            col_access, asterisk, index_acc, index_acc
+                            if asterisk.is_empty() { "" } else { "mut " },
+                            col_access, asterisk, index_acc, index_acc, asterisk,
+                            if asterisk.is_empty() { "" } else { "&mut " }
                         ));
                     }
                     AggregateType::Avg => {} // Handled through Sum and Count
@@ -313,7 +320,7 @@ pub fn create_map(
 
     let mut check_list = Vec::new();
 
-    result.push_str(&format!(".map(|x| {} {{\n", stream_name));
+    result.push_str(&format!(".map(|x| {} {{\n", stream.final_struct_name));
 
     let is_single_acc = acc_info.value_positions.len() == 1;
 

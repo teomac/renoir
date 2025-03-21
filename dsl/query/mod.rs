@@ -102,7 +102,7 @@ pub fn query_csv(
     ir_ast = manage_subqueries(&ir_ast, &output_path.to_string(), &mut query_object).unwrap();
 
     query_object = query_object.populate(&ir_ast);
-    println!("Ir AST: {:?}", query_object.ir_ast);
+    //println!("Ir AST: {:?}", query_object.ir_ast);
     query_object.collect_projection_aggregates(&ir_ast);
 
     // step 4: convert Ir AST to renoir string

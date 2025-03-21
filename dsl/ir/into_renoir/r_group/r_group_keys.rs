@@ -185,8 +185,15 @@ fn process_group_by_keys(columns: &[ColumnRef], query_object: &mut QueryObject) 
         let final_string = columns
             .iter()
             .map(|col| {
-                let col_stream = col.table.as_ref().unwrap_or(&stream_name);
-                check_column_validity(col, col_stream, query_object);
+                let col_stream = if col.table.is_some() {
+                    query_object
+                        .get_stream_from_alias(col.table.as_ref().unwrap())
+                        .unwrap()
+                        .clone()
+                } else {
+                    stream_name.clone()
+                };
+                check_column_validity(col, &col_stream, query_object);
                 let needs_casting = stream.get_field_type(&col.column) == "f64";
                 format!(
                     "x.{}.clone(){}",

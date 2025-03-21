@@ -52,6 +52,7 @@ pub fn create_fold_operation(
                 // Generate update code
                 match value {
                     GroupAccumulatorValue::Aggregate(agg_type, col) => {
+                        let col_type = query_object.get_type(col);
                         let col_access = {
                             let stream_name = if col.table.is_some() {
                                 query_object
@@ -131,7 +132,7 @@ pub fn create_fold_operation(
                             }
                             AggregateType::Sum => {
                                 update_code.push_str(&format!(
-                                    "if let Some(val) = {} {{ {}acc{} = Some({}acc{}.unwrap_or(0.0) + val); }}\n",
+                                    "if let Some(val) = {} {{ {}acc{} = Some({}acc{}.unwrap_or(0{}) + val); }}\n",
                                     col_access,
                                     if !single_agg {
                                         String::from("")
@@ -152,6 +153,11 @@ pub fn create_fold_operation(
                                         String::from("")
                                     } else {
                                         format!(".{}", pos)
+                                    },
+                                    if col_type == "f64" {
+                                        ".0"
+                                    } else {
+                                        ""
                                     }
                                 ));
 
@@ -172,11 +178,16 @@ pub fn create_fold_operation(
                             }
                             AggregateType::Max => {
                                 update_code.push_str(&format!(
-                                    "if let Some(val) = {} {{ {}acc{} = Some(match {}acc{} {{
-                                            Some(current_max) => current_max.max(val as f64),
+                                    "if let Some({}val) = {} {{ {}acc{} = Some(match {}acc{} {{
+                                            Some(current_max) => current_max.max({}val as f64),
                                             None => val as f64
                                         }});
                                     }}\n",
+                                    if !single_agg {
+                                        String::from("")
+                                    } else {
+                                        String::from("mut ")
+                                    },
                                     col_access,
                                     if !single_agg {
                                         String::from("")
@@ -197,6 +208,11 @@ pub fn create_fold_operation(
                                         String::from("")
                                     } else {
                                         format!(".{}", pos)
+                                    },
+                                    if !single_agg {
+                                        String::from("")
+                                    } else {
+                                        String::from("&mut ")
                                     }
                                 ));
 
@@ -217,11 +233,16 @@ pub fn create_fold_operation(
                             }
                             AggregateType::Min => {
                                 update_code.push_str(&format!(
-                                    "if let Some(val) = {} {{{}acc{} = Some(match {}acc{} {{
-                                            Some(current_min) => current_min.min(val as f64),
+                                    "if let Some({}val) = {} {{{}acc{} = Some(match {}acc{} {{
+                                            Some(current_min) => current_min.min({}val as f64),
                                             None => val as f64
                                         }});
                                     }}\n",
+                                    if !single_agg {
+                                        String::from("")
+                                    } else {
+                                        String::from("mut ")
+                                    },
                                     col_access,
                                     if !single_agg {
                                         String::from("")
@@ -242,6 +263,11 @@ pub fn create_fold_operation(
                                         String::from("")
                                     } else {
                                         format!(".{}", pos)
+                                    },
+                                    if !single_agg {
+                                        String::from("")
+                                    } else {
+                                        String::from("&mut ")
                                     }
                                 ));
 

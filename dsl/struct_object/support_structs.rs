@@ -159,7 +159,6 @@ impl JoinTree {
                 match &**left {
                     JoinTree::Leaf(_) => {
                         for stream in left_streams {
-                            //println!("Updating access path for {} to .0", stream);
                             query_object
                                 .get_mut_stream(&stream)
                                 .access
@@ -177,7 +176,6 @@ impl JoinTree {
 
                         // Update nested left streams with .0.0
                         for stream in nested_left_streams {
-                            //println!("Updating access path for {} to .0.0", stream);
                             query_object
                                 .get_mut_stream(&stream)
                                 .access
@@ -186,7 +184,6 @@ impl JoinTree {
 
                         // Update nested right streams with .0.1
                         for stream in nested_right_streams {
-                            //println!("Updating access path for {} to .0.1", stream);
                             query_object
                                 .get_mut_stream(&stream)
                                 .access
@@ -197,7 +194,6 @@ impl JoinTree {
 
                 // For right side - always append .1
                 for stream in right_streams {
-                    //println!("Updating access path for {} to .1", stream);
                     query_object
                         .get_mut_stream(&stream)
                         .access

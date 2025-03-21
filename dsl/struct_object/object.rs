@@ -16,6 +16,7 @@ pub struct QueryObject {
     pub table_to_csv: IndexMap<String, String>, // key: table name, value: csv file path
 
     pub table_to_struct_name: IndexMap<String, String>, // key: tuple (table name, alias), value: struct name
+    pub structs: IndexMap<String, IndexMap<String, String>>, // key: struct name, value: IndexMap of field name and data type
 
     pub alias_to_stream: IndexMap<String, String>, // key: alias, value: stream name. Please note that, if the table has no alias and the query has multiple tables, the alias will be the table name.
 
@@ -52,7 +53,7 @@ pub struct QueryObject {
 
     pub projection_agg: Vec<ProjectionColumn>, //projection aggregates.
                                                //Here we store ONLY the aggregates in the final projection, that we will need to generate the fold in case of a group by
-}
+                                            }
 
 impl Default for QueryObject {
     fn default() -> Self {
@@ -69,6 +70,7 @@ impl QueryObject {
             tables_info: IndexMap::new(),
             table_to_csv: IndexMap::new(),
             table_to_struct_name: IndexMap::new(),
+            structs: IndexMap::new(),
             result_column_types: IndexMap::new(),
             output_path: String::new(),
             ir_ast: None,
@@ -102,7 +104,9 @@ impl QueryObject {
 
         stream.update_columns(self.tables_info.get(source_table).unwrap().clone());
 
-        stream.final_struct_name.push_str(stream_name);
+        stream
+            .final_struct_name
+            .push_str(&format!("Struct_{}", stream_name.clone()).to_string());
 
         self.streams.insert(stream_name.clone(), stream);
     }
@@ -225,7 +229,8 @@ impl QueryObject {
             if all_streams.len() == 1 {
                 all_streams[0].clone()
             } else {
-                panic!("Column reference must have table name in JOIN query");
+                //take the last added
+                all_streams.last().unwrap().clone()
             }
         };
 
@@ -251,6 +256,7 @@ impl QueryObject {
 
     //method to populate the QueryObject with the necessary information
     pub fn populate(mut self, ir_ast: &Arc<IrPlan>) -> Self {
+        let mut first_time = true;
         // empty result_col_types, projection_agg, has_join, order_by, limit, distinct
         self.result_column_types.clear();
         self.projection_agg.clear();
@@ -290,11 +296,27 @@ impl QueryObject {
         }
 
         //create the first stream
-        self.create_new_stream(
-            main_stream,
-            &main_table,
-            &main_alias.clone().unwrap_or(String::new()),
-        );
+        if self.streams.get(main_stream).is_none() {
+            self.create_new_stream(
+                main_stream,
+                &main_table,
+                &main_alias.clone().unwrap_or(String::new()),
+            );
+        } else {
+            first_time = false;
+            //update the columns
+            let stream = self.get_mut_stream(main_stream);
+            //update source table
+            stream.source_table = main_table.clone();
+            //if stream.final_struct_name is empty, we have to set it to the result_column_types
+            if stream.final_struct_name.is_empty() {
+                stream.final_struct_name = format!("Struct_{}", stream.id.clone());
+            } else {
+                stream.final_struct_name = format!("{}_clone", stream.final_struct_name);
+            }
+            stream.is_keyed = false;
+            stream.key_columns.clear();
+        }
 
         //////////////////////////////////////////////
 
@@ -308,7 +330,6 @@ impl QueryObject {
                 } => (input_source, stream_name, alias),
                 _ => panic!("Error: this is not a scan node"),
             };
-            println!("Join table: {:?}", join_table_arc);
 
             //check if join table is a table name or a subquery
             let join_table = match &**join_table_arc {
@@ -333,6 +354,20 @@ impl QueryObject {
                         .clone()
                         .unwrap_or_else(|| panic!("Alias not found for table {}", &join_table)),
                 );
+            } else {
+                first_time = false;
+                //update the columns
+                let stream = self.get_mut_stream(join_stream);
+                //update source table
+                stream.source_table = join_table.clone();
+                //if stream.final_struct_name is empty, we have to set it to the result_column_types
+                if stream.final_struct_name.is_empty() {
+                    stream.final_struct_name = format!("Struct_{}", stream.id.clone());
+                } else {
+                    stream.final_struct_name = format!("{}_clone", stream.final_struct_name);
+                }
+                stream.is_keyed = false;
+            stream.key_columns.clear();
             }
         }
 
@@ -351,12 +386,13 @@ impl QueryObject {
             .map(|stream| stream.source_table.clone())
             .collect::<Vec<_>>();
 
+        if first_time{
         for table in tables_info_keys.iter() {
             //if the table is not in the stream_tables, remove it from the tables_info object
             if table != &main_table && !stream_tables.contains(table) {
                 temp_tables_info.shift_remove(table);
             }
-        }
+        }}
 
         //we also update the table_to_csv object
         let mut temp_table_to_csv = self.table_to_csv.clone();
@@ -398,6 +434,10 @@ impl QueryObject {
             let name = &all_tables.get(i).unwrap();
             self.table_to_struct_name
                 .insert(name.to_string(), format!("Struct_{}", name));
+            self.structs.insert(
+                format!("Struct_{}", name),
+                self.tables_info.get(name.as_str()).unwrap().clone(),
+            );
         }
 
         //table_to_csv and tables_info are already updated now.
@@ -496,7 +536,14 @@ impl QueryObject {
                     if col_ref.column == "*" {
                         if stream.is_keyed {
                             // If stream is keyed, only include GROUP BY keys
-                            for key_col in &stream.key_columns {
+
+                            //first we need to collect all the keys from all the streams
+                            let mut keys = stream.key_columns.clone();
+                            for stream in all_streams.clone(){
+                                keys.extend(self.get_stream(&stream).key_columns.clone());
+                            }
+
+                            for key_col in &keys {
                                 let stream_name = if key_col.table.is_some() {
                                     self.get_stream_from_alias(key_col.table.as_ref().unwrap())
                                         .unwrap()
@@ -536,6 +583,7 @@ impl QueryObject {
 
                             for stream_name in final_tables {
                                 let stream = self.get_stream(&stream_name);
+
                                 let table = &stream.source_table;
                                 let alias = if stream.alias.is_empty() {
                                     table.clone()
@@ -543,12 +591,17 @@ impl QueryObject {
                                     stream.alias.clone()
                                 };
 
-                                if let Some(struct_map) = self.tables_info.get(table) {
-                                    for (col_name, col_type) in struct_map {
-                                        let full_col_name = format!("{}_{}", col_name, alias);
-                                        self.result_column_types
-                                            .insert(full_col_name, col_type.clone());
-                                    }
+                                let struct_map = if stream.final_struct.is_empty() {
+                                    self.tables_info.get(table).unwrap()
+                                } else {
+                                    &stream.final_struct.clone()
+                                  
+                                };
+
+                                for (col_name, col_type) in struct_map {
+                                    let full_col_name = format!("{}_{}", col_name, alias);
+                                    self.result_column_types
+                                        .insert(full_col_name, col_type.clone());
                                 }
                             }
                         }
