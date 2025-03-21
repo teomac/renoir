@@ -6,6 +6,10 @@ pub fn validate_ast(ast: &SqlAST) -> Result<(), Box<SqlParseError>> {
     validate_no_aggregates_in_where(&ast.filter)?;
     validate_having_columns_in_group_by(ast)?;
     validate_order_by(ast)?;
+    
+    for select_column in &ast.select.select {
+        validate_select_subquery(&select_column.selection)?;
+    }
 
     Ok(())
 }
@@ -289,6 +293,25 @@ fn validate_limit_offset(clause: &Option<LimitClause>) -> Result<(), Box<SqlPars
                 ))));
             }
         }
+    }
+    Ok(())
+}
+
+// check that the subquery contains only one column in the select clause. other checks are made at runtime
+fn validate_select_subquery(select_type: &SelectType) -> Result<(), Box<SqlParseError>> {
+    match select_type {
+        SelectType::ComplexValue(left_field, _, _) => {
+            // Check if this ComplexValue contains a subquery
+            if let Some(ref subquery) = left_field.subquery {
+                // Check that subquery's SELECT clause has exactly one column
+                if subquery.select.select.len() != 1 {
+                    return Err(Box::new(SqlParseError::InvalidInput(
+                        "Subquery in SELECT clause must return exactly one column".to_string(),
+                    )));
+                }
+            }
+        }
+        _ => {}
     }
     Ok(())
 }

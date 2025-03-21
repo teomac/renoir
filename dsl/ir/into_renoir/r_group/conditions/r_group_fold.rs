@@ -183,7 +183,7 @@ pub fn create_fold_operation(
                                             None => val as f64
                                         }});
                                     }}\n",
-                                    if !single_agg {
+                                    if !single_agg || col_type != "i64" {
                                         String::from("")
                                     } else {
                                         String::from("mut ")
@@ -209,7 +209,7 @@ pub fn create_fold_operation(
                                     } else {
                                         format!(".{}", pos)
                                     },
-                                    if !single_agg {
+                                    if !single_agg || col_type != "i64" {
                                         String::from("")
                                     } else {
                                         String::from("&mut ")
@@ -238,7 +238,7 @@ pub fn create_fold_operation(
                                             None => val as f64
                                         }});
                                     }}\n",
-                                    if !single_agg {
+                                    if !single_agg || col_type != "i64" {
                                         String::from("")
                                     } else {
                                         String::from("mut ")
@@ -264,7 +264,7 @@ pub fn create_fold_operation(
                                     } else {
                                         format!(".{}", pos)
                                     },
-                                    if !single_agg {
+                                    if !single_agg || col_type != "i64" {
                                         String::from("")
                                     } else {
                                         String::from("&mut ")

@@ -255,9 +255,9 @@ fn create_fold(
                                     None => val
                                 }});
                             }}\n",
-                            if asterisk.is_empty() { "" } else { "mut " },
-                            col_access, asterisk, index_acc, index_acc, asterisk,
-                            if asterisk.is_empty() { "" } else { "&mut " }
+                            if asterisk.is_empty() || col_type != "i64" { "" } else { "mut " },
+                            col_access, asterisk, index_acc, index_acc, if col_type == "i64" {asterisk.clone()} else {"".to_string()},
+                            if asterisk.is_empty() || col_type != "i64" { "" } else { "&mut " }
                         ));
                     }
                     AggregateType::Min => {
@@ -268,9 +268,9 @@ fn create_fold(
                                     None => val
                                 }});
                             }}\n",
-                            if asterisk.is_empty() { "" } else { "mut " },
-                            col_access, asterisk, index_acc, index_acc, asterisk,
-                            if asterisk.is_empty() { "" } else { "&mut " }
+                            if asterisk.is_empty() || col_type != "i64" { "" } else { "mut " },
+                            col_access, asterisk, index_acc, index_acc, if col_type == "i64" {asterisk.clone()} else {"".to_string()},
+                            if asterisk.is_empty() || col_type != "i64" { "" } else { "&mut " }
                         ));
                     }
                     AggregateType::Avg => {} // Handled through Sum and Count
