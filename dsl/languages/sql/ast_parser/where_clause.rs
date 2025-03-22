@@ -104,10 +104,20 @@ impl ConditionParser {
         let first_rule = check_pairs.next();
 
         if let Some(first) = first_rule {
-            if first.as_str().to_lowercase() == "true" || first.as_str().to_lowercase() == "false" {
-                return Ok(WhereClause::Base(WhereBaseCondition::Boolean(
-                    first.as_str().to_lowercase() == "true",
-                )));
+            if first.as_rule() == Rule::boolean {
+                // Handle boolean expressions directly
+                let value = match first.as_str() {
+                    "true" => true,
+                    "false" => false,
+                    _ => {
+                        return Err(Box::new(SqlParseError::InvalidInput(
+                            "Invalid boolean value".to_string(),
+                        ))
+                        .into())
+                    }
+                };
+
+                return Ok(WhereClause::Base(WhereBaseCondition::Boolean(value)));
             }
             // Handle EXISTS expression directly
             if first.as_rule() == Rule::exists_expr {

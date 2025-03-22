@@ -1,5 +1,6 @@
 use super::error::SqlParseError;
 use super::{sql_ast_structure::*, SqlParser};
+use crate::dsl::ir::GroupBaseCondition;
 use crate::dsl::languages::sql::ast_parser::Rule;
 use pest::iterators::Pair;
 
@@ -178,10 +179,20 @@ impl GroupByParser {
 
         // Handle EXISTS subquery
         if let Some(first) = first_rule {
-            if first.as_str().to_lowercase() == "true" || first.as_str().to_lowercase() == "false" {
-                return Ok(HavingClause::Base(HavingBaseCondition::Boolean(
-                    first.as_str().to_lowercase() == "true",
-                )));
+            if first.as_rule() == Rule::boolean {
+                // Handle boolean expressions directly
+                let value = match first.as_str() {
+                    "true" => true,
+                    "false" => false,
+                    _ => {
+                        return Err(Box::new(SqlParseError::InvalidInput(
+                            "Invalid boolean value".to_string(),
+                        ))
+                        .into())
+                    }
+                };
+
+                return Ok(HavingClause::Base(HavingBaseCondition::Boolean(value)));
             }
 
             if first.as_rule() == Rule::exists_expr {

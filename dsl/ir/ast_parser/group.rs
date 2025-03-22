@@ -133,13 +133,21 @@ impl GroupParser {
             IrParseError::InvalidInput("Missing first part of condition".to_string())
         })?;
 
-        if first.as_str().to_lowercase() == "true" || first.as_str().to_lowercase() == "false" {
-            return Ok(GroupClause::Base(GroupBaseCondition::Boolean(
-                first.as_str().to_lowercase() == "true",
-            )));
-        }
-
         match first.as_rule() {
+            Rule::boolean_keyword => {
+                let value = match first.as_str() {
+                    "true" => true,
+                    "false" => false,
+                    _ => {
+                        return Err(Box::new(IrParseError::InvalidInput(
+                            "Invalid boolean value".to_string(),
+                        ))
+                        .into())
+                    }
+                };
+
+                Ok(GroupClause::Base(GroupBaseCondition::Boolean(value)))
+            }
             Rule::arithmetic_expr => {
                 // Handle comparison condition
                 let operator_pair = inner

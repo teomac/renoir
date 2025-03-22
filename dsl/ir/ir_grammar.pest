@@ -99,7 +99,7 @@ arithmetic_factor = {
 
 // Conditions for FILTER clause
 condition = {
-    "TRUE" | "FALSE" |
+    boolean_keyword |
     exists_keyword ~ subquery |
     arithmetic_expr ~ comparison_op ~ arithmetic_expr | 
     (qualified_column | subquery | identifier | number) ~ null_op

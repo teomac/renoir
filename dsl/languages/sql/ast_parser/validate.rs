@@ -122,7 +122,7 @@ fn validate_no_aggregates_in_where(clause: &Option<WhereClause>) -> Result<(), B
                             }
                 WhereBaseCondition::Exists(_, _) => { /*TODO */ }
                 WhereBaseCondition::In(_, _, _) => { /*TODO */ }
-WhereBaseCondition::Boolean(_) => todo!(),
+                WhereBaseCondition::Boolean(_) => { /*TODO */ }
             },
             WhereClause::Expression { left, op: _, right } => {
                 validate_no_aggregates_in_where(&Some(*left.clone()))?;

@@ -71,7 +71,7 @@ in_expr = { (variable | table_column) ~ in_keyword ~ subquery_expr }
 
 
 condition = {
-    "TRUE" | "FALSE" |
+    boolean |
     exists_expr |
     in_expr |
     arithmetic_expr ~ operator ~ arithmetic_expr | 
