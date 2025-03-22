@@ -2,7 +2,7 @@ use core::panic;
 use std::{io, sync::Arc};
 
 use crate::dsl::ir::ast_parser::ir_ast_structure::ComplexField;
-use crate::dsl::ir::ir_ast_to_renoir;
+use crate::dsl::ir::{ir_ast_to_renoir, InCondition};
 use crate::dsl::{
     ir::{
         literal::LiteralParser, Condition, FilterClause, FilterConditionType, GroupBaseCondition,
@@ -187,18 +187,35 @@ fn process_complex_field(
             let processed_subquery = manage_subqueries(subquery, output_path, query_object)?;
 
             // Execute the subquery to get result
-            let mut result = subquery_csv(
+            let result = subquery_csv(
                 processed_subquery,
                 output_path,
                 query_object.tables_info.clone(),
                 query_object.table_to_csv.clone(),
             );
 
-            // Clean up the result string - remove quotes and whitespace/newlines
-            result = result.trim().trim_matches('"').to_string();
+            // Parse the result vector
+            let values: Vec<&str> = result
+                .trim()
+                .trim_start_matches('[')
+                .trim_end_matches(']')
+                .split(',')
+                .map(|s| s.trim().trim_matches('"'))
+                .collect();
+
+            // Validate that subquery returns exactly one value
+            if values.len() > 1 {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Subquery must return exactly one value when used in SELECT clause",
+                ));
+            }
+
+            // Get the single value or empty string if no results
+            let result_str = values.first().map(|s| *s).unwrap_or("").to_string();
 
             // Convert the result string to appropriate IrLiteral
-            let literal = LiteralParser::parse(&result)
+            let literal = LiteralParser::parse(&result_str)
                 .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
 
             // Return new ComplexField with just the literal
@@ -242,59 +259,110 @@ fn process_filter_condition(
         FilterClause::Base(base_condition) => {
             match base_condition {
                 FilterConditionType::Comparison(comparison) => {
-                                // Process both left and right fields for subqueries
-                                let processed_left =
-                                    process_complex_field(&comparison.left_field, output_path, query_object)?;
-                                let processed_right =
-                                    process_complex_field(&comparison.right_field, output_path, query_object)?;
+                    // Process both left and right fields for subqueries
+                    let processed_left =
+                        process_complex_field(&comparison.left_field, output_path, query_object)?;
+                    let processed_right =
+                        process_complex_field(&comparison.right_field, output_path, query_object)?;
 
-                                Ok(FilterClause::Base(FilterConditionType::Comparison(
-                                    Condition {
-                                        left_field: processed_left,
-                                        operator: comparison.operator.clone(),
-                                        right_field: processed_right,
-                                    },
-                                )))
-                            }
+                    Ok(FilterClause::Base(FilterConditionType::Comparison(
+                        Condition {
+                            left_field: processed_left,
+                            operator: comparison.operator.clone(),
+                            right_field: processed_right,
+                        },
+                    )))
+                }
                 FilterConditionType::NullCheck(null_check) => {
-                                // Process the field for subqueries
-                                let processed_field =
-                                    process_complex_field(&null_check.field, output_path, query_object)?;
+                    // Process the field for subqueries
+                    let processed_field =
+                        process_complex_field(&null_check.field, output_path, query_object)?;
 
-                                Ok(FilterClause::Base(FilterConditionType::NullCheck(
-                                    NullCondition {
-                                        field: processed_field,
-                                        operator: null_check.operator.clone(),
-                                    },
-                                )))
-                            }
+                    Ok(FilterClause::Base(FilterConditionType::NullCheck(
+                        NullCondition {
+                            field: processed_field,
+                            operator: null_check.operator.clone(),
+                        },
+                    )))
+                }
                 FilterConditionType::Exists(exists_subquery, is_negated) => {
-                                // Process the nested subqueries first
-                                let processed_subquery =
-                                    manage_subqueries(exists_subquery, output_path, query_object)?;
+                    // Process the nested subqueries first
+                    let processed_subquery =
+                        manage_subqueries(exists_subquery, output_path, query_object)?;
 
-                                // Execute the subquery
-                                let result = subquery_csv(
-                                    processed_subquery,
-                                    output_path,
-                                    query_object.tables_info.clone(),
-                                    query_object.table_to_csv.clone(),
-                                );
+                    // Execute the subquery
+                    let result = subquery_csv(
+                        processed_subquery,
+                        output_path,
+                        query_object.tables_info.clone(),
+                        query_object.table_to_csv.clone(),
+                    );
 
-                                // Check if subquery returned any results
-                                let has_results = !result.trim().is_empty();
-                                let bool_result = if *is_negated {
-                                    !has_results
-                                } else {
-                                    has_results
-                                };
+                    // Check if subquery returned any results
+                    let has_results = result.trim() != "[]";
+                    let bool_result = if *is_negated {
+                        !has_results
+                    } else {
+                        has_results
+                    };
 
-                                Ok(FilterClause::Base(FilterConditionType::Boolean(bool_result)))
-                            }
+                    Ok(FilterClause::Base(FilterConditionType::Boolean(
+                        bool_result,
+                    )))
+                }
                 FilterConditionType::Boolean(boolean) => {
-                                Ok(FilterClause::Base(FilterConditionType::Boolean(*boolean)))
+                    Ok(FilterClause::Base(FilterConditionType::Boolean(*boolean)))
+                }
+                FilterConditionType::In(in_condition) => {
+                    match in_condition {
+                        InCondition::InSubquery {
+                            field,
+                            subquery,
+                            negated,
+                        } => {
+                            // Process the subquery
+                            let processed_subquery =
+                                manage_subqueries(subquery, output_path, query_object)?;
+
+                            // Execute the subquery
+                            let result = subquery_csv(
+                                processed_subquery,
+                                output_path,
+                                query_object.tables_info.clone(),
+                                query_object.table_to_csv.clone(),
+                            );
+
+                            let has_results = !result.trim().is_empty();
+                            let mut ir_literals = Vec::new();
+                            if has_results {
+                                // convert the result to a vector of irLiterals
+                                let values: Vec<&str> = result
+                                    .trim()
+                                    .trim_start_matches('[')
+                                    .trim_end_matches(']')
+                                    .split(',')
+                                    .map(|s| s.trim().trim_matches('"'))
+                                    .collect();
+
+                                for value in values {
+                                    let literal = LiteralParser::parse(value).map_err(|e| {
+                                        io::Error::new(io::ErrorKind::Other, e.to_string())
+                                    })?;
+                                    ir_literals.push(literal);
+                                }
                             }
-                FilterConditionType::In(column_ref, ir_plan, _) => todo!(),
+
+                            Ok(FilterClause::Base(FilterConditionType::In(
+                                InCondition::In {
+                                    field: field.clone(),
+                                    values: ir_literals,
+                                    negated: *negated,
+                                },
+                            )))
+                        }
+                        InCondition::In { .. } => panic!("We should not get here"),
+                    }
+                }
             }
         }
         FilterClause::Expression {
@@ -324,55 +392,105 @@ fn process_group_condition(
         GroupClause::Base(base_condition) => {
             match base_condition {
                 GroupBaseCondition::Comparison(comparison) => {
-                                // Process both left and right fields for subqueries
-                                let processed_left =
-                                    process_complex_field(&comparison.left_field, output_path, query_object)?;
-                                let processed_right =
-                                    process_complex_field(&comparison.right_field, output_path, query_object)?;
+                    // Process both left and right fields for subqueries
+                    let processed_left =
+                        process_complex_field(&comparison.left_field, output_path, query_object)?;
+                    let processed_right =
+                        process_complex_field(&comparison.right_field, output_path, query_object)?;
 
-                                Ok(GroupClause::Base(GroupBaseCondition::Comparison(
-                                    Condition {
-                                        left_field: processed_left,
-                                        operator: comparison.operator.clone(),
-                                        right_field: processed_right,
-                                    },
-                                )))
-                            }
+                    Ok(GroupClause::Base(GroupBaseCondition::Comparison(
+                        Condition {
+                            left_field: processed_left,
+                            operator: comparison.operator.clone(),
+                            right_field: processed_right,
+                        },
+                    )))
+                }
                 GroupBaseCondition::NullCheck(null_check) => {
-                                // Process the field for subqueries
-                                let processed_field =
-                                    process_complex_field(&null_check.field, output_path, query_object)?;
+                    // Process the field for subqueries
+                    let processed_field =
+                        process_complex_field(&null_check.field, output_path, query_object)?;
 
-                                Ok(GroupClause::Base(GroupBaseCondition::NullCheck(
-                                    NullCondition {
-                                        field: processed_field,
-                                        operator: null_check.operator.clone(),
-                                    },
-                                )))
-                            }
+                    Ok(GroupClause::Base(GroupBaseCondition::NullCheck(
+                        NullCondition {
+                            field: processed_field,
+                            operator: null_check.operator.clone(),
+                        },
+                    )))
+                }
                 GroupBaseCondition::Exists(ir_plan, is_negated) => {
-                                // Process the subquery
-                                let processed_subquery = 
-                                    manage_subqueries(ir_plan, output_path, query_object)?;
-                
-                                // Execute the subquery
-                                let result = subquery_csv(
-                                    processed_subquery,
-                                    output_path,
-                                    query_object.tables_info.clone(),
-                                    query_object.table_to_csv.clone(),
-                                );
-                
-                                // Check if subquery returned any results
-                                let has_results = !result.trim().is_empty();
-                                let bool_result = if *is_negated { !has_results } else { has_results };
-                
-                                Ok(GroupClause::Base(GroupBaseCondition::Boolean(bool_result)))
-                            }
+                    // Process the subquery
+                    let processed_subquery = manage_subqueries(ir_plan, output_path, query_object)?;
+
+                    // Execute the subquery
+                    let result = subquery_csv(
+                        processed_subquery,
+                        output_path,
+                        query_object.tables_info.clone(),
+                        query_object.table_to_csv.clone(),
+                    );
+
+                    // Check if subquery returned any results
+                    let has_results = !result.trim().is_empty();
+                    let bool_result = if *is_negated {
+                        !has_results
+                    } else {
+                        has_results
+                    };
+
+                    Ok(GroupClause::Base(GroupBaseCondition::Boolean(bool_result)))
+                }
                 GroupBaseCondition::Boolean(boolean) => {
-                                Ok(GroupClause::Base(GroupBaseCondition::Boolean(*boolean)))
+                    Ok(GroupClause::Base(GroupBaseCondition::Boolean(*boolean)))
+                }
+                GroupBaseCondition::In(in_condition) => {
+                    match in_condition {
+                        InCondition::InSubquery {
+                            field,
+                            subquery,
+                            negated,
+                        } => {
+                            // Process the subquery
+                            let processed_subquery =
+                                manage_subqueries(subquery, output_path, query_object)?;
+
+                            // Execute the subquery
+                            let result = subquery_csv(
+                                processed_subquery,
+                                output_path,
+                                query_object.tables_info.clone(),
+                                query_object.table_to_csv.clone(),
+                            );
+
+                            let has_results = !result.trim().is_empty();
+                            let mut ir_literals = Vec::new();
+                            if has_results {
+                                // convert the result to a vector of irLiterals
+                                let values: Vec<&str> = result
+                                    .trim()
+                                    .trim_start_matches('[')
+                                    .trim_end_matches(']')
+                                    .split(',')
+                                    .map(|s| s.trim().trim_matches('"'))
+                                    .collect();
+
+                                for value in values {
+                                    let literal = LiteralParser::parse(value).map_err(|e| {
+                                        io::Error::new(io::ErrorKind::Other, e.to_string())
+                                    })?;
+                                    ir_literals.push(literal);
+                                }
                             }
-                GroupBaseCondition::In(column_ref, ir_plan, _) => todo!(),
+
+                            Ok(GroupClause::Base(GroupBaseCondition::In(InCondition::In {
+                                field: field.clone(),
+                                values: ir_literals,
+                                negated: *negated,
+                            })))
+                        }
+                        InCondition::In { .. } => panic!("We should not get here"),
+                    }
+                }
             }
         }
         GroupClause::Expression { left, op, right } => {

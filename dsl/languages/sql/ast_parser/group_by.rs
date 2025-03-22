@@ -194,45 +194,89 @@ impl GroupByParser {
                 return Ok(HavingClause::Base(HavingBaseCondition::Boolean(value)));
             }
 
+            // Handle EXISTS expression directly
             if first.as_rule() == Rule::exists_expr {
-                let exists_inner = first.into_inner().next().ok_or_else(|| {
+                // Get the inner parts of EXISTS expression
+                let mut exists_inner = first.into_inner();
+
+                // First part is the EXISTS keyword
+                let exists_keyword = exists_inner.next().ok_or_else(|| {
+                    SqlParseError::InvalidInput("Missing EXISTS keyword".to_string())
+                })?;
+
+                // Check if it's negated (NOT EXISTS)
+                let is_negated = exists_keyword.as_str().to_uppercase().contains("NOT");
+
+                // Next part is the subquery expression
+                let subquery_expr = exists_inner.next().ok_or_else(|| {
                     SqlParseError::InvalidInput("Missing subquery in EXISTS".to_string())
                 })?;
 
-                let subquery = SqlParser::parse_subquery(exists_inner)?;
-                return Ok(HavingClause::Base(HavingBaseCondition::Exists(Box::new(
-                    subquery,
-                ))));
+                // Now parse the subquery from the subquery expression
+                if subquery_expr.as_rule() != Rule::subquery_expr {
+                    return Err(Box::new(SqlParseError::InvalidInput(format!(
+                        "Expected subquery expression after EXISTS, got {:?}",
+                        subquery_expr.as_rule()
+                    ))));
+                }
+
+                // Process the subquery
+                let subquery = SqlParser::parse_subquery(subquery_expr)?;
+
+                return Ok(HavingClause::Base(HavingBaseCondition::Exists(
+                    Box::new(subquery),
+                    is_negated,
+                )));
             }
 
-            // Handle IN subquery - need to check if the next token is 'IN'
-            if first.as_rule() == Rule::variable || first.as_rule() == Rule::table_column {
-                if let Some(second) = rule_check.next() {
-                    if second.as_rule() == Rule::in_expr {
-                        // Extract the column reference and the subquery
-                        let column = match first.as_rule() {
-                            Rule::variable => ColumnRef {
-                                table: None,
-                                column: first.as_str().to_string(),
-                            },
-                            Rule::table_column => Self::parse_column_ref(first)?,
-                            _ => unreachable!(), // Already checked above
-                        };
+            // Handle IN expression directly
+            if first.as_rule() == Rule::in_expr {
+                // Get the inner parts of IN expression
+                let mut in_inner = first.into_inner();
 
-                        // Get the subquery expression from the IN expression
-                        let subquery_expr = second.into_inner().next().ok_or_else(|| {
-                            SqlParseError::InvalidInput(
-                                "Missing subquery in IN expression".to_string(),
-                            )
-                        })?;
+                // First part is the column reference (variable or table_column)
+                let column_ref = in_inner.next().ok_or_else(|| {
+                    SqlParseError::InvalidInput(
+                        "Missing column reference in IN expression".to_string(),
+                    )
+                })?;
 
-                        let subquery = SqlParser::parse_subquery(subquery_expr)?;
-                        return Ok(HavingClause::Base(HavingBaseCondition::In(
-                            column,
-                            Box::new(subquery),
-                        )));
+                // Parse the column reference
+                let column = match column_ref.as_rule() {
+                    Rule::variable => ColumnRef {
+                        table: None,
+                        column: column_ref.as_str().to_string(),
+                    },
+                    Rule::table_column => Self::parse_column_ref(column_ref)?,
+                    _ => {
+                        return Err(Box::new(SqlParseError::InvalidInput(format!(
+                            "Expected column reference in IN expression, got {:?}",
+                            column_ref.as_rule()
+                        ))))
                     }
-                }
+                };
+
+                // Next part is the IN keyword
+                let in_keyword = in_inner
+                    .next()
+                    .ok_or_else(|| SqlParseError::InvalidInput("Missing IN keyword".to_string()))?;
+
+                // Check if it's negated (NOT IN)
+                let is_negated = in_keyword.as_str().to_uppercase().contains("NOT");
+
+                // Last part is the subquery
+                let subquery_expr = in_inner.next().ok_or_else(|| {
+                    SqlParseError::InvalidInput("Missing subquery in IN expression".to_string())
+                })?;
+
+                // Parse the inner SQL directly
+                let subquery = SqlParser::parse_subquery(subquery_expr)?;
+
+                return Ok(HavingClause::Base(HavingBaseCondition::In(
+                    column,
+                    Box::new(subquery),
+                    is_negated,
+                )));
             }
         }
 

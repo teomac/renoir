@@ -65,7 +65,7 @@ pub enum FilterClause {
 pub enum FilterConditionType {
     Comparison(Condition),
     NullCheck(NullCondition),
-    In(ColumnRef, Arc<IrPlan>, bool),
+    In(InCondition),
     Exists(Arc<IrPlan>, bool), // true if is negated
     Boolean(bool),
 }
@@ -84,7 +84,7 @@ pub enum GroupClause {
 pub enum GroupBaseCondition {
     Comparison(Condition),
     NullCheck(NullCondition),
-    In(ColumnRef, Arc<IrPlan>, bool),
+    In(InCondition),
     Exists(Arc<IrPlan>, bool), // true if is negated
     Boolean(bool),
 }
@@ -174,6 +174,20 @@ pub struct Condition {
 pub struct NullCondition {
     pub field: ComplexField,
     pub operator: NullOp,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum InCondition {
+    In {
+        field: ColumnRef,
+        values: Vec<IrLiteral>,
+        negated: bool,
+    },
+    InSubquery {
+        field: ColumnRef,
+        subquery: Arc<IrPlan>,
+        negated: bool,
+    },
 }
 
 #[derive(Debug, PartialEq, Clone)]

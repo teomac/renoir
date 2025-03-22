@@ -4,9 +4,9 @@ use crate::dsl::ir::ir_ast_structure::ComplexField;
 use crate::dsl::ir::ir_ast_structure::{
     ColumnRef, FilterConditionType, IrLiteral, NullCondition, NullOp,
 };
-use crate::dsl::ir::BinaryOp;
 use crate::dsl::ir::FilterClause;
 use crate::dsl::ir::QueryObject;
+use crate::dsl::ir::{BinaryOp, InCondition};
 use crate::dsl::ir::{ComparisonOp, Condition};
 use crate::dsl::struct_object::utils::*;
 
@@ -234,12 +234,71 @@ fn process_arithmetic_expression(field: &ComplexField, query_object: &QueryObjec
 fn process_condition(condition: &FilterConditionType, query_object: &QueryObject) -> String {
     match condition {
         FilterConditionType::Comparison(comparison) => {
-                            process_comparison_condition(comparison, query_object)
-                }
+            process_comparison_condition(comparison, query_object)
+        }
         FilterConditionType::NullCheck(null_check) => {
-                    process_null_check_condition(null_check, query_object)
-                }
-        FilterConditionType::In(..) => panic!("In_subquery condition should be already parsed"),
+            process_null_check_condition(null_check, query_object)
+        }
+        FilterConditionType::In(in_condition) => match in_condition {
+            InCondition::In {
+                field,
+                values,
+                negated,
+            } => {
+                // Get the values
+                let values_str = values
+                    .iter()
+                    .map(|value| match value {
+                        IrLiteral::Integer(i) => i.to_string(),
+                        IrLiteral::Float(f) => format!("{:.2}", f),
+                        IrLiteral::String(s) => format!("\"{}\"", s),
+                        IrLiteral::Boolean(b) => b.to_string(),
+                        IrLiteral::ColumnRef(_) => {
+                            panic!("Invalid InCondition - column reference not expected here")
+                        }
+                    })
+                    .collect::<Vec<String>>()
+                    .join(", ");
+
+                // Check if the field is a column reference
+                let stream_name = if field.table.is_some() {
+                    query_object
+                        .get_stream_from_alias(field.table.as_ref().unwrap())
+                        .unwrap()
+                } else {
+                    let all_streams = &query_object.streams;
+                    if all_streams.len() > 1 {
+                        panic!("Invalid column reference - missing table name");
+                    }
+                    all_streams.first().unwrap().0
+                };
+
+                // Validate column
+                check_column_validity(field, stream_name, query_object);
+
+                let stream = query_object.get_stream(stream_name);
+                let c_type = query_object.get_type(field);
+
+                // Generate the condition
+                let condition_str = format!(
+                    "x{}.{}.as_ref().unwrap(){}",
+                    stream.get_access().get_base_path(),
+                    field.column,
+                    if c_type == "String" { ".as_str()" } else { ""}
+                );
+
+                // Generate the final string
+                format!(
+                    "if x{}.{}.as_ref().is_some() {{{}vec![{}].contains(&{})}} else {{false}}",
+                    stream.get_access().get_base_path(),
+                    field.column,
+                    if *negated { "!" } else { "" },
+                    values_str,
+                    condition_str
+                )
+            }
+            InCondition::InSubquery { .. } => panic!("We should not have InSubquery here"),
+        },
         FilterConditionType::Exists(_, _) => panic!("Exists condition should be already parsed"),
         FilterConditionType::Boolean(boolean) => boolean.to_string(),
     }

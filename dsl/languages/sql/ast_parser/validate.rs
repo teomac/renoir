@@ -190,8 +190,8 @@ fn validate_having_expr_columns(
             HavingBaseCondition::NullCheck(null_cond) => {
                 validate_having_field(&null_cond.field, group_by_columns)?;
             }
-            HavingBaseCondition::Exists(_) => { /*TODO */ }
-            HavingBaseCondition::In(_, _) => { /*TODO */ }
+            HavingBaseCondition::Exists(..) => { /*TODO */ }
+            HavingBaseCondition::In(..) => { /*TODO */ }
             HavingBaseCondition::Boolean(_) => { /*TODO */ }
         },
         HavingClause::Expression { left, op: _, right } => {

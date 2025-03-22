@@ -154,14 +154,22 @@ pub fn create_template(query_object: &QueryObject, is_subquery: bool) -> String 
         if is_subquery {
             format!(
                 r#"let result = {}.get();
-            if result.is_some() && result.as_ref().unwrap().first().is_some() && result.as_ref().unwrap().first().as_ref().unwrap().{}.is_some() {{
-                println!("{{:?}}", result.clone().unwrap().first().unwrap().{}.clone().unwrap());
+            if let Some(values) = result {{
+        let values: Vec<_> = values
+            .iter()
+            .filter_map(|record| record.{}.clone())
+            .collect();
+        
+        if !values.is_empty() {{
+            println!("{{:?}}", values);
             }} else {{
-                println!("{{}}", "".to_string());
+            println!("");
+            }}
+            }} else {{
+        println!("");
             }}"#,
                 query_object.streams.first().unwrap().0,
                 query_object.result_column_types.first().unwrap().0,
-                query_object.result_column_types.first().unwrap().0
             )
         } else {
             "".to_string()

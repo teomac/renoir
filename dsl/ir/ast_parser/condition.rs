@@ -202,9 +202,7 @@ impl ConditionParser {
                 let subquery_plan = IrParser::parse_subquery(subquery)?;
 
                 Ok(FilterClause::Base(FilterConditionType::In(
-                    col_ref,
-                    subquery_plan,
-                    is_negated,
+                    InCondition::InSubquery { field: col_ref, subquery: subquery_plan, negated: is_negated }
                 )))
             }
             Rule::exists_keyword => {
