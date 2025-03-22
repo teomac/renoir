@@ -160,22 +160,67 @@ impl ConditionParser {
                     },
                 )))
             }
+            Rule::in_expr => {
+                let mut inner = first.into_inner();
+
+                // Parse column reference first
+                let column = inner.next().ok_or_else(|| {
+                    IrParseError::InvalidInput("Missing column in IN expression".to_string())
+                })?;
+
+                let col_ref = match column.as_rule() {
+                    Rule::qualified_column => Self::parse_qualified_column(column)?,
+                    Rule::identifier => ColumnRef {
+                        table: None,
+                        column: column.as_str().to_string(),
+                    },
+                    _ => {
+                        return Err(Box::new(IrParseError::InvalidInput(
+                            "Invalid column reference in IN expression".to_string(),
+                        )))
+                    }
+                };
+
+                // Check for NOT (it's optional)
+                let is_negated = if let Some(token) = inner.next() {
+                    token.as_str().to_lowercase() == "not"
+                } else {
+                    false
+                };
+
+                // If we found NOT, we need to skip past it to get to IN
+                if is_negated {
+                    inner.next(); // Skip the IN keyword
+                } else {
+                    // The token we got wasn't NOT, it was IN, so we don't need to skip again
+                }
+
+                // Parse the subquery
+                let subquery = inner.next().ok_or_else(|| {
+                    IrParseError::InvalidInput("Missing subquery in IN expression".to_string())
+                })?;
+                let subquery_plan = IrParser::parse_subquery(subquery)?;
+
+                Ok(FilterClause::Base(FilterConditionType::In(
+                    col_ref,
+                    subquery_plan,
+                    is_negated,
+                )))
+            }
             Rule::exists_keyword => {
                 // Check if this is "not exists" or just "exists"
                 let is_negated = first.as_str().to_lowercase().starts_with("not");
-                
+
                 // Get the subquery expression
                 let subquery_expr = inner.next().ok_or_else(|| {
                     IrParseError::InvalidInput("Missing subquery in EXISTS clause".to_string())
                 })?;
-    
+
                 // Parse the subquery
                 let subquery = IrParser::parse_subquery(subquery_expr)?;
-    
-    
+
                 Ok(FilterClause::Base(FilterConditionType::Exists(
-                    subquery,
-                    is_negated,
+                    subquery, is_negated,
                 )))
             }
             Rule::qualified_column | Rule::identifier | Rule::number | Rule::subquery => {

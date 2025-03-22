@@ -239,6 +239,7 @@ fn process_condition(condition: &FilterConditionType, query_object: &QueryObject
         FilterConditionType::NullCheck(null_check) => {
                     process_null_check_condition(null_check, query_object)
                 }
+        FilterConditionType::In(..) => panic!("In_subquery condition should be already parsed"),
         FilterConditionType::Exists(_, _) => panic!("Exists condition should be already parsed"),
         FilterConditionType::Boolean(boolean) => boolean.to_string(),
     }

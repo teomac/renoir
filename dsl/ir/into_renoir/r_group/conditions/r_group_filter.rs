@@ -211,6 +211,9 @@ fn process_filter_condition(
                                     panic!("Invalid NULL check - must be on a column reference or literal")
                                 }
                             }
+                GroupBaseCondition::In(..) => {
+                                panic!("In_subquery condition should be already parsed")
+                            }
                 GroupBaseCondition::Exists(_, _) => panic!("Exists condition should be already parsed"),
                 GroupBaseCondition::Boolean(boolean) => boolean.to_string(),
             }

@@ -97,7 +97,7 @@ arithmetic_factor = {
     
 }
 
-in_expr = { (identifier | qualified_column) ~ in_keyword ~ subquery }
+in_expr = { (qualified_column | identifier) ~ "not"? ~ in_keyword ~ subquery }
 
 // Conditions for FILTER clause
 condition = {

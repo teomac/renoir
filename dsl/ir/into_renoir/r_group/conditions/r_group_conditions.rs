@@ -40,6 +40,7 @@ pub fn parse_group_conditions(
                 GroupBaseCondition::NullCheck(null_check) => {
                                 collect_field_aggregates(&null_check.field, acc_info, query_object, keys);
                             }
+                GroupBaseCondition::In(..) => (),
                 GroupBaseCondition::Exists(_, _) => (),
                 GroupBaseCondition::Boolean(_) => (),
             }
