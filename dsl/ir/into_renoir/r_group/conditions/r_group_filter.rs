@@ -1,3 +1,5 @@
+use core::panic;
+
 use crate::dsl::ir::ir_ast_structure::{
     AggregateType, ComplexField, GroupBaseCondition, GroupClause, NullOp,
 };
@@ -209,7 +211,7 @@ fn process_filter_condition(
                                     panic!("Invalid NULL check - must be on a column reference or literal")
                                 }
                             }
-                GroupBaseCondition::Exists(ir_plan, _) => todo!(),
+                GroupBaseCondition::Exists(_, _) => panic!("Exists condition should be already parsed"),
                 GroupBaseCondition::Boolean(boolean) => boolean.to_string(),
             }
         }

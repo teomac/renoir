@@ -40,7 +40,7 @@ pub fn parse_group_conditions(
                 GroupBaseCondition::NullCheck(null_check) => {
                                 collect_field_aggregates(&null_check.field, acc_info, query_object, keys);
                             }
-                GroupBaseCondition::Exists(ir_plan, _) => todo!(),
+                GroupBaseCondition::Exists(_, _) => (),
                 GroupBaseCondition::Boolean(_) => (),
             }
         }

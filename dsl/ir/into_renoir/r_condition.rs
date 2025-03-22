@@ -1,3 +1,5 @@
+use core::panic;
+
 use crate::dsl::ir::ir_ast_structure::ComplexField;
 use crate::dsl::ir::ir_ast_structure::{
     ColumnRef, FilterConditionType, IrLiteral, NullCondition, NullOp,
@@ -237,7 +239,7 @@ fn process_condition(condition: &FilterConditionType, query_object: &QueryObject
         FilterConditionType::NullCheck(null_check) => {
                     process_null_check_condition(null_check, query_object)
                 }
-        FilterConditionType::Exists(ir_plan, _) => todo!(),
+        FilterConditionType::Exists(_, _) => panic!("Exists condition should be already parsed"),
         FilterConditionType::Boolean(boolean) => boolean.to_string(),
     }
 }
