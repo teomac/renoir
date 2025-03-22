@@ -232,11 +232,13 @@ fn process_arithmetic_expression(field: &ComplexField, query_object: &QueryObjec
 fn process_condition(condition: &FilterConditionType, query_object: &QueryObject) -> String {
     match condition {
         FilterConditionType::Comparison(comparison) => {
-            process_comparison_condition(comparison, query_object)
-        }
+                            process_comparison_condition(comparison, query_object)
+                }
         FilterConditionType::NullCheck(null_check) => {
-            process_null_check_condition(null_check, query_object)
-        }
+                    process_null_check_condition(null_check, query_object)
+                }
+        FilterConditionType::Exists(ir_plan, _) => todo!(),
+        FilterConditionType::Boolean(boolean) => boolean.to_string(),
     }
 }
 

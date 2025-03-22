@@ -133,6 +133,12 @@ impl GroupParser {
             IrParseError::InvalidInput("Missing first part of condition".to_string())
         })?;
 
+        if first.as_str().to_lowercase() == "true" || first.as_str().to_lowercase() == "false" {
+            return Ok(GroupClause::Base(GroupBaseCondition::Boolean(
+                first.as_str().to_lowercase() == "true",
+            )));
+        }
+
         match first.as_rule() {
             Rule::arithmetic_expr => {
                 // Handle comparison condition

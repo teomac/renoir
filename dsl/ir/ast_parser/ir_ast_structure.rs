@@ -65,6 +65,8 @@ pub enum FilterClause {
 pub enum FilterConditionType {
     Comparison(Condition),
     NullCheck(NullCondition),
+    Exists(Arc<IrPlan>, bool), // true if is negated
+    Boolean(bool),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -81,6 +83,8 @@ pub enum GroupClause {
 pub enum GroupBaseCondition {
     Comparison(Condition),
     NullCheck(NullCondition),
+    Exists(Arc<IrPlan>, bool), // true if is negated
+    Boolean(bool),
 }
 
 #[derive(Debug, PartialEq, Clone)]

@@ -108,6 +108,7 @@ pub enum WhereBaseCondition {
     NullCheck(WhereNullCondition),
     Exists(Box<SqlAST>, bool),        // Subquery, negated
     In(ColumnRef, Box<SqlAST>, bool), // Column, subquery, negated
+    Boolean(bool),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -132,6 +133,7 @@ pub enum HavingBaseCondition {
     NullCheck(HavingNullCondition),
     Exists(Box<SqlAST>),
     In(ColumnRef, Box<SqlAST>),
+    Boolean(bool),
 }
 
 #[derive(Debug, PartialEq, Clone)]

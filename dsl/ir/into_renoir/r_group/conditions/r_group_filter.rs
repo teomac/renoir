@@ -40,175 +40,177 @@ fn process_filter_condition(
         GroupClause::Base(base_condition) => {
             match base_condition {
                 GroupBaseCondition::Comparison(comp) => {
-                    let operator = match comp.operator {
-                        ComparisonOp::GreaterThan => ">",
-                        ComparisonOp::LessThan => "<",
-                        ComparisonOp::Equal => "==",
-                        ComparisonOp::GreaterThanEquals => ">=",
-                        ComparisonOp::LessThanEquals => "<=",
-                        ComparisonOp::NotEqual => "!=",
-                    };
+                                let operator = match comp.operator {
+                                    ComparisonOp::GreaterThan => ">",
+                                    ComparisonOp::LessThan => "<",
+                                    ComparisonOp::Equal => "==",
+                                    ComparisonOp::GreaterThanEquals => ">=",
+                                    ComparisonOp::LessThanEquals => "<=",
+                                    ComparisonOp::NotEqual => "!=",
+                                };
 
-                    // Get types for both sides of comparison
-                    let left_type = query_object.get_complex_field_type(&comp.left_field);
-                    let right_type = query_object.get_complex_field_type(&comp.right_field);
+                                // Get types for both sides of comparison
+                                let left_type = query_object.get_complex_field_type(&comp.left_field);
+                                let right_type = query_object.get_complex_field_type(&comp.right_field);
 
-                    // Process left and right expressions
-                    let left_expr = process_filter_field(
-                        &comp.left_field,
-                        keys,
-                        query_object,
-                        acc_info,
-                        &mut check_list,
-                    );
-                    let right_expr = process_filter_field(
-                        &comp.right_field,
-                        keys,
-                        query_object,
-                        acc_info,
-                        &mut check_list,
-                    );
+                                // Process left and right expressions
+                                let left_expr = process_filter_field(
+                                    &comp.left_field,
+                                    keys,
+                                    query_object,
+                                    acc_info,
+                                    &mut check_list,
+                                );
+                                let right_expr = process_filter_field(
+                                    &comp.right_field,
+                                    keys,
+                                    query_object,
+                                    acc_info,
+                                    &mut check_list,
+                                );
 
-                    let is_check_list_empty = check_list.is_empty(); // if true there is only one or more count
-                                                                     // Deduplicate and the check list
-                    check_list.sort();
-                    check_list.dedup();
+                                let is_check_list_empty = check_list.is_empty(); // if true there is only one or more count
+                                                                                 // Deduplicate and the check list
+                                check_list.sort();
+                                check_list.dedup();
 
-                    // Handle type conversions for comparison - improved handling for numeric types
-                    if left_type != right_type {
-                        if (left_type == "f64" || left_type == "i64" || left_type == "usize")
-                            && (right_type == "f64" || right_type == "i64" || right_type == "usize")
-                        {
-                            if is_check_list_empty {
-                                format!(
-                                    "({} as f64) {} ({} as f64)",
-                                    left_expr, operator, right_expr
-                                )
-                            } else {
-                                // Cast both to f64
-                                format!(
-                                    "if {} {{({} as f64) {} ({} as f64)}} else {{ false }}",
-                                    check_list.join(" && "),
-                                    left_expr,
-                                    operator,
-                                    right_expr
-                                )
-                            }
-                        } else if is_check_list_empty {
-                            format!("{} {} {}", left_expr, operator, right_expr)
-                        } else {
-                            // Different non-numeric types - this should already be caught during validation
-                            format!(
-                                "if {} {{({}) {} ({})}} else {{ false }}",
-                                check_list.join(" && "),
-                                left_expr,
-                                operator,
-                                right_expr
-                            )
-                        }
-                    } else if is_check_list_empty {
-                        format!("{} {} {}", left_expr, operator, right_expr)
-                    } else {
-                        // Same types
-                        format!(
-                            "if {} {{({}) {} ({})}} else {{ false }}",
-                            check_list.join(" && "),
-                            left_expr,
-                            operator,
-                            right_expr
-                        )
-                    }
-                }
-                GroupBaseCondition::NullCheck(null_check) => {
-                    if null_check.field.column_ref.is_some() {
-                        // Get the column reference that's being checked for null
-                        let col_ref = if let Some(ref col) = null_check.field.column_ref {
-                            col
-                        } else {
-                            panic!("NULL check must be on a column reference");
-                        };
-
-                        // Check if this column is part of the GROUP BY key
-                        let is_key_field = keys.iter().any(|c| {
-                            c.column == col_ref.column
-                                && (c.table.is_none()
-                                    || col_ref.table.is_none()
-                                    || c.table == col_ref.table)
-                        });
-
-                        // Get column access based on whether it's a key field
-                        let col_access = if is_key_field {
-                            // Get the position in the group by key tuple
-                            let key_position = keys
-                                .iter()
-                                .position(|c| {
-                                    c.column == col_ref.column
-                                        && (c.table.is_none()
-                                            || col_ref.table.is_none()
-                                            || c.table == col_ref.table)
-                                })
-                                .unwrap();
-
-                            if keys.len() == 1 {
-                                // Single key column
-                                "x.0".to_string()
-                            } else {
-                                // Multiple key columns - access by position
-                                format!("x.0.{}", key_position)
-                            }
-                        } else {
-                            // Not a key column - must be in the accumulated values or aggregates
-
-                            let stream_name = if col_ref.table.is_some() {
-                                query_object
-                                    .get_stream_from_alias(col_ref.table.as_ref().unwrap())
-                                    .unwrap()
-                            } else if query_object.streams.len() == 1 {
-                                query_object.streams.first().unwrap().0
-                            } else {
-                                panic!("Column reference must have a table reference")
-                            };
-                            let stream = query_object.get_stream(stream_name);
-                            stream.check_if_column_exists(&col_ref.column);
-
-                            format!(
-                                "x.1{}.{}",
-                                stream.get_access().get_base_path(),
-                                col_ref.column
-                            )
-                        };
-
-                        // Generate the appropriate null check
-                        match null_check.operator {
-                            NullOp::IsNull => format!("{}.is_none()", col_access),
-                            NullOp::IsNotNull => format!("{}.is_some()", col_access),
-                        }
-                    } else if null_check.field.literal.is_some() {
-                        let lit = null_check.field.literal.as_ref().unwrap();
-                        match lit {
-                            IrLiteral::Boolean(_) | IrLiteral::Integer(_) | IrLiteral::Float(_) => {
-                                match null_check.operator {
-                                    NullOp::IsNull => "false".to_string(),
-                                    NullOp::IsNotNull => "true".to_string(),
+                                // Handle type conversions for comparison - improved handling for numeric types
+                                if left_type != right_type {
+                                    if (left_type == "f64" || left_type == "i64" || left_type == "usize")
+                                        && (right_type == "f64" || right_type == "i64" || right_type == "usize")
+                                    {
+                                        if is_check_list_empty {
+                                            format!(
+                                                "({} as f64) {} ({} as f64)",
+                                                left_expr, operator, right_expr
+                                            )
+                                        } else {
+                                            // Cast both to f64
+                                            format!(
+                                                "if {} {{({} as f64) {} ({} as f64)}} else {{ false }}",
+                                                check_list.join(" && "),
+                                                left_expr,
+                                                operator,
+                                                right_expr
+                                            )
+                                        }
+                                    } else if is_check_list_empty {
+                                        format!("{} {} {}", left_expr, operator, right_expr)
+                                    } else {
+                                        // Different non-numeric types - this should already be caught during validation
+                                        format!(
+                                            "if {} {{({}) {} ({})}} else {{ false }}",
+                                            check_list.join(" && "),
+                                            left_expr,
+                                            operator,
+                                            right_expr
+                                        )
+                                    }
+                                } else if is_check_list_empty {
+                                    format!("{} {} {}", left_expr, operator, right_expr)
+                                } else {
+                                    // Same types
+                                    format!(
+                                        "if {} {{({}) {} ({})}} else {{ false }}",
+                                        check_list.join(" && "),
+                                        left_expr,
+                                        operator,
+                                        right_expr
+                                    )
                                 }
                             }
-                            IrLiteral::String(string) => match null_check.operator {
-                                NullOp::IsNull => format!("{}", string.is_empty()),
-                                NullOp::IsNotNull => format!("{}", !string.is_empty()),
-                            },
-                            IrLiteral::ColumnRef(_) => {
-                                panic!("We should not be here.")
+                GroupBaseCondition::NullCheck(null_check) => {
+                                if null_check.field.column_ref.is_some() {
+                                    // Get the column reference that's being checked for null
+                                    let col_ref = if let Some(ref col) = null_check.field.column_ref {
+                                        col
+                                    } else {
+                                        panic!("NULL check must be on a column reference");
+                                    };
+
+                                    // Check if this column is part of the GROUP BY key
+                                    let is_key_field = keys.iter().any(|c| {
+                                        c.column == col_ref.column
+                                            && (c.table.is_none()
+                                                || col_ref.table.is_none()
+                                                || c.table == col_ref.table)
+                                    });
+
+                                    // Get column access based on whether it's a key field
+                                    let col_access = if is_key_field {
+                                        // Get the position in the group by key tuple
+                                        let key_position = keys
+                                            .iter()
+                                            .position(|c| {
+                                                c.column == col_ref.column
+                                                    && (c.table.is_none()
+                                                        || col_ref.table.is_none()
+                                                        || c.table == col_ref.table)
+                                            })
+                                            .unwrap();
+
+                                        if keys.len() == 1 {
+                                            // Single key column
+                                            "x.0".to_string()
+                                        } else {
+                                            // Multiple key columns - access by position
+                                            format!("x.0.{}", key_position)
+                                        }
+                                    } else {
+                                        // Not a key column - must be in the accumulated values or aggregates
+
+                                        let stream_name = if col_ref.table.is_some() {
+                                            query_object
+                                                .get_stream_from_alias(col_ref.table.as_ref().unwrap())
+                                                .unwrap()
+                                        } else if query_object.streams.len() == 1 {
+                                            query_object.streams.first().unwrap().0
+                                        } else {
+                                            panic!("Column reference must have a table reference")
+                                        };
+                                        let stream = query_object.get_stream(stream_name);
+                                        stream.check_if_column_exists(&col_ref.column);
+
+                                        format!(
+                                            "x.1{}.{}",
+                                            stream.get_access().get_base_path(),
+                                            col_ref.column
+                                        )
+                                    };
+
+                                    // Generate the appropriate null check
+                                    match null_check.operator {
+                                        NullOp::IsNull => format!("{}.is_none()", col_access),
+                                        NullOp::IsNotNull => format!("{}.is_some()", col_access),
+                                    }
+                                } else if null_check.field.literal.is_some() {
+                                    let lit = null_check.field.literal.as_ref().unwrap();
+                                    match lit {
+                                        IrLiteral::Boolean(_) | IrLiteral::Integer(_) | IrLiteral::Float(_) => {
+                                            match null_check.operator {
+                                                NullOp::IsNull => "false".to_string(),
+                                                NullOp::IsNotNull => "true".to_string(),
+                                            }
+                                        }
+                                        IrLiteral::String(string) => match null_check.operator {
+                                            NullOp::IsNull => format!("{}", string.is_empty()),
+                                            NullOp::IsNotNull => format!("{}", !string.is_empty()),
+                                        },
+                                        IrLiteral::ColumnRef(_) => {
+                                            panic!("We should not be here.")
+                                        }
+                                    }
+                                } else if null_check.field.aggregate.is_some() {
+                                    match null_check.operator {
+                                        NullOp::IsNull => "false".to_string(),
+                                        NullOp::IsNotNull => "true".to_string(),
+                                    }
+                                } else {
+                                    panic!("Invalid NULL check - must be on a column reference or literal")
+                                }
                             }
-                        }
-                    } else if null_check.field.aggregate.is_some() {
-                        match null_check.operator {
-                            NullOp::IsNull => "false".to_string(),
-                            NullOp::IsNotNull => "true".to_string(),
-                        }
-                    } else {
-                        panic!("Invalid NULL check - must be on a column reference or literal")
-                    }
-                }
+                GroupBaseCondition::Exists(ir_plan, _) => todo!(),
+                GroupBaseCondition::Boolean(boolean) => boolean.to_string(),
             }
         }
         GroupClause::Expression { left, op, right } => {

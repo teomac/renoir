@@ -114,14 +114,15 @@ fn validate_no_aggregates_in_where(clause: &Option<WhereClause>) -> Result<(), B
         match where_clause {
             WhereClause::Base(base_condition) => match base_condition {
                 WhereBaseCondition::Comparison(cond) => {
-                    check_where_field_for_aggregates(&cond.left_field)?;
-                    check_where_field_for_aggregates(&cond.right_field)?;
-                }
+                                check_where_field_for_aggregates(&cond.left_field)?;
+                                check_where_field_for_aggregates(&cond.right_field)?;
+                            }
                 WhereBaseCondition::NullCheck(null_cond) => {
-                    check_where_field_for_aggregates(&null_cond.field)?;
-                }
+                                check_where_field_for_aggregates(&null_cond.field)?;
+                            }
                 WhereBaseCondition::Exists(_, _) => { /*TODO */ }
                 WhereBaseCondition::In(_, _, _) => { /*TODO */ }
+WhereBaseCondition::Boolean(_) => todo!(),
             },
             WhereClause::Expression { left, op: _, right } => {
                 validate_no_aggregates_in_where(&Some(*left.clone()))?;
@@ -191,6 +192,7 @@ fn validate_having_expr_columns(
             }
             HavingBaseCondition::Exists(_) => { /*TODO */ }
             HavingBaseCondition::In(_, _) => { /*TODO */ }
+            HavingBaseCondition::Boolean(_) => { /*TODO */ }
         },
         HavingClause::Expression { left, op: _, right } => {
             validate_having_expr_columns(left, group_by_columns)?;

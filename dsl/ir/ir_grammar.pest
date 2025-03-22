@@ -14,6 +14,7 @@ value = { boolean_keyword | number | string }
 
 as_keyword = { "as" }
 in_keyword = { "in" }
+exists_keyword = @{ ^"not"? ~ ^"exists" }
 join = { "join" }
 join_type = {"inner" | "left" | "outer"}
 on = { "on" }
@@ -97,7 +98,9 @@ arithmetic_factor = {
 }
 
 // Conditions for FILTER clause
-condition = { 
+condition = {
+    "TRUE" | "FALSE" |
+    exists_keyword ~ subquery |
     arithmetic_expr ~ comparison_op ~ arithmetic_expr | 
     (qualified_column | subquery | identifier | number) ~ null_op
 }

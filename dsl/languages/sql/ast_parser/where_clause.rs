@@ -104,6 +104,11 @@ impl ConditionParser {
         let first_rule = check_pairs.next();
 
         if let Some(first) = first_rule {
+            if first.as_str().to_lowercase() == "true" || first.as_str().to_lowercase() == "false" {
+                return Ok(WhereClause::Base(WhereBaseCondition::Boolean(
+                    first.as_str().to_lowercase() == "true",
+                )));
+            }
             // Handle EXISTS expression directly
             if first.as_rule() == Rule::exists_expr {
                 // Get the inner parts of EXISTS expression

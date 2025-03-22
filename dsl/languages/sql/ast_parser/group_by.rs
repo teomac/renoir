@@ -178,6 +178,12 @@ impl GroupByParser {
 
         // Handle EXISTS subquery
         if let Some(first) = first_rule {
+            if first.as_str().to_lowercase() == "true" || first.as_str().to_lowercase() == "false" {
+                return Ok(HavingClause::Base(HavingBaseCondition::Boolean(
+                    first.as_str().to_lowercase() == "true",
+                )));
+            }
+
             if first.as_rule() == Rule::exists_expr {
                 let exists_inner = first.into_inner().next().ok_or_else(|| {
                     SqlParseError::InvalidInput("Missing subquery in EXISTS".to_string())

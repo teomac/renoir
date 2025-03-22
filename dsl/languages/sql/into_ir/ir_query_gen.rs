@@ -170,48 +170,47 @@ impl SqlToIr {
         match clause {
             WhereClause::Base(base_condition) => match base_condition {
                 WhereBaseCondition::Comparison(cond) => {
-                    let left = Self::convert_where_field(&cond.left_field, index);
-                    let right = Self::convert_where_field(&cond.right_field, index);
+                                let left = Self::convert_where_field(&cond.left_field, index);
+                                let right = Self::convert_where_field(&cond.right_field, index);
 
-                    let op = match cond.operator {
-                        ComparisonOp::Equal => "==",
-                        ComparisonOp::NotEqual => "!=",
-                        ComparisonOp::GreaterThan => ">",
-                        ComparisonOp::LessThan => "<",
-                        ComparisonOp::GreaterOrEqualThan => ">=",
-                        ComparisonOp::LessOrEqualThan => "<=",
-                    };
+                                let op = match cond.operator {
+                                    ComparisonOp::Equal => "==",
+                                    ComparisonOp::NotEqual => "!=",
+                                    ComparisonOp::GreaterThan => ">",
+                                    ComparisonOp::LessThan => "<",
+                                    ComparisonOp::GreaterOrEqualThan => ">=",
+                                    ComparisonOp::LessOrEqualThan => "<=",
+                                };
 
-                    format!("{} {} {}", left, op, right)
-                }
+                                format!("{} {} {}", left, op, right)
+                            }
                 WhereBaseCondition::NullCheck(null_cond) => {
-                    let field = Self::convert_where_field(&null_cond.field, index);
-                    let op = match null_cond.operator {
-                        NullOp::IsNull => "is null",
-                        NullOp::IsNotNull => "is not null",
-                    };
-                    format!("{} {}", field, op)
-                }
-                // Handle EXISTS subquery
+                                let field = Self::convert_where_field(&null_cond.field, index);
+                                let op = match null_cond.operator {
+                                    NullOp::IsNull => "is null",
+                                    NullOp::IsNotNull => "is not null",
+                                };
+                                format!("{} {}", field, op)
+                            }
                 WhereBaseCondition::Exists(subquery, negated) => {
-                    let subquery_str = Self::convert(subquery, index);
-                    if *negated {
-                        format!("not exists({})", subquery_str)
-                    } else {
-                        format!("exists({})", subquery_str)
-                    }
-                }
-                // Handle IN subquery
+                                let subquery_str = Self::convert(subquery, index);
+                                if *negated {
+                                    format!("not exists({})", subquery_str)
+                                } else {
+                                    format!("exists({})", subquery_str)
+                                }
+                            }
                 WhereBaseCondition::In(column, subquery, negated) => {
-                    let column_str = column.to_string();
-                    let subquery_str = Self::convert(subquery, index);
-                    if *negated {
-                        format!("{} not in ({})", column_str, subquery_str)
-                    } else {
-                        format!("{} in ({})", column_str, subquery_str)
-                    }
-                }
-            },
+                                let column_str = column.to_string();
+                                let subquery_str = Self::convert(subquery, index);
+                                if *negated {
+                                    format!("{} not in ({})", column_str, subquery_str)
+                                } else {
+                                    format!("{} in ({})", column_str, subquery_str)
+                                }
+                            }
+                WhereBaseCondition::Boolean(boolean) => boolean.to_string(),
+                            },
             WhereClause::Expression { left, op, right } => {
                 let op_str = match op {
                     BinaryOp::And => "&&",
@@ -337,100 +336,99 @@ impl SqlToIr {
         match clause {
             HavingClause::Base(base_condition) => match base_condition {
                 HavingBaseCondition::Comparison(cond) => {
-                    let left = if let Some(ref arithmetic) = cond.left_field.arithmetic {
-                        Self::arithmetic_expr_to_string(arithmetic, index)
-                    } else if cond.left_field.column.is_some() {
-                        cond.left_field.column.as_ref().unwrap().to_string()
-                    } else if cond.left_field.aggregate.is_some() {
-                        let aggregate = match cond.left_field.aggregate.as_ref().unwrap().0 {
-                            AggregateFunction::Max => "max",
-                            AggregateFunction::Min => "min",
-                            AggregateFunction::Sum => "sum",
-                            AggregateFunction::Avg => "avg",
-                            AggregateFunction::Count => "count",
-                        };
-                        format!(
-                            "{}({})",
-                            aggregate,
-                            cond.left_field.aggregate.as_ref().unwrap().1
-                        )
-                    } else if let Some(ref subquery) = cond.left_field.subquery {
-                        format!("({})", Self::convert(subquery, index))
-                    } else {
-                        match &cond.left_field.value {
-                            Some(SqlLiteral::Float(val)) => format!("{:.2}", val),
-                            Some(SqlLiteral::Integer(val)) => val.to_string(),
-                            Some(SqlLiteral::String(val)) => format!("'{}'", val),
-                            Some(SqlLiteral::Boolean(val)) => val.to_string(),
-                            None => String::new(),
-                        }
-                    };
+                                let left = if let Some(ref arithmetic) = cond.left_field.arithmetic {
+                                    Self::arithmetic_expr_to_string(arithmetic, index)
+                                } else if cond.left_field.column.is_some() {
+                                    cond.left_field.column.as_ref().unwrap().to_string()
+                                } else if cond.left_field.aggregate.is_some() {
+                                    let aggregate = match cond.left_field.aggregate.as_ref().unwrap().0 {
+                                        AggregateFunction::Max => "max",
+                                        AggregateFunction::Min => "min",
+                                        AggregateFunction::Sum => "sum",
+                                        AggregateFunction::Avg => "avg",
+                                        AggregateFunction::Count => "count",
+                                    };
+                                    format!(
+                                        "{}({})",
+                                        aggregate,
+                                        cond.left_field.aggregate.as_ref().unwrap().1
+                                    )
+                                } else if let Some(ref subquery) = cond.left_field.subquery {
+                                    format!("({})", Self::convert(subquery, index))
+                                } else {
+                                    match &cond.left_field.value {
+                                        Some(SqlLiteral::Float(val)) => format!("{:.2}", val),
+                                        Some(SqlLiteral::Integer(val)) => val.to_string(),
+                                        Some(SqlLiteral::String(val)) => format!("'{}'", val),
+                                        Some(SqlLiteral::Boolean(val)) => val.to_string(),
+                                        None => String::new(),
+                                    }
+                                };
 
-                    let operator_str = match cond.operator {
-                        ComparisonOp::GreaterThan => ">",
-                        ComparisonOp::LessThan => "<",
-                        ComparisonOp::GreaterOrEqualThan => ">=",
-                        ComparisonOp::LessOrEqualThan => "<=",
-                        ComparisonOp::Equal => "==",
-                        ComparisonOp::NotEqual => "!=",
-                    };
+                                let operator_str = match cond.operator {
+                                    ComparisonOp::GreaterThan => ">",
+                                    ComparisonOp::LessThan => "<",
+                                    ComparisonOp::GreaterOrEqualThan => ">=",
+                                    ComparisonOp::LessOrEqualThan => "<=",
+                                    ComparisonOp::Equal => "==",
+                                    ComparisonOp::NotEqual => "!=",
+                                };
 
-                    let right = if let Some(ref arithmetic) = cond.right_field.arithmetic {
-                        Self::arithmetic_expr_to_string(arithmetic, index)
-                    } else if cond.right_field.column.is_some() {
-                        cond.right_field.column.as_ref().unwrap().to_string()
-                    } else if cond.right_field.aggregate.is_some() {
-                        let aggregate = match cond.right_field.aggregate.as_ref().unwrap().0 {
-                            AggregateFunction::Max => "max",
-                            AggregateFunction::Min => "min",
-                            AggregateFunction::Sum => "sum",
-                            AggregateFunction::Avg => "avg",
-                            AggregateFunction::Count => "count",
-                        };
-                        format!(
-                            "{}({})",
-                            aggregate,
-                            cond.right_field.aggregate.as_ref().unwrap().1
-                        )
-                    } else if let Some(ref subquery) = cond.right_field.subquery {
-                        format!("({})", Self::convert(subquery, index))
-                    } else {
-                        match &cond.right_field.value {
-                            Some(SqlLiteral::Float(val)) => format!("{:.2}", val),
-                            Some(SqlLiteral::Integer(val)) => val.to_string(),
-                            Some(SqlLiteral::String(val)) => format!("'{}'", val),
-                            Some(SqlLiteral::Boolean(val)) => val.to_string(),
-                            None => String::new(),
-                        }
-                    };
+                                let right = if let Some(ref arithmetic) = cond.right_field.arithmetic {
+                                    Self::arithmetic_expr_to_string(arithmetic, index)
+                                } else if cond.right_field.column.is_some() {
+                                    cond.right_field.column.as_ref().unwrap().to_string()
+                                } else if cond.right_field.aggregate.is_some() {
+                                    let aggregate = match cond.right_field.aggregate.as_ref().unwrap().0 {
+                                        AggregateFunction::Max => "max",
+                                        AggregateFunction::Min => "min",
+                                        AggregateFunction::Sum => "sum",
+                                        AggregateFunction::Avg => "avg",
+                                        AggregateFunction::Count => "count",
+                                    };
+                                    format!(
+                                        "{}({})",
+                                        aggregate,
+                                        cond.right_field.aggregate.as_ref().unwrap().1
+                                    )
+                                } else if let Some(ref subquery) = cond.right_field.subquery {
+                                    format!("({})", Self::convert(subquery, index))
+                                } else {
+                                    match &cond.right_field.value {
+                                        Some(SqlLiteral::Float(val)) => format!("{:.2}", val),
+                                        Some(SqlLiteral::Integer(val)) => val.to_string(),
+                                        Some(SqlLiteral::String(val)) => format!("'{}'", val),
+                                        Some(SqlLiteral::Boolean(val)) => val.to_string(),
+                                        None => String::new(),
+                                    }
+                                };
 
-                    format!("{} {} {}", left, operator_str, right)
-                }
+                                format!("{} {} {}", left, operator_str, right)
+                            }
                 HavingBaseCondition::NullCheck(null_cond) => {
-                    let field = if let Some(ref arithmetic) = null_cond.field.arithmetic {
-                        Self::arithmetic_expr_to_string(arithmetic, index)
-                    } else if let Some(ref column) = null_cond.field.column {
-                        column.to_string()
-                    } else if let Some(ref subquery) = null_cond.field.subquery {
-                        format!("({})", Self::convert(subquery, index))
-                    } else {
-                        String::new()
-                    };
+                                let field = if let Some(ref arithmetic) = null_cond.field.arithmetic {
+                                    Self::arithmetic_expr_to_string(arithmetic, index)
+                                } else if let Some(ref column) = null_cond.field.column {
+                                    column.to_string()
+                                } else if let Some(ref subquery) = null_cond.field.subquery {
+                                    format!("({})", Self::convert(subquery, index))
+                                } else {
+                                    String::new()
+                                };
 
-                    match null_cond.operator {
-                        NullOp::IsNull => format!("{} is null", field),
-                        NullOp::IsNotNull => format!("{} is not null", field),
-                    }
-                }
-                // Handle EXISTS in HAVING
+                                match null_cond.operator {
+                                    NullOp::IsNull => format!("{} is null", field),
+                                    NullOp::IsNotNull => format!("{} is not null", field),
+                                }
+                            }
                 HavingBaseCondition::Exists(subquery) => {
-                    format!("exists({})", Self::convert(subquery, index))
-                }
-                // Handle IN in HAVING
+                                format!("exists({})", Self::convert(subquery, index))
+                            }
                 HavingBaseCondition::In(column, subquery) => {
-                    format!("{} in ({})", column, Self::convert(subquery, index))
-                }
-            },
+                                format!("{} in ({})", column, Self::convert(subquery, index))
+                            }
+                HavingBaseCondition::Boolean(boolean) => boolean.to_string(),
+                            },
             HavingClause::Expression { left, op, right } => {
                 let op_str = match op {
                     BinaryOp::And => "&&",

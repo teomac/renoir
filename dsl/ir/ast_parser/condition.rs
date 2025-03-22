@@ -113,6 +113,12 @@ impl ConditionParser {
             IrParseError::InvalidInput("Missing first part of condition".to_string())
         })?;
 
+        if first.as_str().to_lowercase() == "true" || first.as_str().to_lowercase() == "false" {
+            return Ok(FilterClause::Base(FilterConditionType::Boolean(
+                first.as_str().to_lowercase() == "true",
+            )));
+        }
+
         match first.as_rule() {
             Rule::arithmetic_expr => {
                 // Handle comparison condition
@@ -144,6 +150,24 @@ impl ConditionParser {
                         operator,
                         right_field: Self::parse_arithmetic_expr(right_expr)?,
                     },
+                )))
+            }
+            Rule::exists_keyword => {
+                // Check if this is "not exists" or just "exists"
+                let is_negated = first.as_str().to_lowercase().starts_with("not");
+                
+                // Get the subquery expression
+                let subquery_expr = inner.next().ok_or_else(|| {
+                    IrParseError::InvalidInput("Missing subquery in EXISTS clause".to_string())
+                })?;
+    
+                // Parse the subquery
+                let subquery = IrParser::parse_subquery(subquery_expr)?;
+    
+    
+                Ok(FilterClause::Base(FilterConditionType::Exists(
+                    subquery,
+                    is_negated,
                 )))
             }
             Rule::qualified_column | Rule::identifier | Rule::number | Rule::subquery => {
