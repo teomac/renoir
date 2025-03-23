@@ -223,13 +223,20 @@ impl GroupParser {
                 )))
             }
             Rule::exists_keyword => {
-                let is_negated = inner.next().map_or(false, |token| token.as_str() == "not");
-                let subquery = inner.next().ok_or_else(|| {
-                    IrParseError::InvalidInput("Missing subquery in EXISTS expression".to_string())
+                // Check if this is "not exists" or just "exists"
+                let is_negated = first.as_str().to_lowercase().starts_with("not");
+    
+                // Get the subquery expression
+                let subquery_expr = inner.next().ok_or_else(|| {
+                    IrParseError::InvalidInput("Missing subquery in EXISTS clause".to_string())
                 })?;
-                let subquery_plan = IrParser::parse_subquery(subquery)?;
-
-                Ok(GroupClause::Base(GroupBaseCondition::Exists(subquery_plan, is_negated)))
+    
+                // Parse the subquery
+                let subquery = IrParser::parse_subquery(subquery_expr)?;
+    
+                Ok(GroupClause::Base(GroupBaseCondition::Exists(
+                    subquery, is_negated,
+                )))
             }
             Rule::qualified_column | Rule::identifier | Rule::subquery => {
                 // Check if this is a NULL check
