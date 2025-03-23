@@ -6,7 +6,6 @@ use crate::dsl::ir::ir_ast_structure::{
 use crate::dsl::ir::r_group::r_group_keys::GroupAccumulatorInfo;
 use crate::dsl::ir::{AggregateFunction, BinaryOp, ComparisonOp, InCondition, IrLiteral};
 use crate::dsl::ir::{ColumnRef, QueryObject};
-use crate::dsl::struct_object::utils::check_column_validity;
 
 // Function to create the filter operation
 pub fn create_filter_operation(
@@ -235,43 +234,37 @@ fn process_filter_condition(
                             .collect::<Vec<String>>()
                             .join(", ");
 
-                        // Check if the field is a column reference
-                        let stream_name = if field.table.is_some() {
-                            query_object
-                                .get_stream_from_alias(field.table.as_ref().unwrap())
-                                .unwrap()
-                        } else {
-                            let all_streams = &query_object.streams;
-                            if all_streams.len() > 1 {
-                                panic!("Invalid column reference - missing table name");
-                            }
-                            all_streams.first().unwrap().0
-                        };
-
-                        // Validate column
-                        check_column_validity(field, stream_name, query_object);
-
-                        let stream = query_object.get_stream(stream_name);
-                        let c_type = query_object.get_type(field);
-
-                        // Generate the condition
-                        let condition_str = format!(
-                            "x{}.{}.as_ref().unwrap(){}",
-                            stream.get_access().get_base_path(),
-                            field.column,
-                            if c_type == "String" { ".as_str()" } else { "" }
-                        );
-
-                        // Generate the final string
-                        format!(
-                                        "if x{}.{}.as_ref().is_some() {{{}vec![{}].contains(&{})}} else {{false}}",
-                                        stream.get_access().get_base_path(),
-                                        field.column,
-                                        if *negated { "!" } else { "" },
-                                        values_str,
-                                        condition_str
-                                    )
-                    }
+                            let is_key = keys.iter().any(|k| k.column == field.column);
+                            let key_position = if is_key {
+                                keys.iter().position(|k| k.column == field.column).unwrap()
+                            } else {
+                                panic!("Field in IN condition must be a group by key")
+                            };
+    
+                            // Generate the condition with correct tuple access
+                            let single_key = keys.len() == 1;
+                            let c_type = query_object.get_type(field);
+    
+                            let access_str = if single_key {
+                                format!("x.0{}", if c_type == "String" { ".as_ref()" } else { "" })
+                            } else {
+                                format!(
+                                    "x.0.{}{}", 
+                                    key_position,
+                                    if c_type == "String" { ".as_ref()" } else { "" }
+                                )
+                            };
+    
+                            // Generate the final string with proper null checks
+                            format!(
+                                "if {}.is_some() {{{}vec![{}].contains(&{}.unwrap(){})}} else {{false}}",
+                                access_str,
+                                if *negated { "!" } else { "" },
+                                values_str,
+                                access_str,
+                                if c_type == "String" { ".as_str()" } else { "" }
+                            )
+                        }
                     InCondition::InSubquery { .. } => panic!("We should not have InSubquery here"),
                 },
                 GroupBaseCondition::Exists(_, _) => {
