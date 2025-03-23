@@ -1,16 +1,20 @@
 use super::error::SqlParseError;
 use super::sql_ast_structure::*;
 
-pub fn validate_ast(ast: &SqlAST) -> Result<(), SqlParseError> {
+pub fn validate_ast(ast: &SqlAST) -> Result<(), Box<SqlParseError>> {
     validate_limit_offset(&ast.limit)?;
     validate_no_aggregates_in_where(&ast.filter)?;
     validate_having_columns_in_group_by(ast)?;
     validate_order_by(ast)?;
+    
+    for select_column in &ast.select.select {
+        validate_select_subquery(&select_column.selection)?;
+    }
 
     Ok(())
 }
 
-fn validate_order_by(ast: &SqlAST) -> Result<(), SqlParseError> {
+fn validate_order_by(ast: &SqlAST) -> Result<(), Box<SqlParseError>> {
     // If there's no ORDER BY clause, nothing to validate
     if let Some(order_by) = &ast.order_by {
         // Extract column references from SELECT clause
@@ -30,6 +34,7 @@ fn validate_order_by(ast: &SqlAST) -> Result<(), SqlParseError> {
                     extract_columns_from_complex(left, &mut select_columns);
                     extract_columns_from_complex(right, &mut select_columns);
                 }
+                _ => { /* Ignore literals */ }
             }
         }
 
@@ -71,14 +76,14 @@ fn validate_order_by(ast: &SqlAST) -> Result<(), SqlParseError> {
 
             // If it's neither in SELECT columns nor matches an alias, it's invalid
             if !in_select && !matches_alias {
-                return Err(SqlParseError::InvalidInput(format!(
+                return Err(Box::new(SqlParseError::InvalidInput(format!(
                     "ORDER BY column '{}' must appear in the SELECT list",
                     if let Some(table) = table_name {
                         format!("{}.{}", table, column_name)
                     } else {
                         column_name.clone()
                     }
-                )));
+                ))));
             }
         }
     }
@@ -104,17 +109,20 @@ fn extract_columns_from_complex(field: &ComplexField, columns: &mut Vec<ColumnRe
 }
 
 // check if where has aggregates
-fn validate_no_aggregates_in_where(clause: &Option<WhereClause>) -> Result<(), SqlParseError> {
+fn validate_no_aggregates_in_where(clause: &Option<WhereClause>) -> Result<(), Box<SqlParseError>> {
     if let Some(where_clause) = clause {
         match where_clause {
             WhereClause::Base(base_condition) => match base_condition {
                 WhereBaseCondition::Comparison(cond) => {
-                    check_where_field_for_aggregates(&cond.left_field)?;
-                    check_where_field_for_aggregates(&cond.right_field)?;
-                }
+                                check_where_field_for_aggregates(&cond.left_field)?;
+                                check_where_field_for_aggregates(&cond.right_field)?;
+                            }
                 WhereBaseCondition::NullCheck(null_cond) => {
-                    check_where_field_for_aggregates(&null_cond.field)?;
-                }
+                                check_where_field_for_aggregates(&null_cond.field)?;
+                            }
+                WhereBaseCondition::Exists(_, _) => { /*TODO */ }
+                WhereBaseCondition::In(_, _, _) => { /*TODO */ }
+                WhereBaseCondition::Boolean(_) => { /*TODO */ }
             },
             WhereClause::Expression { left, op: _, right } => {
                 validate_no_aggregates_in_where(&Some(*left.clone()))?;
@@ -125,18 +133,18 @@ fn validate_no_aggregates_in_where(clause: &Option<WhereClause>) -> Result<(), S
     Ok(())
 }
 
-fn check_where_field_for_aggregates(field: &WhereField) -> Result<(), SqlParseError> {
+fn check_where_field_for_aggregates(field: &WhereField) -> Result<(), Box<SqlParseError>> {
     if let Some(ref arithmetic) = field.arithmetic {
         check_arithmetic_for_aggregates(arithmetic)?;
     }
     Ok(())
 }
 
-fn check_arithmetic_for_aggregates(expr: &ArithmeticExpr) -> Result<(), SqlParseError> {
+fn check_arithmetic_for_aggregates(expr: &ArithmeticExpr) -> Result<(), Box<SqlParseError>> {
     match expr {
         ArithmeticExpr::Aggregate(func, col_ref) => {
             // Found aggregate function in WHERE clause which is invalid
-            return Err(SqlParseError::InvalidInput(format!(
+            return Err(Box::new(SqlParseError::InvalidInput(format!(
                 "Aggregate function '{}({})' cannot be used in WHERE clause",
                 match func {
                     AggregateFunction::Max => "MAX",
@@ -145,8 +153,8 @@ fn check_arithmetic_for_aggregates(expr: &ArithmeticExpr) -> Result<(), SqlParse
                     AggregateFunction::Sum => "SUM",
                     AggregateFunction::Count => "COUNT",
                 },
-                col_ref.to_string()
-            )));
+                col_ref
+            ))));
         }
         ArithmeticExpr::BinaryOp(left, _, right) => {
             check_arithmetic_for_aggregates(left)?;
@@ -158,7 +166,7 @@ fn check_arithmetic_for_aggregates(expr: &ArithmeticExpr) -> Result<(), SqlParse
     Ok(())
 }
 
-fn validate_having_columns_in_group_by(ast: &SqlAST) -> Result<(), SqlParseError> {
+fn validate_having_columns_in_group_by(ast: &SqlAST) -> Result<(), Box<SqlParseError>> {
     if let (Some(group_by), Some(having)) = (
         &ast.group_by,
         &ast.group_by.as_ref().and_then(|gb| gb.having.as_ref()),
@@ -172,7 +180,7 @@ fn validate_having_columns_in_group_by(ast: &SqlAST) -> Result<(), SqlParseError
 fn validate_having_expr_columns(
     having: &HavingClause,
     group_by_columns: &[ColumnRef],
-) -> Result<(), SqlParseError> {
+) -> Result<(), Box<SqlParseError>> {
     match having {
         HavingClause::Base(base_condition) => match base_condition {
             HavingBaseCondition::Comparison(cond) => {
@@ -182,6 +190,9 @@ fn validate_having_expr_columns(
             HavingBaseCondition::NullCheck(null_cond) => {
                 validate_having_field(&null_cond.field, group_by_columns)?;
             }
+            HavingBaseCondition::Exists(..) => { /*TODO */ }
+            HavingBaseCondition::In(..) => { /*TODO */ }
+            HavingBaseCondition::Boolean(_) => { /*TODO */ }
         },
         HavingClause::Expression { left, op: _, right } => {
             validate_having_expr_columns(left, group_by_columns)?;
@@ -194,7 +205,7 @@ fn validate_having_expr_columns(
 fn validate_having_field(
     field: &HavingField,
     group_by_columns: &[ColumnRef],
-) -> Result<(), SqlParseError> {
+) -> Result<(), Box<SqlParseError>> {
     // Skip validation for literals or aggregates (they're always allowed)
     if field.value.is_some() || field.aggregate.is_some() {
         return Ok(());
@@ -207,14 +218,14 @@ fn validate_having_field(
         });
 
         if !is_in_group_by {
-            return Err(SqlParseError::InvalidInput(format!(
+            return Err(Box::new(SqlParseError::InvalidInput(format!(
                 "Column '{}' in HAVING clause must be in GROUP BY or used in an aggregate function",
                 if let Some(table) = &col.table {
                     format!("{}.{}", table, col.column)
                 } else {
                     col.column.clone()
                 }
-            )));
+            ))));
         }
     }
 
@@ -229,7 +240,7 @@ fn validate_having_field(
 fn validate_arithmetic_columns(
     expr: &ArithmeticExpr,
     group_by_columns: &[ColumnRef],
-) -> Result<(), SqlParseError> {
+) -> Result<(), Box<SqlParseError>> {
     match expr {
         ArithmeticExpr::Column(col_ref) => {
             // Check if this column is in the GROUP BY
@@ -238,13 +249,14 @@ fn validate_arithmetic_columns(
                     && (gb_col.table == col_ref.table || col_ref.table.is_none())
             });
 
-            Ok(if !is_in_group_by {
-                return Err(SqlParseError::InvalidInput(
-                    format!("Column '{}' in HAVING clause must be in GROUP BY or used in an aggregate function", 
-                        col_ref.to_string()
-                    )
-                ));
-            })
+            if !is_in_group_by {
+                return Err(Box::new(SqlParseError::InvalidInput(
+                               format!("Column '{}' in HAVING clause must be in GROUP BY or used in an aggregate function",
+                                   col_ref
+                              )
+                           )));
+            };
+            Ok(())
         }
         ArithmeticExpr::Aggregate(_, _) => {
             Ok(())
@@ -257,29 +269,51 @@ fn validate_arithmetic_columns(
             validate_arithmetic_columns(right, group_by_columns)?;
             Ok(())
         }
+        ArithmeticExpr::Subquery(_) => {
+            Ok(())
+            /*TODO */
+        }
     }
 }
 
-fn validate_limit_offset(clause: &Option<LimitClause>) -> Result<(), SqlParseError> {
+fn validate_limit_offset(clause: &Option<LimitClause>) -> Result<(), Box<SqlParseError>> {
     if let Some(limit_clause) = clause {
         // Check that LIMIT is non-negative
-        println!("Limit: {:?}", limit_clause.limit);
         if limit_clause.limit < 0 {
-            return Err(SqlParseError::InvalidInput(format!(
+            return Err(Box::new(SqlParseError::InvalidInput(format!(
                 "LIMIT value must be non-negative, got {}",
                 limit_clause.limit
-            )));
+            ))));
         }
 
         // Check that OFFSET (if present) is non-negative
         if let Some(offset) = limit_clause.offset {
             if offset < 0 {
-                return Err(SqlParseError::InvalidInput(format!(
+                return Err(Box::new(SqlParseError::InvalidInput(format!(
                     "OFFSET value must be non-negative, got {}",
                     offset
-                )));
+                ))));
             }
         }
+    }
+    Ok(())
+}
+
+// check that the subquery contains only one column in the select clause. other checks are made at runtime
+fn validate_select_subquery(select_type: &SelectType) -> Result<(), Box<SqlParseError>> {
+    match select_type {
+        SelectType::ComplexValue(left_field, _, _) => {
+            // Check if this ComplexValue contains a subquery
+            if let Some(ref subquery) = left_field.subquery {
+                // Check that subquery's SELECT clause has exactly one column
+                if subquery.select.select.len() != 1 {
+                    return Err(Box::new(SqlParseError::InvalidInput(
+                        "Subquery in SELECT clause must return exactly one column".to_string(),
+                    )));
+                }
+            }
+        }
+        _ => {}
     }
     Ok(())
 }

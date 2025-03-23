@@ -6,7 +6,7 @@ use pest::iterators::Pair;
 pub struct OrderParser;
 
 impl OrderParser {
-    pub fn parse(pair: Pair<Rule>) -> Result<OrderByClause, SqlParseError> {
+    pub fn parse(pair: Pair<Rule>) -> Result<OrderByClause, Box<SqlParseError>> {
         let mut inner = pair.into_inner();
 
         inner
@@ -34,10 +34,10 @@ impl OrderParser {
                     let column = match column_ref.as_rule() {
                         Rule::table_column | Rule::variable => Self::parse_column_ref(column_ref)?,
                         _ => {
-                            return Err(SqlParseError::InvalidInput(format!(
+                            return Err(Box::new(SqlParseError::InvalidInput(format!(
                                 "Expected column reference, got {:?}",
                                 column_ref.as_rule()
-                            )))
+                            ))))
                         }
                     };
 
@@ -48,16 +48,16 @@ impl OrderParser {
                                 "ASC" => OrderDirection::Asc,
                                 "DESC" => OrderDirection::Desc,
                                 _ => {
-                                    return Err(SqlParseError::InvalidInput(
+                                    return Err(Box::new(SqlParseError::InvalidInput(
                                         "Invalid sort direction".to_string(),
-                                    ))
+                                    )))
                                 }
                             },
                             _ => {
-                                return Err(SqlParseError::InvalidInput(format!(
+                                return Err(Box::new(SqlParseError::InvalidInput(format!(
                                     "Expected order direction, got {:?}",
                                     dir.as_rule()
-                                )))
+                                ))))
                             }
                         }
                     } else {
@@ -67,24 +67,24 @@ impl OrderParser {
                     items.push(OrderByItem { column, direction });
                 }
                 _ => {
-                    return Err(SqlParseError::InvalidInput(format!(
+                    return Err(Box::new(SqlParseError::InvalidInput(format!(
                         "Expected order item, got {:?}",
                         item.as_rule()
-                    )))
+                    ))))
                 }
             }
         }
 
         if items.is_empty() {
-            return Err(SqlParseError::InvalidInput(
+            return Err(Box::new(SqlParseError::InvalidInput(
                 "Empty ORDER BY clause".to_string(),
-            ));
+            )));
         }
 
         Ok(OrderByClause { items })
     }
 
-    fn parse_column_ref(pair: Pair<Rule>) -> Result<ColumnRef, SqlParseError> {
+    fn parse_column_ref(pair: Pair<Rule>) -> Result<ColumnRef, Box<SqlParseError>> {
         match pair.as_rule() {
             Rule::table_column => {
                 let mut inner = pair.into_inner();
@@ -107,10 +107,10 @@ impl OrderParser {
                 table: None,
                 column: pair.as_str().to_string(),
             }),
-            _ => Err(SqlParseError::InvalidInput(format!(
+            _ => Err(Box::new(SqlParseError::InvalidInput(format!(
                 "Expected column reference, got {:?}",
                 pair.as_rule()
-            ))),
+            )))),
         }
     }
 }

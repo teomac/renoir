@@ -51,7 +51,7 @@ pub fn parse_type_string(input: &str) -> Result<Vec<String>, ParseTypeError> {
             };
 
             // Create the indexed type string
-            Ok(format!("{}", base_type))
+            Ok(base_type.to_string())
         })
         .collect();
 
@@ -72,7 +72,7 @@ pub fn get_csv_columns<P: AsRef<Path>>(path: P) -> Vec<String> {
     columns
 }
 
-pub fn combine_arrays(keys: &Vec<String>, values: &Vec<String>) -> HashMap<String, String> {
+pub fn combine_arrays(keys: &[String], values: &[String]) -> HashMap<String, String> {
     let mut map = HashMap::new();
 
     for (key, value) in keys.iter().zip(values.iter()) {

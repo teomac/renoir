@@ -4,7 +4,7 @@ use super::ir_ast_structure::IrLiteral;
 pub struct LiteralParser;
 
 impl LiteralParser {
-    pub fn parse(val: &str) -> Result<IrLiteral, IrParseError> {
+    pub fn parse(val: &str) -> Result<IrLiteral, Box<IrParseError>> {
         // Try parsing as boolean first
         if val == "true" || val == "false" {
             return Ok(IrLiteral::Boolean(val == "true"));
@@ -47,7 +47,7 @@ impl LiteralParser {
         }
     }
 
-    pub fn parse_column_ref(column_ref: &str) -> Result<IrLiteral, IrParseError> {
+    pub fn parse_column_ref(column_ref: &str) -> Result<IrLiteral, Box<IrParseError>> {
         let parts: Vec<&str> = column_ref.split('.').collect();
         match parts.len() {
             1 => Ok(IrLiteral::ColumnRef(super::ir_ast_structure::ColumnRef {
@@ -58,10 +58,10 @@ impl LiteralParser {
                 table: Some(parts[0].to_string()),
                 column: parts[1].to_string(),
             })),
-            _ => Err(IrParseError::InvalidInput(format!(
+            _ => Err(Box::new(IrParseError::InvalidInput(format!(
                 "Invalid column reference format: {}",
                 column_ref
-            ))),
+            )))),
         }
     }
 }

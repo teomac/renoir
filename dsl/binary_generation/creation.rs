@@ -1,10 +1,8 @@
+use std::fmt::Write;
 use std::fs;
 use std::io;
 use std::path::PathBuf;
 
-use crate::dsl::ir::r_distinct::process_distinct;
-use crate::dsl::ir::r_limit::process_limit;
-use crate::dsl::ir::r_order::process_order_by;
 use crate::dsl::struct_object::object::QueryObject;
 
 pub struct RustProject {
@@ -12,7 +10,7 @@ pub struct RustProject {
 }
 
 impl RustProject {
-    pub fn create_empty_project() -> io::Result<RustProject> {
+    pub fn create_empty_project(path: &String) -> io::Result<RustProject> {
         // Get path to renoir and convert to string with forward slashes
         let renoir_path = std::env::current_dir()?
             .parent()
@@ -24,7 +22,7 @@ impl RustProject {
             .replace('\\', "/");
 
         // Create project directory in current directory
-        let project_path = std::env::current_dir()?.join("query_project");
+        let project_path = PathBuf::from(path);
 
         if !project_path.exists() {
             fs::create_dir_all(&project_path)?;
@@ -41,6 +39,7 @@ impl RustProject {
                 serde_json = "1.0.133"
                 serde = "1.0.217"
                 csv = "1.2.2"
+                ordered-float = {{version = "5.0.0", features = ["serde"]}}
                 "#,
                 renoir_path
             );
@@ -68,86 +67,61 @@ impl RustProject {
     }
 }
 
-pub fn create_template(query_object: &QueryObject) -> String {
-    let table_names = query_object.table_names_list.as_ref();
-    let struct_names = query_object
-        .table_to_struct_name
-        .values()
-        .cloned()
-        .collect::<Vec<String>>();
+pub fn create_template(query_object: &QueryObject, is_subquery: bool) -> String {
+    let mut all_streams = query_object.streams.clone();
+    //streams are returned in reverse order
+    all_streams.reverse();
 
     // Generate struct definitions for input and output tables
-    let struct_definitions =
-        generate_struct_declarations(&table_names, &struct_names, &query_object);
+    let struct_definitions = generate_struct_declarations(query_object);
 
-    let mut stream_declarations = Vec::new();
+    let mut stream_declarations: Vec<String> = Vec::new();
 
-    // case 1: no join inside the query
-    if !query_object.has_join {
-        let table_name = table_names.first().unwrap();
-        let mut stream = format!(
-            r#"let stream0 = ctx.stream_csv::<{}>("{}"){}.write_csv(move |_| r"{}.csv".into(), true);
-            ctx.execute_blocking();
-            "#,
-            query_object.get_struct_name(table_name).unwrap(),
-            query_object.get_csv(table_name).unwrap(),
-            query_object.renoir_string,
-            query_object.output_path,
-        );
+    let all_stream_names = all_streams.keys().cloned().collect::<Vec<String>>();
 
-        if let Some(order_by) = &query_object.ir_ast.as_ref().unwrap().order_by {
-            stream.push_str(&process_order_by(order_by, query_object));
-        }
 
-        if let Some(_limit) = &query_object.ir_ast.as_ref().unwrap().limit {
-            stream.push_str(&process_limit(query_object));
-        }
+    for (i, stream_name) in all_stream_names.iter().enumerate() {
+        let mut stream;
+        if i == all_stream_names.len() - 1 {
+            let stream_object = all_streams.get(stream_name).unwrap();
+            let stream_op_chain = stream_object.op_chain.concat();
 
-        if query_object.ir_ast.as_ref().unwrap().select.distinct {
-            stream.push_str(&process_distinct(query_object));
+            stream = format!(
+                r#"let {} = {}{};
+                 "#,
+                stream_name,
+                stream_op_chain,
+                if !is_subquery {
+                    format!(
+                        r#".write_csv(move |_| r"{}.csv".into(), true)"#,
+                        query_object.output_path
+                    )
+                } else {
+                    ".collect_vec()".to_string()
+                }
+            );
+
+            stream.push_str("ctx.execute_blocking();");
+
+            //insert order by string
+            stream.push_str(&query_object.order_by_string);
+
+            //insert limit string
+            stream.push_str(&query_object.limit_string);
+
+            //insert distinct string
+            stream.push_str(&query_object.distinct_string);
+        } else {
+            let stream_object = all_streams.get(stream_name).unwrap();
+            let stream_op_chain = stream_object.op_chain.concat();
+            stream = format!(
+                r#"let {} = {};
+             "#,
+                stream_name, stream_op_chain
+            );
         }
 
         stream_declarations.push(stream);
-    }
-    // case 2: join inside the query
-    else {
-        for (i, table_name) in table_names.iter().enumerate() {
-            if i == 0 {
-                let mut stream = format!(
-                    r#"let stream{} = ctx.stream_csv::<{}>("{}"){}.write_csv(move |_| r"{}.csv".into(), true);
-                    ctx.execute_blocking();
-                    "#,
-                    i,
-                    query_object.get_struct_name(table_name).unwrap(),
-                    query_object.get_csv(table_name).unwrap(),
-                    query_object.renoir_string,
-                    query_object.output_path,
-                );
-
-                if let Some(order_by) = &query_object.ir_ast.as_ref().unwrap().order_by {
-                    stream.push_str(&process_order_by(order_by, query_object));
-                }
-
-                if let Some(_limit) = &query_object.ir_ast.as_ref().unwrap().limit {
-                    stream.push_str(&process_limit(query_object));
-                }
-
-                if query_object.ir_ast.as_ref().unwrap().select.distinct {
-                    stream.push_str(&process_distinct(query_object));
-                }
-
-                stream_declarations.push(stream);
-            } else {
-                let stream = format!(
-                    r#"let stream{} = ctx.stream_csv::<{}>("{}");"#,
-                    i,
-                    query_object.get_struct_name(table_name).unwrap(),
-                    query_object.get_csv(table_name).unwrap()
-                );
-                stream_declarations.push(stream);
-            }
-        }
-        stream_declarations.reverse();
     }
 
     // Join all stream declarations with newlines
@@ -155,11 +129,16 @@ pub fn create_template(query_object: &QueryObject) -> String {
 
     // Create the main.rs content
     format!(
-        r#"use renoir::prelude::*;
+        
+        r#"
+        #![allow(non_camel_case_types)]
+        #![allow(unused_variables)]
+        use renoir::prelude::*;
         use serde::{{Deserialize, Serialize}};
         use serde_json;
         use std::fs;
         use csv;
+        use ordered_float::OrderedFloat;
 
         {}
 
@@ -167,42 +146,59 @@ pub fn create_template(query_object: &QueryObject) -> String {
             let ctx = StreamContext::new_local();
 
             {}
+            {}
             
         }}"#,
-        struct_definitions, streams,
+        struct_definitions,
+        streams,
+        if is_subquery {
+            format!(
+                r#"let result = {}.get();
+            if let Some(values) = result {{
+        let values: Vec<_> = values
+            .iter()
+            .filter_map(|record| record.{}.clone())
+            .collect();
+        
+        if !values.is_empty() {{
+            println!("{{:?}}", values);
+            }} else {{
+            println!("");
+            }}
+            }} else {{
+        println!("");
+            }}"#,
+                query_object.streams.first().unwrap().0,
+                query_object.result_column_types.first().unwrap().0,
+            )
+        } else {
+            "".to_string()
+        }
     )
 }
 
-pub fn generate_struct_declarations(
-    table_names: &Vec<String>,
-    struct_names: &Vec<String>,
-    query_object: &QueryObject,
-) -> String {
+pub fn generate_struct_declarations(query_object: &QueryObject) -> String {
     //Part1: generate struct definitions for input tables
 
     // Use iterators to zip through table_names, struct_names, and field_lists to maintain order
-    let mut result: String = table_names
+    let structs = query_object.structs.clone();
+
+    //iterate and print all structs
+    let mut result: String = structs
         .iter()
-        .enumerate()
-        .map(|(i, _table_name)| {
+        .map(|(struct_name, fields)| {
             // Generate struct definition
             let mut struct_def = String::new();
             struct_def.push_str(
                 "#[derive(Clone, Debug, Serialize, Deserialize, PartialOrd, PartialEq, Default)]\n",
             );
-            struct_def.push_str(&format!("struct {} {{\n", struct_names[i]));
+            struct_def.push_str(&format!("struct {} {{\n", struct_name));
 
             // Generate field definitions directly from table to struct mapping
-
-            let fields_str: String = query_object
-                .table_to_struct
-                .get(_table_name)
-                .unwrap()
-                .iter()
-                .map(|(field_name, field_type)| {
-                    format!("    {}: Option<{}>,\n", field_name, field_type)
-                })
-                .collect();
+            let fields_str = fields.iter().fold(String::new(), |mut output, (field_name, field_type)| {
+                let _ = writeln!(output, "{}: Option<{}>,\n", field_name, field_type);
+                output
+            });
 
             struct_def.push_str(&fields_str);
             struct_def.push_str("}\n\n");
@@ -212,17 +208,26 @@ pub fn generate_struct_declarations(
         .collect();
 
     //Part2: generate struct definitions for output tables
-    result.push_str(
-        "#[derive(Clone, Debug, Serialize, Deserialize, PartialOrd, PartialEq, Default)]\n",
-    );
-    result.push_str("struct OutputStruct {\n");
 
-    // Add fields from result_column_types
-    for (field_name, field_type) in &query_object.result_column_types {
-        result.push_str(&format!("    {}: Option<{}>,\n", field_name, field_type));
+    let all_streams = query_object.streams.clone();
+
+    for (_stream_name, stream) in all_streams.iter() {
+        if stream.final_struct.is_empty() {
+            continue;
+        } else {
+            result.push_str(
+                "#[derive(Clone, Debug, Serialize, Deserialize, PartialOrd, PartialEq, Default)]\n",
+            );
+            result.push_str(&format!("struct {} {{\n", stream.final_struct_name));
+
+            // Add fields from stream
+            for (field_name, field_type) in stream.final_struct.clone() {
+                result.push_str(&format!("    {}: Option<{}>,\n", field_name, field_type));
+            }
+
+            result.push_str("}\n");
+        }
     }
-
-    result.push_str("}\n");
 
     result
 }

@@ -7,7 +7,7 @@ pub fn sql_to_ir(query_str: &str) -> String {
     let sql_ast = SqlParser::parse_query(query_str).expect("Failed to parse query");
     //println!("SQL AST: {:?}", sql_ast);
 
-    let ir_string = SqlToIr::convert(&sql_ast);
+    let ir_string = SqlToIr::convert(&sql_ast, 0);
     println!("Generated Ir string:\n{}", ir_string);
 
     ir_string

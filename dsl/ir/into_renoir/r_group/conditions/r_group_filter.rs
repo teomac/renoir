@@ -1,15 +1,16 @@
+use core::panic;
+
 use crate::dsl::ir::ir_ast_structure::{
-    AggregateType, ComplexField, Group, GroupBaseCondition, GroupClause, NullOp,
+    AggregateType, ComplexField, GroupBaseCondition, GroupClause, NullOp,
 };
 use crate::dsl::ir::r_group::r_group_keys::GroupAccumulatorInfo;
-use crate::dsl::ir::r_utils::check_alias;
-use crate::dsl::ir::QueryObject;
-use crate::dsl::ir::{AggregateFunction, BinaryOp, ComparisonOp, IrLiteral};
+use crate::dsl::ir::{AggregateFunction, BinaryOp, ComparisonOp, InCondition, IrLiteral};
+use crate::dsl::ir::{ColumnRef, QueryObject};
 
 // Function to create the filter operation
 pub fn create_filter_operation(
     condition: &GroupClause,
-    group_by: &Group,
+    keys: &Vec<ColumnRef>,
     query_object: &QueryObject,
     acc_info: &GroupAccumulatorInfo,
 ) -> String {
@@ -19,19 +20,20 @@ pub fn create_filter_operation(
     // Process the conditions recursively
     filter_str.push_str(&process_filter_condition(
         condition,
-        group_by,
+        keys,
         query_object,
         acc_info,
     ));
 
-    filter_str.push_str(")");
+    filter_str.push(')');
+
     filter_str
 }
 
 // Function to process filter conditions recursively
 fn process_filter_condition(
     condition: &GroupClause,
-    group_by: &Group,
+    keys: &Vec<ColumnRef>,
     query_object: &QueryObject,
     acc_info: &GroupAccumulatorInfo,
 ) -> String {
@@ -56,14 +58,14 @@ fn process_filter_condition(
                     // Process left and right expressions
                     let left_expr = process_filter_field(
                         &comp.left_field,
-                        group_by,
+                        keys,
                         query_object,
                         acc_info,
                         &mut check_list,
                     );
                     let right_expr = process_filter_field(
                         &comp.right_field,
-                        group_by,
+                        keys,
                         query_object,
                         acc_info,
                         &mut check_list,
@@ -94,25 +96,10 @@ fn process_filter_condition(
                                     right_expr
                                 )
                             }
-                        } else {
-                            if is_check_list_empty {
-                                format!("{} {} {}", left_expr, operator, right_expr)
-                            } else {
-                                // Different non-numeric types - this should already be caught during validation
-                                format!(
-                                    "if {} {{({}) {} ({})}} else {{ false }}",
-                                    check_list.join(" && "),
-                                    left_expr,
-                                    operator,
-                                    right_expr
-                                )
-                            }
-                        }
-                    } else {
-                        if is_check_list_empty {
+                        } else if is_check_list_empty {
                             format!("{} {} {}", left_expr, operator, right_expr)
                         } else {
-                            // Same types
+                            // Different non-numeric types - this should already be caught during validation
                             format!(
                                 "if {} {{({}) {} ({})}} else {{ false }}",
                                 check_list.join(" && "),
@@ -121,65 +108,169 @@ fn process_filter_condition(
                                 right_expr
                             )
                         }
+                    } else if is_check_list_empty {
+                        format!("{} {} {}", left_expr, operator, right_expr)
+                    } else {
+                        // Same types
+                        format!(
+                            "if {} {{({}) {} ({})}} else {{ false }}",
+                            check_list.join(" && "),
+                            left_expr,
+                            operator,
+                            right_expr
+                        )
                     }
                 }
                 GroupBaseCondition::NullCheck(null_check) => {
-                    // Get the column reference that's being checked for null
-                    let col_ref = if let Some(ref col) = null_check.field.column_ref {
-                        col
-                    } else {
-                        panic!("NULL check must be on a column reference");
-                    };
-
-                    // Check if this column is part of the GROUP BY key
-                    let is_key_field = group_by.columns.iter().any(|c| {
-                        c.column == col_ref.column
-                            && (c.table.is_none()
-                                || col_ref.table.is_none()
-                                || c.table == col_ref.table)
-                    });
-
-                    // Get column access based on whether it's a key field
-                    let col_access = if is_key_field {
-                        // Get the position in the group by key tuple
-                        let key_position = group_by
-                            .columns
-                            .iter()
-                            .position(|c| {
-                                c.column == col_ref.column
-                                    && (c.table.is_none()
-                                        || col_ref.table.is_none()
-                                        || c.table == col_ref.table)
-                            })
-                            .unwrap();
-
-                        if group_by.columns.len() == 1 {
-                            // Single key column
-                            "x.0".to_string()
+                    if null_check.field.column_ref.is_some() {
+                        // Get the column reference that's being checked for null
+                        let col_ref = if let Some(ref col) = null_check.field.column_ref {
+                            col
                         } else {
-                            // Multiple key columns - access by position
-                            format!("x.0.{}", key_position)
-                        }
-                    } else {
-                        // Not a key column - must be in the accumulated values or aggregates
-                        if query_object.has_join {
-                            let table = check_alias(&col_ref.table.as_ref().unwrap(), query_object);
+                            panic!("NULL check must be on a column reference");
+                        };
+
+                        // Check if this column is part of the GROUP BY key
+                        let is_key_field = keys.iter().any(|c| {
+                            c.column == col_ref.column
+                                && (c.table.is_none()
+                                    || col_ref.table.is_none()
+                                    || c.table == col_ref.table)
+                        });
+
+                        // Get column access based on whether it's a key field
+                        let col_access = if is_key_field {
+                            // Get the position in the group by key tuple
+                            let key_position = keys
+                                .iter()
+                                .position(|c| {
+                                    c.column == col_ref.column
+                                        && (c.table.is_none()
+                                            || col_ref.table.is_none()
+                                            || c.table == col_ref.table)
+                                })
+                                .unwrap();
+
+                            if keys.len() == 1 {
+                                // Single key column
+                                "x.0".to_string()
+                            } else {
+                                // Multiple key columns - access by position
+                                format!("x.0.{}", key_position)
+                            }
+                        } else {
+                            // Not a key column - must be in the accumulated values or aggregates
+
+                            let stream_name = if col_ref.table.is_some() {
+                                query_object
+                                    .get_stream_from_alias(col_ref.table.as_ref().unwrap())
+                                    .unwrap()
+                            } else if query_object.streams.len() == 1 {
+                                query_object.streams.first().unwrap().0
+                            } else {
+                                panic!("Column reference must have a table reference")
+                            };
+                            let stream = query_object.get_stream(stream_name);
+                            stream.check_if_column_exists(&col_ref.column);
+
                             format!(
                                 "x.1{}.{}",
-                                query_object.table_to_tuple_access.get(&table).unwrap(),
+                                stream.get_access().get_base_path(),
                                 col_ref.column
                             )
-                        } else {
-                            format!("x.1.{}", col_ref.column)
-                        }
-                    };
+                        };
 
-                    // Generate the appropriate null check
-                    match null_check.operator {
-                        NullOp::IsNull => format!("{}.is_none()", col_access),
-                        NullOp::IsNotNull => format!("{}.is_some()", col_access),
+                        // Generate the appropriate null check
+                        match null_check.operator {
+                            NullOp::IsNull => format!("{}.is_none()", col_access),
+                            NullOp::IsNotNull => format!("{}.is_some()", col_access),
+                        }
+                    } else if null_check.field.literal.is_some() {
+                        let lit = null_check.field.literal.as_ref().unwrap();
+                        match lit {
+                            IrLiteral::Boolean(_) | IrLiteral::Integer(_) | IrLiteral::Float(_) => {
+                                match null_check.operator {
+                                    NullOp::IsNull => "false".to_string(),
+                                    NullOp::IsNotNull => "true".to_string(),
+                                }
+                            }
+                            IrLiteral::String(string) => match null_check.operator {
+                                NullOp::IsNull => format!("{}", string.is_empty()),
+                                NullOp::IsNotNull => format!("{}", !string.is_empty()),
+                            },
+                            IrLiteral::ColumnRef(_) => {
+                                panic!("We should not be here.")
+                            }
+                        }
+                    } else if null_check.field.aggregate.is_some() {
+                        match null_check.operator {
+                            NullOp::IsNull => "false".to_string(),
+                            NullOp::IsNotNull => "true".to_string(),
+                        }
+                    } else {
+                        panic!("Invalid NULL check - must be on a column reference or literal")
                     }
                 }
+                GroupBaseCondition::In(in_condition) => match in_condition {
+                    InCondition::In {
+                        field,
+                        values,
+                        negated,
+                    } => {
+                        // Get the values
+                        let values_str = values
+                            .iter()
+                            .map(|value| match value {
+                                IrLiteral::Integer(i) => i.to_string(),
+                                IrLiteral::Float(f) => format!("{:.2}", f),
+                                IrLiteral::String(s) => format!("\"{}\"", s),
+                                IrLiteral::Boolean(b) => b.to_string(),
+                                IrLiteral::ColumnRef(_) => {
+                                    panic!(
+                                        "Invalid InCondition - column reference not expected here"
+                                    )
+                                }
+                            })
+                            .collect::<Vec<String>>()
+                            .join(", ");
+
+                            let is_key = keys.iter().any(|k| k.column == field.column);
+                            let key_position = if is_key {
+                                keys.iter().position(|k| k.column == field.column).unwrap()
+                            } else {
+                                panic!("Field in IN condition must be a group by key")
+                            };
+    
+                            // Generate the condition with correct tuple access
+                            let single_key = keys.len() == 1;
+                            let c_type = query_object.get_type(field);
+    
+                            let access_str = if single_key {
+                                format!("x.0{}", if c_type == "String" { ".as_ref()" } else { "" })
+                            } else {
+                                format!(
+                                    "x.0.{}{}", 
+                                    key_position,
+                                    if c_type == "String" { ".as_ref()" } else { "" }
+                                )
+                            };
+    
+                            // Generate the final string with proper null checks
+                            format!(
+                                "if {}.is_some() {{{}vec![{}].contains(&{}.unwrap(){})}} else {{false}}",
+                                access_str,
+                                if *negated { "!" } else { "" },
+                                values_str,
+                                access_str,
+                                if c_type == "String" { ".as_str()" } else { "" }
+                            )
+                        }
+                    InCondition::InSubquery { .. } => panic!("We should not have InSubquery here"),
+                },
+                GroupBaseCondition::Exists(_, _) => {
+                    panic!("Exists condition should be already parsed")
+                }
+                GroupBaseCondition::Boolean(boolean) => boolean.to_string(),
             }
         }
         GroupClause::Expression { left, op, right } => {
@@ -190,9 +281,9 @@ fn process_filter_condition(
 
             format!(
                 "({} {} {})",
-                process_filter_condition(left, group_by, query_object, acc_info),
+                process_filter_condition(left, keys, query_object, acc_info),
                 op_str,
-                process_filter_condition(right, group_by, query_object, acc_info)
+                process_filter_condition(right, keys, query_object, acc_info)
             )
         }
     }
@@ -201,10 +292,10 @@ fn process_filter_condition(
 // Helper function to process fields in filter conditions
 fn process_filter_field(
     field: &ComplexField,
-    group_by: &Group,
+    keys: &Vec<ColumnRef>,
     query_object: &QueryObject,
     acc_info: &GroupAccumulatorInfo,
-    mut check_list: &mut Vec<String>, // Added parameter
+    check_list: &mut Vec<String>, // Added parameter
 ) -> String {
     if let Some(ref nested) = field.nested_expr {
         let (left, op, right) = &**nested;
@@ -212,10 +303,8 @@ fn process_filter_field(
         let left_type = query_object.get_complex_field_type(left);
         let right_type = query_object.get_complex_field_type(right);
 
-        let left_expr =
-            process_filter_field(left, group_by, query_object, acc_info, &mut check_list);
-        let right_expr =
-            process_filter_field(right, group_by, query_object, acc_info, &mut check_list);
+        let left_expr = process_filter_field(left, keys, query_object, acc_info, check_list);
+        let right_expr = process_filter_field(right, keys, query_object, acc_info, check_list);
 
         // Improved type handling for arithmetic operations
         if left_type != right_type {
@@ -275,37 +364,63 @@ fn process_filter_field(
             ""
         };
         // Handle column reference - check if it's a key or not
-        if let Some(key_position) = group_by.columns.iter().position(|c| c.column == col.column) {
+        if let Some(key_position) = keys.iter().position(|c| c.column == col.column) {
+            let col_type = query_object.get_type(col);
             // It's a key - use its position in the group by tuple
-            if group_by.columns.len() == 1 {
+            if keys.len() == 1 {
                 check_list.push(format!("x.0{}.is_some()", as_ref));
-                format!("x.0{}.unwrap()", as_ref)
+                format!(
+                    "x.0{}.unwrap(){}",
+                    as_ref,
+                    if col_type == "f64" {
+                        ".into_inner()"
+                    } else {
+                        ""
+                    }
+                )
             } else {
                 check_list.push(format!("x.0.{}{}.is_some()", key_position, as_ref));
-                format!("x.0.{}{}.unwrap()", key_position, as_ref)
+                format!(
+                    "x.0.{}{}.unwrap(){}",
+                    key_position,
+                    as_ref,
+                    if col_type == "f64" {
+                        ".into_inner()"
+                    } else {
+                        ""
+                    }
+                )
             }
         } else {
             // Not a key - use x.1
-            if query_object.has_join {
-                let table = check_alias(&col.table.as_ref().unwrap(), query_object);
 
-                check_list.push(format!(
-                    "x.1{}.{}{}.is_some()",
-                    query_object.table_to_tuple_access.get(&table).unwrap(),
-                    col.column,
-                    as_ref
-                ));
-
-                format!(
-                    "x.1{}.{}{}.unwrap()",
-                    query_object.table_to_tuple_access.get(&table).unwrap(),
-                    col.column,
-                    as_ref
-                )
+            let stream_name = if col.table.is_some() {
+                query_object
+                    .get_stream_from_alias(col.table.as_ref().unwrap())
+                    .unwrap()
+            } else if query_object.streams.len() == 1 {
+                query_object.streams.first().unwrap().0
             } else {
-                check_list.push(format!("x.1.{}{}.is_some()", col.column, as_ref));
-                format!("x.1.{}{}.unwrap()", col.column, as_ref)
-            }
+                panic!("Column reference must have a table reference")
+            };
+
+            let stream = query_object.get_stream(stream_name);
+
+            stream.check_if_column_exists(&col.column);
+
+            check_list.push(format!(
+                "x.1{}.{}{}.is_some()",
+                stream.get_access().get_base_path(),
+                col.column,
+                as_ref
+            ));
+
+            format!(
+                "x.1{}.{}{}.unwrap()",
+                stream.get_access().get_base_path(),
+                col.column,
+                as_ref
+            )
         }
     } else if let Some(ref lit) = field.literal {
         match lit {
@@ -313,30 +428,8 @@ fn process_filter_field(
             IrLiteral::Float(f) => format!("{:.2}", f),
             IrLiteral::String(s) => format!("\"{}\"", s),
             IrLiteral::Boolean(b) => b.to_string(),
-            IrLiteral::ColumnRef(col_ref) => {
-                // Check if it's a key and get its position
-                if let Some(key_position) = group_by
-                    .columns
-                    .iter()
-                    .position(|c| c.column == col_ref.column)
-                {
-                    if group_by.columns.len() == 1 {
-                        format!("x.0")
-                    } else {
-                        format!("x.0.{}", key_position)
-                    }
-                } else {
-                    if query_object.has_join {
-                        let table = check_alias(&col_ref.table.as_ref().unwrap(), query_object);
-                        format!(
-                            "x.1{}.{}.unwrap()",
-                            query_object.table_to_tuple_access.get(&table).unwrap(),
-                            col_ref.column
-                        )
-                    } else {
-                        format!("x.1.{}.unwrap()", col_ref.column)
-                    }
-                }
+            IrLiteral::ColumnRef(_) => {
+                panic!("ColumnRef should have been handled earlier")
             }
         }
     } else if let Some(ref agg) = field.aggregate {
@@ -345,7 +438,7 @@ fn process_filter_field(
         // Aggregates are always in x.1
         let col = &agg.column;
         let col_access = if acc_info.agg_positions.len() == 1 {
-            format!("x.1")
+            "x.1".to_string()
         } else {
             format!("x.1.{}", agg_pos)
         };
@@ -355,9 +448,7 @@ fn process_filter_field(
         }
 
         match agg.function {
-            AggregateType::Count => {
-                format!("{}", col_access)
-            }
+            AggregateType::Count => col_access.to_string(),
             AggregateType::Max | AggregateType::Min | AggregateType::Sum => {
                 format!("{}.unwrap()", col_access)
             }
@@ -367,11 +458,7 @@ fn process_filter_field(
                     function: AggregateType::Count,
                     column: col.clone(),
                 });
-                format!(
-                    "{}.unwrap() / {} as f64",
-                    col_access,
-                    format!("x.1.{}", count_pos)
-                )
+                format!("{}.unwrap() / x.1.{} as f64", col_access, count_pos)
             }
         }
     } else {

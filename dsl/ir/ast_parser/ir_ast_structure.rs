@@ -1,113 +1,73 @@
+// New IrAST structure following Polars approach
+use std::sync::Arc;
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum IrPlan {
+    // Source operations
+    Scan {
+        input: Arc<IrPlan>,
+        stream_name: String,
+        alias: Option<String>,
+    },
+
+    // Transformation operations
+    Filter {
+        input: Arc<IrPlan>,
+        predicate: FilterClause,
+    },
+
+    Project {
+        input: Arc<IrPlan>,
+        columns: Vec<ProjectionColumn>,
+        distinct: bool,
+    },
+
+    GroupBy {
+        input: Arc<IrPlan>,
+        keys: Vec<ColumnRef>,
+        group_condition: Option<GroupClause>,
+    },
+
+    Join {
+        left: Arc<IrPlan>,
+        right: Arc<IrPlan>,
+        condition: Vec<JoinCondition>,
+        join_type: JoinType,
+    },
+
+    OrderBy {
+        input: Arc<IrPlan>,
+        items: Vec<OrderByItem>,
+    },
+
+    Limit {
+        input: Arc<IrPlan>,
+        limit: i64,
+        offset: Option<i64>,
+    },
+    Table {
+        table_name: String,
+    },
+}
+
+// Supporting structures
 #[derive(Debug, PartialEq, Clone)]
-pub struct IrAST {
-    pub from: FromClause,
-    pub select: SelectClause,
-    pub filter: Option<WhereClause>,
-    pub group_by: Option<Group>,
-    pub order_by: Option<OrderByClause>,
-    pub limit: Option<LimitClause>,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct FromClause {
-    pub scan: ScanClause,
-    pub joins: Option<Vec<JoinClause>>,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct ScanClause {
-    pub stream_name: String,
-    pub alias: Option<String>,
-    pub input_source: String,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct JoinClause {
-    pub join_type: JoinType,
-    pub join_scan: ScanClause,
-    pub condition: JoinCondition,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum JoinType {
-    Inner,
-    Left,
-    Outer,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct JoinCondition {
-    pub conditions: Vec<JoinPair>,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct JoinPair {
-    pub left_col: ColumnRef,
-    pub right_col: ColumnRef,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct SelectClause {
-    pub distinct: bool,
-    pub select: Vec<SelectColumn>,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum SelectColumn {
-    Column(ColumnRef, Option<String>), // Added Option<String> for alias
-    Aggregate(AggregateFunction, Option<String>), // Added Option<String> for alias
-    ComplexValue(ComplexField, Option<String>), // Added Option<String> for alias
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct ComplexField {
-    pub column_ref: Option<ColumnRef>,
-    pub literal: Option<IrLiteral>,
-    pub aggregate: Option<AggregateFunction>,
-    pub nested_expr: Option<Box<(ComplexField, String, ComplexField)>>,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct AggregateFunction {
-    pub function: AggregateType,
-    pub column: ColumnRef,
-}
-
-#[derive(Debug, PartialEq, Clone, Eq, Hash)]
-pub struct ColumnRef {
-    pub table: Option<String>,
-    pub column: String,
-}
-
-#[derive(Debug, PartialEq, Clone, Eq, Hash)]
-pub enum AggregateType {
-    Max,
-    Min,
-    Avg,
-    Count,
-    Sum,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum WhereClause {
-    Base(WhereConditionType),
+pub enum FilterClause {
+    Base(FilterConditionType),
     Expression {
-        left: Box<WhereClause>,
+        left: Box<FilterClause>,
         binary_op: BinaryOp,
-        right: Box<WhereClause>,
+        right: Box<FilterClause>,
     },
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum WhereConditionType {
+pub enum FilterConditionType {
     Comparison(Condition),
     NullCheck(NullCondition),
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct Group {
-    pub columns: Vec<ColumnRef>,
-    pub group_condition: Option<GroupClause>,
+    In(InCondition),
+    Exists(Arc<IrPlan>, bool), // true if is negated
+    Boolean(bool),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -124,41 +84,61 @@ pub enum GroupClause {
 pub enum GroupBaseCondition {
     Comparison(Condition),
     NullCheck(NullCondition),
+    In(InCondition),
+    Exists(Arc<IrPlan>, bool), // true if is negated
+    Boolean(bool),
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct Condition {
-    pub left_field: ComplexField,
-    pub operator: ComparisonOp,
-    pub right_field: ComplexField,
+pub struct JoinCondition {
+    pub left_col: ColumnRef,
+    pub right_col: ColumnRef,
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct NullCondition {
-    pub field: ComplexField,
-    pub operator: NullOp,
+pub enum JoinType {
+    Inner,
+    Left,
+    Outer,
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum ComparisonOp {
-    GreaterThan,
-    LessThan,
-    Equal,
-    NotEqual,
-    GreaterThanEquals,
-    LessThanEquals,
+pub enum ProjectionColumn {
+    Column(ColumnRef, Option<String>),
+    Aggregate(AggregateFunction, Option<String>),
+    ComplexValue(ComplexField, Option<String>),
+    StringLiteral(String, Option<String>),
+    Subquery(Arc<IrPlan>, Option<String>),
+}
+
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
+pub struct ColumnRef {
+    pub table: Option<String>,
+    pub column: String,
+}
+
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
+pub struct AggregateFunction {
+    pub function: AggregateType,
+    pub column: ColumnRef,
+}
+
+#[derive(Debug, PartialEq, Clone, Eq, Hash)]
+pub enum AggregateType {
+    Max,
+    Min,
+    Avg,
+    Count,
+    Sum,
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum BinaryOp {
-    And,
-    Or,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub enum NullOp {
-    IsNull,
-    IsNotNull,
+pub struct ComplexField {
+    pub column_ref: Option<ColumnRef>,
+    pub literal: Option<IrLiteral>,
+    pub aggregate: Option<AggregateFunction>,
+    pub nested_expr: Option<Box<(ComplexField, String, ComplexField)>>,
+    pub subquery: Option<Arc<IrPlan>>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -168,17 +148,6 @@ pub enum IrLiteral {
     String(String),
     Boolean(bool),
     ColumnRef(ColumnRef),
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct LimitClause {
-    pub limit: i64,
-    pub offset: Option<i64>,
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct OrderByClause {
-    pub items: Vec<OrderByItem>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -193,44 +162,183 @@ pub enum OrderDirection {
     Desc,
 }
 
-impl ColumnRef {
-    pub fn to_string(&self) -> String {
-        match &self.table {
-            Some(table) => format!("{}.{}", table, self.column),
-            None => self.column.clone(),
+// Additional structures for conditions
+#[derive(Debug, PartialEq, Clone)]
+pub struct Condition {
+    pub left_field: ComplexField,
+    pub operator: ComparisonOp,
+    pub right_field: ComplexField,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct NullCondition {
+    pub field: ComplexField,
+    pub operator: NullOp,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum InCondition {
+    In {
+        field: ColumnRef,
+        values: Vec<IrLiteral>,
+        negated: bool,
+    },
+    InSubquery {
+        field: ColumnRef,
+        subquery: Arc<IrPlan>,
+        negated: bool,
+    },
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum ComparisonOp {
+    GreaterThan,
+    LessThan,
+    Equal,
+    NotEqual,
+    GreaterThanEquals,
+    LessThanEquals,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum NullOp {
+    IsNull,
+    IsNotNull,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum BinaryOp {
+    And,
+    Or,
+}
+
+// Implementation of helper methods for the new structure
+impl IrPlan {
+    // Convenience method to create a scan operation
+    pub fn scan(stream_name: String, alias: Option<String>, input_source: Arc<IrPlan>) -> Self {
+        IrPlan::Scan {
+            stream_name,
+            alias,
+            input: input_source,
         }
+    }
+
+    // Convenience method to create a filter operation
+    pub fn filter(input: Arc<IrPlan>, predicate: FilterClause) -> Self {
+        IrPlan::Filter { input, predicate }
+    }
+
+    // Convenience method to create a project operation
+    pub fn project(input: Arc<IrPlan>, columns: Vec<ProjectionColumn>, distinct: bool) -> Self {
+        IrPlan::Project {
+            input,
+            columns,
+            distinct,
+        }
+    }
+
+    // Similar convenience methods for other operations
+    pub fn group_by(
+        input: Arc<IrPlan>,
+        keys: Vec<ColumnRef>,
+        group_condition: Option<GroupClause>,
+    ) -> Self {
+        IrPlan::GroupBy {
+            input,
+            keys,
+            group_condition,
+        }
+    }
+
+    pub fn order_by(input: Arc<IrPlan>, items: Vec<OrderByItem>) -> Self {
+        IrPlan::OrderBy { input, items }
+    }
+
+    pub fn limit(input: Arc<IrPlan>, limit: i64, offset: Option<i64>) -> Self {
+        IrPlan::Limit {
+            input,
+            limit,
+            offset,
+        }
+    }
+
+    pub fn join(
+        left: Arc<IrPlan>,
+        right: Arc<IrPlan>,
+        condition: Vec<JoinCondition>,
+        join_type: JoinType,
+    ) -> Self {
+        IrPlan::Join {
+            left,
+            right,
+            condition,
+            join_type,
+        }
+    }
+}
+
+//implement display for ColumnRef
+impl std::fmt::Display for ColumnRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+        if let Some(ref table) = self.table {
+            write!(f, "{}.{}", table, self.column)
+        } else {
+            write!(f, "{}", self.column)
+        }
+    }
+}
+
+impl AggregateFunction {
+    pub fn equals(&self, other: &AggregateFunction) -> bool {
+        self.function.equals(&other.function) && self.column == other.column
     }
 }
 
 impl AggregateType {
-    pub fn to_string(&self) -> String {
+    pub fn equals(&self, other: &AggregateType) -> bool {
+        matches!(
+            (self, other),
+            (AggregateType::Max, AggregateType::Max)
+                | (AggregateType::Min, AggregateType::Min)
+                | (AggregateType::Avg, AggregateType::Avg)
+                | (AggregateType::Sum, AggregateType::Sum)
+                | (AggregateType::Count, AggregateType::Count)
+        )
+    }
+}
+
+//implement display for AggregateType
+impl std::fmt::Display for AggregateType {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
-            AggregateType::Max => "max".to_string(),
-            AggregateType::Min => "min".to_string(),
-            AggregateType::Avg => "avg".to_string(),
-            AggregateType::Sum => "sum".to_string(),
-            AggregateType::Count => "count".to_string(),
+            AggregateType::Max => write!(f, "max"),
+            AggregateType::Min => write!(f, "min"),
+            AggregateType::Avg => write!(f, "avg"),
+            AggregateType::Sum => write!(f, "sum"),
+            AggregateType::Count => write!(f, "count"),
         }
     }
 }
 
-impl ComplexField {
-    pub fn to_string(&self) -> String {
+//implement display for ComplexField
+impl std::fmt::Display for ComplexField {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         if let Some(ref nested) = self.nested_expr {
             let (left, op, right) = &**nested;
-            format!("({} {} {})", left.to_string(), op, right.to_string())
+            write!(f, "({} {} {})", left, op, right)
         } else if let Some(ref col) = self.column_ref {
-            col.to_string()
+            write!(f, "{}", col)
         } else if let Some(ref lit) = self.literal {
             match lit {
-                IrLiteral::Integer(i) => i.to_string(),
-                IrLiteral::Float(f) => format!("{:.2}", f),
-                IrLiteral::String(s) => s.clone(),
-                IrLiteral::Boolean(b) => b.to_string(),
-                IrLiteral::ColumnRef(cr) => cr.to_string(),
+                IrLiteral::Integer(i) => write!(f, "{}", i),
+                IrLiteral::Float(fl) => write!(f, "{:.2}", fl),
+                IrLiteral::String(s) => write!(f, "{}", s.clone()),
+                IrLiteral::Boolean(b) => write!(f, "{}", b),
+                IrLiteral::ColumnRef(cr) => write!(f, "{}", cr),
             }
         } else if let Some(ref agg) = self.aggregate {
-            format!(
+            write!(
+                f,
                 "{}({})",
                 match agg.function {
                     AggregateType::Max => "max",
@@ -239,10 +347,10 @@ impl ComplexField {
                     AggregateType::Sum => "sum",
                     AggregateType::Count => "count",
                 },
-                agg.column.to_string()
+                agg.column
             )
         } else {
-            String::new()
+            write!(f, "")
         }
     }
 }

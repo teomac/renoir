@@ -14,7 +14,7 @@ pub fn binary_execution(
 
     // Added: Format the code using cargo fmt
     let fmt_status = Command::new("cargo")
-        .args(&["fmt"])
+        .args(["fmt"])
         .current_dir(&rust_project.project_path)
         .status()?;
 
@@ -27,7 +27,7 @@ pub fn binary_execution(
 
     // Added: Fix the code using cargo fix
     let fix_status = Command::new("cargo")
-        .args(&["fix", "--bin", "query_binary", "--allow-dirty"])
+        .args(["fix", "--bin", "query_binary", "--allow-dirty"])
         .current_dir(&rust_project.project_path)
         .status()?;
 
@@ -40,7 +40,7 @@ pub fn binary_execution(
 
     // Build the binary using cargo in debug mode
     let status = Command::new("cargo")
-        .args(&["build"])
+        .args(["build"])
         .current_dir(&rust_project.project_path)
         .status()?;
 
@@ -75,7 +75,6 @@ pub fn binary_execution(
         ));
     }
 
-    // Parse the JSON output into Vec<f64>
     let output_str = String::from_utf8(output.stdout)
         .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e))?;
 

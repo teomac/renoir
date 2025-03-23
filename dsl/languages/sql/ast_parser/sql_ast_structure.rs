@@ -1,3 +1,5 @@
+use std::fmt;
+
 #[derive(Debug, PartialEq, Clone)]
 pub struct SqlAST {
     pub select: SelectClause,
@@ -25,6 +27,8 @@ pub enum SelectType {
     Simple(ColumnRef),
     Aggregate(AggregateFunction, ColumnRef),
     ComplexValue(ComplexField, String, ComplexField),
+    StringLiteral(String),
+    Subquery(Box<SqlAST>),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -33,6 +37,7 @@ pub struct ComplexField {
     pub literal: Option<SqlLiteral>,
     pub aggregate: Option<(AggregateFunction, ColumnRef)>,
     pub nested_expr: Option<Box<(ComplexField, String, ComplexField)>>,
+    pub subquery: Option<Box<SqlAST>>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -46,8 +51,14 @@ pub enum AggregateFunction {
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct FromClause {
-    pub scan: ScanClause,
+    pub scan: FromSource,
     pub joins: Option<Vec<JoinClause>>,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum FromSource {
+    Table(ScanClause),
+    Subquery(Box<SqlAST>, Option<String>), // Subquery, alias
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -59,7 +70,7 @@ pub struct ScanClause {
 #[derive(Debug, PartialEq, Clone)]
 pub struct JoinClause {
     pub join_type: JoinType,
-    pub join_scan: ScanClause,
+    pub join_scan: FromSource,
     pub join_expr: JoinExpr,
 }
 
@@ -95,6 +106,9 @@ pub enum WhereClause {
 pub enum WhereBaseCondition {
     Comparison(WhereCondition),
     NullCheck(WhereNullCondition),
+    Exists(Box<SqlAST>, bool),        // Subquery, negated
+    In(ColumnRef, Box<SqlAST>, bool), // Column, subquery, negated
+    Boolean(bool),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -117,6 +131,9 @@ pub enum HavingClause {
 pub enum HavingBaseCondition {
     Comparison(HavingCondition),
     NullCheck(HavingNullCondition),
+    Exists(Box<SqlAST>, bool),       // Subquery, negated
+    In(ColumnRef, Box<SqlAST>, bool), // Column, subquery, negated
+    Boolean(bool),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -180,6 +197,7 @@ pub struct WhereField {
     pub column: Option<ColumnRef>,
     pub value: Option<SqlLiteral>,
     pub arithmetic: Option<ArithmeticExpr>,
+    pub subquery: Option<Box<SqlAST>>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -188,6 +206,7 @@ pub enum ArithmeticExpr {
     Literal(SqlLiteral),
     Aggregate(AggregateFunction, ColumnRef),
     BinaryOp(Box<ArithmeticExpr>, String, Box<ArithmeticExpr>),
+    Subquery(Box<SqlAST>),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -196,6 +215,7 @@ pub struct HavingField {
     pub value: Option<SqlLiteral>,
     pub aggregate: Option<(AggregateFunction, ColumnRef)>,
     pub arithmetic: Option<ArithmeticExpr>,
+    pub subquery: Option<Box<SqlAST>>,
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -227,11 +247,12 @@ pub struct LimitClause {
     pub offset: Option<i64>,
 }
 
-impl ColumnRef {
-    pub fn to_string(&self) -> String {
+//implement display for ColumnRef
+impl fmt::Display for ColumnRef {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match &self.table {
-            Some(table) => format!("{}.{}", table, self.column),
-            None => self.column.clone(),
+            Some(table) => write!(f, "{}.{}", table, self.column),
+            None => write!(f, "{}", self.column),
         }
     }
 }

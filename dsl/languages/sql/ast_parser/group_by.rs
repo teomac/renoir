@@ -1,12 +1,12 @@
 use super::error::SqlParseError;
-use super::sql_ast_structure::*;
+use super::{sql_ast_structure::*, SqlParser};
 use crate::dsl::languages::sql::ast_parser::Rule;
 use pest::iterators::Pair;
 
 pub struct GroupByParser;
 
 impl GroupByParser {
-    pub fn parse(pair: Pair<Rule>) -> Result<GroupByClause, SqlParseError> {
+    pub fn parse(pair: Pair<Rule>) -> Result<GroupByClause, Box<SqlParseError>> {
         let mut inner = pair.into_inner();
 
         inner
@@ -26,20 +26,17 @@ impl GroupByParser {
         }
 
         if columns.is_empty() {
-            return Err(SqlParseError::InvalidInput(
+            return Err(Box::new(SqlParseError::InvalidInput(
                 "Empty GROUP BY clause".to_string(),
-            ));
+            )));
         }
 
         // Check for HAVING clause with group by columns
         while let Some(next_token) = inner.next() {
-            match next_token.as_rule() {
-                Rule::having_keyword => {
-                    if let Some(having_expr) = inner.next() {
-                        having = Some(Self::parse_having_expr(having_expr, &columns)?);
-                    }
+            if next_token.as_rule() == Rule::having_keyword {
+                if let Some(having_expr) = inner.next() {
+                    having = Some(Self::parse_having_expr(having_expr, &columns)?);
                 }
-                _ => {}
             }
         }
 
@@ -47,7 +44,7 @@ impl GroupByParser {
     }
 
     //function to parse column reference
-    fn parse_column_ref(pair: Pair<Rule>) -> Result<ColumnRef, SqlParseError> {
+    fn parse_column_ref(pair: Pair<Rule>) -> Result<ColumnRef, Box<SqlParseError>> {
         match pair.as_rule() {
             Rule::table_column => {
                 let mut inner = pair.into_inner();
@@ -74,22 +71,18 @@ impl GroupByParser {
                 table: None,
                 column: "*".to_string(),
             }),
-            _ => Err(SqlParseError::InvalidInput(format!(
+            _ => Err(Box::new(SqlParseError::InvalidInput(format!(
                 "Expected column reference, got {:?}",
                 pair.as_rule()
-            ))),
+            )))),
         }
     }
-
-    //////////////////////////////////////////////////////////////////////////////////
-    ///
-    ///
 
     // New method to parse having expressions
     fn parse_having_expr(
         pair: Pair<Rule>,
         group_by_cols: &[ColumnRef],
-    ) -> Result<HavingClause, SqlParseError> {
+    ) -> Result<HavingClause, Box<SqlParseError>> {
         let mut pairs = pair.into_inner().peekable();
 
         // Get the first term
@@ -101,10 +94,10 @@ impl GroupByParser {
             Rule::having_term => Self::parse_having_term(first, group_by_cols)?,
             Rule::condition => Self::parse_having_condition(first, group_by_cols)?,
             _ => {
-                return Err(SqlParseError::InvalidInput(format!(
+                return Err(Box::new(SqlParseError::InvalidInput(format!(
                     "Unexpected rule in having: {:?}",
                     first.as_rule()
-                )))
+                ))))
             }
         };
 
@@ -114,10 +107,10 @@ impl GroupByParser {
                 "AND" => BinaryOp::And,
                 "OR" => BinaryOp::Or,
                 _ => {
-                    return Err(SqlParseError::InvalidInput(format!(
+                    return Err(Box::new(SqlParseError::InvalidInput(format!(
                         "Invalid binary operator in having: {}",
                         op.as_str()
-                    )))
+                    ))))
                 }
             };
 
@@ -131,10 +124,10 @@ impl GroupByParser {
                 Rule::having_term => Self::parse_having_term(right_term, group_by_cols)?,
                 Rule::condition => Self::parse_having_condition(right_term, group_by_cols)?,
                 _ => {
-                    return Err(SqlParseError::InvalidInput(format!(
+                    return Err(Box::new(SqlParseError::InvalidInput(format!(
                         "Unexpected rule in having: {:?}",
                         right_term.as_rule()
-                    )))
+                    ))))
                 }
             };
 
@@ -152,7 +145,7 @@ impl GroupByParser {
     fn parse_having_term(
         pair: Pair<Rule>,
         group_by_cols: &[ColumnRef],
-    ) -> Result<HavingClause, SqlParseError> {
+    ) -> Result<HavingClause, Box<SqlParseError>> {
         let mut inner = pair.into_inner();
 
         let first = inner
@@ -167,20 +160,127 @@ impl GroupByParser {
                 Self::parse_having_expr(conditions, group_by_cols)
             }
             Rule::condition => Self::parse_having_condition(first, group_by_cols),
-            _ => Err(SqlParseError::InvalidInput(format!(
+            _ => Err(Box::new(SqlParseError::InvalidInput(format!(
                 "Invalid having term: {:?}",
                 first.as_rule()
-            ))),
+            )))),
         }
     }
 
-    // Modified parse_having_condition to include aggregate validation
+    // Modified parse_having_condition to include subquery validation
     fn parse_having_condition(
         pair: Pair<Rule>,
         group_by_cols: &[ColumnRef],
-    ) -> Result<HavingClause, SqlParseError> {
-        let mut inner = pair.into_inner();
+    ) -> Result<HavingClause, Box<SqlParseError>> {
+        // We'll use a clone of the pairs to check the condition type first
+        let mut rule_check = pair.clone().into_inner();
+        let first_rule = rule_check.next();
 
+        // Handle EXISTS subquery
+        if let Some(first) = first_rule {
+            if first.as_rule() == Rule::boolean {
+                // Handle boolean expressions directly
+                let value = match first.as_str() {
+                    "true" => true,
+                    "false" => false,
+                    _ => {
+                        return Err(Box::new(SqlParseError::InvalidInput(
+                            "Invalid boolean value".to_string(),
+                        ))
+                        .into())
+                    }
+                };
+
+                return Ok(HavingClause::Base(HavingBaseCondition::Boolean(value)));
+            }
+
+            // Handle EXISTS expression directly
+            if first.as_rule() == Rule::exists_expr {
+                // Get the inner parts of EXISTS expression
+                let mut exists_inner = first.into_inner();
+
+                // First part is the EXISTS keyword
+                let exists_keyword = exists_inner.next().ok_or_else(|| {
+                    SqlParseError::InvalidInput("Missing EXISTS keyword".to_string())
+                })?;
+
+                // Check if it's negated (NOT EXISTS)
+                let is_negated = exists_keyword.as_str().to_uppercase().contains("NOT");
+
+                // Next part is the subquery expression
+                let subquery_expr = exists_inner.next().ok_or_else(|| {
+                    SqlParseError::InvalidInput("Missing subquery in EXISTS".to_string())
+                })?;
+
+                // Now parse the subquery from the subquery expression
+                if subquery_expr.as_rule() != Rule::subquery_expr {
+                    return Err(Box::new(SqlParseError::InvalidInput(format!(
+                        "Expected subquery expression after EXISTS, got {:?}",
+                        subquery_expr.as_rule()
+                    ))));
+                }
+
+                // Process the subquery
+                let subquery = SqlParser::parse_subquery(subquery_expr)?;
+
+                return Ok(HavingClause::Base(HavingBaseCondition::Exists(
+                    Box::new(subquery),
+                    is_negated,
+                )));
+            }
+
+            // Handle IN expression directly
+            if first.as_rule() == Rule::in_expr {
+                // Get the inner parts of IN expression
+                let mut in_inner = first.into_inner();
+
+                // First part is the column reference (variable or table_column)
+                let column_ref = in_inner.next().ok_or_else(|| {
+                    SqlParseError::InvalidInput(
+                        "Missing column reference in IN expression".to_string(),
+                    )
+                })?;
+
+                // Parse the column reference
+                let column = match column_ref.as_rule() {
+                    Rule::variable => ColumnRef {
+                        table: None,
+                        column: column_ref.as_str().to_string(),
+                    },
+                    Rule::table_column => Self::parse_column_ref(column_ref)?,
+                    _ => {
+                        return Err(Box::new(SqlParseError::InvalidInput(format!(
+                            "Expected column reference in IN expression, got {:?}",
+                            column_ref.as_rule()
+                        ))))
+                    }
+                };
+
+                // Next part is the IN keyword
+                let in_keyword = in_inner
+                    .next()
+                    .ok_or_else(|| SqlParseError::InvalidInput("Missing IN keyword".to_string()))?;
+
+                // Check if it's negated (NOT IN)
+                let is_negated = in_keyword.as_str().to_uppercase().contains("NOT");
+
+                // Last part is the subquery
+                let subquery_expr = in_inner.next().ok_or_else(|| {
+                    SqlParseError::InvalidInput("Missing subquery in IN expression".to_string())
+                })?;
+
+                // Parse the inner SQL directly
+                let subquery = SqlParser::parse_subquery(subquery_expr)?;
+
+                return Ok(HavingClause::Base(HavingBaseCondition::In(
+                    column,
+                    Box::new(subquery),
+                    is_negated,
+                )));
+            }
+        }
+
+        let mut inner = pair.into_inner();
         let left = inner.next().ok_or_else(|| {
             SqlParseError::InvalidInput("Missing left side of having condition".to_string())
         })?;
@@ -201,21 +301,21 @@ impl GroupByParser {
                     });
 
                     // Only enforce aggregation rule if it's not in the GROUP BY
-                    if !is_in_group_by && field.aggregate.is_none() {
-                        return Err(SqlParseError::InvalidInput(format!(
+                    if !is_in_group_by && field.aggregate.is_none() && field.subquery.is_none() {
+                        return Err(Box::new(SqlParseError::InvalidInput(format!(
                             "Column {} must be aggregated or in GROUP BY clause",
-                            col_ref.to_string()
-                        )));
+                            col_ref
+                        ))));
                     }
                 }
                 let op = match operator.as_str().to_uppercase().as_str() {
                     "IS NULL" => NullOp::IsNull,
                     "IS NOT NULL" => NullOp::IsNotNull,
                     _ => {
-                        return Err(SqlParseError::InvalidInput(format!(
+                        return Err(Box::new(SqlParseError::InvalidInput(format!(
                             "Invalid null operator in having: {}",
                             operator.as_str()
-                        )))
+                        ))))
                     }
                 };
 
@@ -246,28 +346,31 @@ impl GroupByParser {
 
                 // Also validate non-arithmetic fields
                 if left_field.arithmetic.is_none() && right_field.arithmetic.is_none() {
-                    if let (Some(left_col), Some(right_col)) =
-                        (&left_field.column, &right_field.column)
-                    {
-                        // Check if either column is in GROUP BY
-                        let left_in_group_by = group_by_cols.iter().any(|group_col| {
-                            group_col.column == left_col.column && group_col.table == left_col.table
-                        });
-                        let right_in_group_by = group_by_cols.iter().any(|group_col| {
-                            group_col.column == right_col.column
-                                && group_col.table == right_col.table
-                        });
-
-                        if !left_in_group_by
-                            && !right_in_group_by
-                            && left_field.aggregate.is_none()
-                            && right_field.aggregate.is_none()
+                    // Skip validation if either side has a subquery or aggregate
+                    if left_field.subquery.is_none() && right_field.subquery.is_none() {
+                        if let (Some(left_col), Some(right_col)) =
+                            (&left_field.column, &right_field.column)
                         {
-                            return Err(SqlParseError::InvalidInput(format!(
-                                "Either {} or {} must be aggregated or in GROUP BY clause",
-                                left_col.to_string(),
-                                right_col.to_string()
-                            )));
+                            // Check if either column is in GROUP BY
+                            let left_in_group_by = group_by_cols.iter().any(|group_col| {
+                                group_col.column == left_col.column
+                                    && group_col.table == left_col.table
+                            });
+                            let right_in_group_by = group_by_cols.iter().any(|group_col| {
+                                group_col.column == right_col.column
+                                    && group_col.table == right_col.table
+                            });
+
+                            if !left_in_group_by
+                                && !right_in_group_by
+                                && left_field.aggregate.is_none()
+                                && right_field.aggregate.is_none()
+                            {
+                                return Err(Box::new(SqlParseError::InvalidInput(format!(
+                                    "Either {} or {} must be aggregated or in GROUP BY clause",
+                                    left_col, right_col
+                                ))));
+                            }
                         }
                     }
                 }
@@ -280,10 +383,10 @@ impl GroupByParser {
                     "=" => ComparisonOp::Equal,
                     "!=" | "<>" => ComparisonOp::NotEqual,
                     _ => {
-                        return Err(SqlParseError::InvalidInput(format!(
+                        return Err(Box::new(SqlParseError::InvalidInput(format!(
                             "Invalid operator in having: {}",
                             operator.as_str()
-                        )))
+                        ))))
                     }
                 };
 
@@ -295,21 +398,33 @@ impl GroupByParser {
                     },
                 )))
             }
-            _ => Err(SqlParseError::InvalidInput(
+            _ => Err(Box::new(SqlParseError::InvalidInput(
                 "Expected operator in having condition".to_string(),
-            )),
+            ))),
         }
     }
 
-    // Update parse_having_field to handle arithmetic expressions
-    fn parse_having_field(pair: Pair<Rule>) -> Result<HavingField, SqlParseError> {
+    // Update parse_having_field to handle subqueries
+    fn parse_having_field(pair: Pair<Rule>) -> Result<HavingField, Box<SqlParseError>> {
         match pair.as_rule() {
             Rule::arithmetic_expr => Ok(HavingField {
                 column: None,
                 value: None,
                 aggregate: None,
                 arithmetic: Some(Self::parse_arithmetic_expr(pair)?),
+                subquery: None,
             }),
+            Rule::subquery_expr => {
+                // New: Handle subquery in HAVING field
+                let subquery = SqlParser::parse_subquery(pair)?;
+                Ok(HavingField {
+                    column: None,
+                    value: None,
+                    aggregate: None,
+                    arithmetic: None,
+                    subquery: Some(Box::new(subquery)),
+                })
+            }
             Rule::boolean => {
                 // Add this case
                 let value = pair.as_str().parse::<bool>().map_err(|_| {
@@ -320,6 +435,7 @@ impl GroupByParser {
                     value: Some(SqlLiteral::Boolean(value)),
                     aggregate: None,
                     arithmetic: None,
+                    subquery: None,
                 })
             }
             Rule::string_literal => {
@@ -330,6 +446,7 @@ impl GroupByParser {
                     value: Some(SqlLiteral::String(clean_str)),
                     aggregate: None,
                     arithmetic: None,
+                    subquery: None,
                 })
             }
             Rule::number => {
@@ -348,6 +465,7 @@ impl GroupByParser {
                     value: Some(value),
                     aggregate: None,
                     arithmetic: None,
+                    subquery: None,
                 })
             }
             Rule::aggregate_expr => {
@@ -359,24 +477,25 @@ impl GroupByParser {
                     "MIN" => AggregateFunction::Min,
                     "MAX" => AggregateFunction::Max,
                     _ => {
-                        return Err(SqlParseError::InvalidInput(
+                        return Err(Box::new(SqlParseError::InvalidInput(
                             "Invalid aggregate function".to_string(),
-                        ))
+                        )))
                     }
                 };
 
                 let column = Self::parse_column_ref(agg.next().unwrap())?;
 
                 if column.column == '*'.to_string() && aggregate != AggregateFunction::Count {
-                    return Err(SqlParseError::InvalidInput(
+                    return Err(Box::new(SqlParseError::InvalidInput(
                         "Aggregate function must be COUNT(*)".to_string(),
-                    ));
+                    )));
                 }
                 Ok(HavingField {
                     column: None,
                     value: None,
                     aggregate: Some((aggregate, column)),
                     arithmetic: None,
+                    subquery: None,
                 })
             }
             Rule::table_column => {
@@ -399,6 +518,7 @@ impl GroupByParser {
                     value: None,
                     aggregate: None,
                     arithmetic: None,
+                    subquery: None,
                 })
             }
             Rule::variable => Ok(HavingField {
@@ -409,24 +529,28 @@ impl GroupByParser {
                 value: None,
                 aggregate: None,
                 arithmetic: None,
+                subquery: None,
             }),
-            _ => Err(SqlParseError::InvalidInput(format!(
+            _ => Err(Box::new(SqlParseError::InvalidInput(format!(
                 "Expected having field, got {:?}",
                 pair.as_rule()
-            ))),
+            )))),
         }
     }
+
     // Add method to parse arithmetic expressions in HAVING clause
-    fn parse_arithmetic_expr(pair: Pair<Rule>) -> Result<ArithmeticExpr, SqlParseError> {
+    fn parse_arithmetic_expr(pair: Pair<Rule>) -> Result<ArithmeticExpr, Box<SqlParseError>> {
         match pair.as_rule() {
             Rule::arithmetic_expr => {
                 let mut pairs = pair.into_inner().peekable();
 
+                // Parse first term
                 let first_term = pairs
                     .next()
                     .ok_or_else(|| SqlParseError::InvalidInput("Missing first term".to_string()))?;
                 let mut left = Self::parse_arithmetic_term(first_term)?;
 
+                // Process any subsequent operations
                 while let Some(op) = pairs.next() {
                     if let Some(next_term) = pairs.next() {
                         let right = Self::parse_arithmetic_term(next_term)?;
@@ -440,41 +564,54 @@ impl GroupByParser {
 
                 Ok(left)
             }
-            _ => Err(SqlParseError::InvalidInput(format!(
+            Rule::subquery_expr => {
+                // New: Handle subquery in arithmetic expression
+                let subquery = SqlParser::parse_subquery(pair)?;
+                Ok(ArithmeticExpr::Subquery(Box::new(subquery)))
+            }
+            _ => Err(Box::new(SqlParseError::InvalidInput(format!(
                 "Expected arithmetic expression, got {:?}",
                 pair.as_rule()
-            ))),
+            )))),
         }
     }
 
-    // Add methods for parsing arithmetic terms and factors
-    fn parse_arithmetic_term(pair: Pair<Rule>) -> Result<ArithmeticExpr, SqlParseError> {
+    fn parse_arithmetic_term(pair: Pair<Rule>) -> Result<ArithmeticExpr, Box<SqlParseError>> {
         match pair.as_rule() {
             Rule::arithmetic_term => {
                 let mut inner = pair.into_inner();
                 let first = inner.next().ok_or_else(|| {
-                    SqlParseError::InvalidInput("Empty arithmetic term".to_string())
+                    SqlParseError::InvalidInput("Empty arithmetic primary".to_string())
                 })?;
 
                 match first.as_rule() {
                     Rule::l_paren => {
+                        // For parenthesized expressions, get the inner expression
                         let expr = inner.next().ok_or_else(|| {
                             SqlParseError::InvalidInput("Empty parentheses".to_string())
                         })?;
+
+                        // Skip the right parenthesis
+                        inner.next();
+
                         Self::parse_arithmetic_expr(expr)
                     }
                     _ => Self::parse_arithmetic_factor(first),
                 }
             }
-            _ => Err(SqlParseError::InvalidInput(format!(
-                "Expected arithmetic term, got {:?}",
+            Rule::subquery_expr => {
+                // New: Handle subquery in arithmetic expression
+                let subquery = SqlParser::parse_subquery(pair)?;
+                Ok(ArithmeticExpr::Subquery(Box::new(subquery)))
+            }
+            _ => Err(Box::new(SqlParseError::InvalidInput(format!(
+                "Expected arithmetic primary, got {:?}",
                 pair.as_rule()
-            ))),
+            )))),
         }
     }
 
-    // Update parse_arithmetic_factor to include aggregate functions
-    fn parse_arithmetic_factor(pair: Pair<Rule>) -> Result<ArithmeticExpr, SqlParseError> {
+    fn parse_arithmetic_factor(pair: Pair<Rule>) -> Result<ArithmeticExpr, Box<SqlParseError>> {
         let factor = pair
             .into_inner()
             .next()
@@ -482,58 +619,34 @@ impl GroupByParser {
 
         match factor.as_rule() {
             Rule::number => {
+                // Parse number as SqlLiteral
                 let value = if let Ok(int_val) = factor.as_str().parse::<i64>() {
                     SqlLiteral::Integer(int_val)
                 } else if let Ok(float_val) = factor.as_str().parse::<f64>() {
                     SqlLiteral::Float(float_val)
                 } else {
-                    return Err(SqlParseError::InvalidInput(
+                    return Err(Box::new(SqlParseError::InvalidInput(
                         "Invalid number format".to_string(),
-                    ));
+                    )));
                 };
                 Ok(ArithmeticExpr::Literal(value))
             }
             Rule::boolean => {
-                // Add this case
-                let value = factor.as_str().parse::<bool>().map_err(|_| {
-                    SqlParseError::InvalidInput("Invalid boolean value".to_string())
-                })?;
-                Ok(ArithmeticExpr::Literal(SqlLiteral::Boolean(value)))
+                let value = match factor.as_str() {
+                    "true" => SqlLiteral::Boolean(true),
+                    "false" => SqlLiteral::Boolean(false),
+                    _ => {
+                        return Err(Box::new(SqlParseError::InvalidInput(
+                            "Invalid boolean value".to_string(),
+                        )))
+                    }
+                };
+                Ok(ArithmeticExpr::Literal(value))
             }
             Rule::string_literal => {
-                // Extract the string value without quotes
                 let inner_str = factor.as_str();
                 let clean_str = inner_str[1..inner_str.len() - 1].to_string();
                 Ok(ArithmeticExpr::Literal(SqlLiteral::String(clean_str)))
-            }
-            Rule::aggregate_expr => {
-                let mut agg = factor.into_inner();
-                let aggregate = match agg
-                    .next()
-                    .ok_or_else(|| {
-                        SqlParseError::InvalidInput("Missing aggregate function".to_string())
-                    })?
-                    .as_str()
-                    .to_uppercase()
-                    .as_str()
-                {
-                    "MAX" => AggregateFunction::Max,
-                    "MIN" => AggregateFunction::Min,
-                    "SUM" => AggregateFunction::Sum,
-                    "COUNT" => AggregateFunction::Count,
-                    "AVG" => AggregateFunction::Avg,
-                    _ => {
-                        return Err(SqlParseError::InvalidInput(
-                            "Unknown aggregate function".to_string(),
-                        ))
-                    }
-                };
-
-                let col_ref = Self::parse_column_ref(agg.next().ok_or_else(|| {
-                    SqlParseError::InvalidInput("Missing column in aggregate".to_string())
-                })?)?;
-
-                Ok(ArithmeticExpr::Aggregate(aggregate, col_ref))
             }
             Rule::table_column => {
                 let mut inner = factor.into_inner();
@@ -556,10 +669,44 @@ impl GroupByParser {
                 table: None,
                 column: factor.as_str().to_string(),
             })),
-            _ => Err(SqlParseError::InvalidInput(format!(
+            Rule::aggregate_expr => {
+                let mut agg = factor.into_inner();
+                let func = match agg
+                    .next()
+                    .ok_or_else(|| {
+                        SqlParseError::InvalidInput("Missing aggregate function".to_string())
+                    })?
+                    .as_str()
+                    .to_uppercase()
+                    .as_str()
+                {
+                    "MAX" => AggregateFunction::Max,
+                    "MIN" => AggregateFunction::Min,
+                    "SUM" => AggregateFunction::Sum,
+                    "COUNT" => AggregateFunction::Count,
+                    "AVG" => AggregateFunction::Avg,
+                    _ => {
+                        return Err(Box::new(SqlParseError::InvalidInput(
+                            "Unknown aggregate function".to_string(),
+                        )))
+                    }
+                };
+
+                let col_ref = Self::parse_column_ref(agg.next().ok_or_else(|| {
+                    SqlParseError::InvalidInput("Missing aggregate column".to_string())
+                })?)?;
+
+                Ok(ArithmeticExpr::Aggregate(func, col_ref))
+            }
+            Rule::subquery_expr => {
+                // New: Handle subquery in arithmetic expression
+                let subquery = SqlParser::parse_subquery(factor)?;
+                Ok(ArithmeticExpr::Subquery(Box::new(subquery)))
+            }
+            _ => Err(Box::new(SqlParseError::InvalidInput(format!(
                 "Invalid arithmetic factor: {:?}",
                 factor.as_rule()
-            ))),
+            )))),
         }
     }
 
@@ -567,7 +714,7 @@ impl GroupByParser {
     fn validate_having_arithmetic(
         expr: &ArithmeticExpr,
         group_by_cols: &[ColumnRef],
-    ) -> Result<(), SqlParseError> {
+    ) -> Result<(), Box<SqlParseError>> {
         match expr {
             ArithmeticExpr::Column(col_ref) => {
                 // Check if this column is in GROUP BY
@@ -576,14 +723,15 @@ impl GroupByParser {
                 }) {
                     Ok(()) // Column is in GROUP BY, so it's allowed
                 } else {
-                    Err(SqlParseError::InvalidInput(format!(
+                    Err(Box::new(SqlParseError::InvalidInput(format!(
                         "Column {} must be aggregated in HAVING clause",
-                        col_ref.to_string()
-                    )))
+                        col_ref
+                    ))))
                 }
             }
             ArithmeticExpr::Literal(_) => Ok(()), // Literals are always allowed
             ArithmeticExpr::Aggregate(_, _) => Ok(()), // Aggregates are allowed
+            ArithmeticExpr::Subquery(_) => Ok(()), // Subqueries are allowed
             ArithmeticExpr::BinaryOp(left, _, right) => {
                 // Recursively validate both sides
                 Self::validate_having_arithmetic(left, group_by_cols)?;

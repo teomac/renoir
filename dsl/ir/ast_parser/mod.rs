@@ -6,29 +6,50 @@ pub mod ir_ast_structure;
 pub mod limit;
 pub mod literal;
 pub mod order;
-pub mod sink;
+pub mod projection;
 pub mod source;
 
-pub use ir_ast_structure::{
-    AggregateFunction, AggregateType, BinaryOp, ColumnRef, ComparisonOp, Condition, FromClause,
-    IrAST, IrLiteral, SelectClause, WhereClause,
-};
+pub use ir_ast_structure::*;
+use pest::iterators::Pair;
 
 use crate::dsl::ir::ast_parser::builder::IrASTBuilder;
 use crate::dsl::ir::ast_parser::error::IrParseError;
 use pest::Parser;
 use pest_derive::Parser;
 
+use std::sync::Arc;
+
 #[derive(Parser)]
 #[grammar = "dsl/ir/ir_grammar.pest"]
 pub struct IrParser;
 
 impl IrParser {
-    pub fn parse_query(input: &str) -> Result<IrAST, IrParseError> {
-        let pairs = Self::parse(Rule::query, input).map_err(|e| IrParseError::PestError(e))?;
+    pub fn parse_query(input: &str) -> Result<Arc<IrPlan>, Box<IrParseError>> {
+        let pairs = Self::parse(Rule::query, input).map_err(|e| Box::new(IrParseError::from(e)))?;
 
         let ast = IrASTBuilder::build_ast_from_pairs(pairs)?;
+
         Ok(ast)
+    }
+
+    pub fn parse_subquery(pair: Pair<Rule>) -> Result<Arc<IrPlan>, Box<IrParseError>> {
+        if pair.as_rule() != Rule::subquery {
+            return Err(Box::new(IrParseError::InvalidInput(format!(
+                "Expected subquery expression, got {:?}",
+                pair.as_rule()
+            ))));
+        }
+
+        let subquery_text = pair.as_str();
+
+        // Remove the outer parentheses
+        let inner_ir = if subquery_text.starts_with("(") && subquery_text.ends_with(")") {
+            &subquery_text[1..subquery_text.len() - 1]
+        } else {
+            subquery_text
+        };
+
+        IrParser::parse_query(inner_ir)
     }
 }
 

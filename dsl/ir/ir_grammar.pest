@@ -2,18 +2,19 @@ WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 COMMENT = _{ "//" ~ (!"\n" ~ ANY)* }
 
 // Basic building blocks
-identifier = @{ ('a'..'z' | "_") ~ ('a'..'z' | '0'..'9' | "_")* }
+identifier = @{ ('a'..'z' | 'A'..'Z'| "_") ~ ('a'..'z' | 'A'..'Z'| '0'..'9' | "_")* }
 number = @{ ("-")? ~
     ('0'..'9')+ // Integer part
     ~ ("." ~ ('0'..'9')+)? // Optional decimal part
 }
 boolean_keyword = @{ ^"true" | ^"false" }
 symbol = @{ ("^"| "+" | "-" | "*" | "/")}
-string = @{ "'" ~ ('a'..'z' | "_")* ~ "'" }
+string = @{ "'" ~ ('a'..'z' | 'A'..'Z'| "_")* ~ "'" }
 value = { boolean_keyword | number | string }
 
 as_keyword = { "as" }
 in_keyword = { "in" }
+exists_keyword = @{ ^"not"? ~ ^"exists" }
 join = { "join" }
 join_type = {"inner" | "left" | "outer"}
 on = { "on" }
@@ -31,26 +32,37 @@ null_op = @{ "is null" | "is not null" }
 
 query = {
     SOI ~
-    from_clause  ~
-    where_clause?  ~
+    scan_clause  ~
+    filter_clause?  ~
     group_clause?  ~
-    select_clause  ~
+    projection_clause  ~
     order_clause? ~
     limit_expr? ~
     EOI
 }
 
+subquery = {
+    left_parenthesis ~
+    scan_clause  ~
+    filter_clause?  ~
+    group_clause?  ~
+    projection_clause  ~
+    order_clause? ~
+    limit_expr? ~
+    right_parenthesis
+}
+
 // Basic clauses
-from_clause = { 
+scan_clause = { 
     "from" ~ 
     scan_expr ~
     (join_type? ~ join ~ scan_expr ~ on ~ join_condition)*
 }
 
-stream_input = @{ ('a'..'z' | "_") ~ ('a'..'z' | '0'..'9' | "_")* }
+stream_input = @{ ('a'..'z' | 'A'..'Z'| "_") ~ ('a'..'z' | 'A'..'Z'| '0'..'9' | "_")* }
 
 scan_expr = { 
-    identifier ~ 
+    (subquery | identifier )~ 
     (as_keyword ~ identifier)? ~ 
     in_keyword ~ 
     stream_input 
@@ -70,12 +82,14 @@ arithmetic_expr = {
 }
 
 arithmetic_term = {
+    subquery |
     arithmetic_factor |
     left_parenthesis ~ arithmetic_expr ~ right_parenthesis 
    
 }
 
 arithmetic_factor = {
+    subquery |
     aggregate_expr|
     value |
     qualified_column |
@@ -83,24 +97,29 @@ arithmetic_factor = {
     
 }
 
-// Conditions for WHERE clause
-condition = { 
+in_expr = { (qualified_column | identifier) ~ "not"? ~ in_keyword ~ subquery }
+
+// Conditions for FILTER clause
+condition = {
+    boolean_keyword |
+    exists_keyword ~ subquery |
+    in_expr |
     arithmetic_expr ~ comparison_op ~ arithmetic_expr | 
-    (qualified_column | identifier) ~ null_op
+    (qualified_column | subquery | identifier | number) ~ null_op
 }
 
 comparison_op = @{ ">=" | "<=" | "!=" | ">" | "<" | "==" | "="}
-where_term = {
-    left_parenthesis ~ where_condition ~ right_parenthesis |
+filter_term = {
+    left_parenthesis ~ filter_condition ~ right_parenthesis |
     condition
 }
-where_condition = { where_term ~ (binary_op ~ where_term)* }
-where_clause = { "where" ~ where_condition }
+filter_condition = { filter_term ~ (binary_op ~ filter_term)* }
+filter_clause = { "where" ~ filter_condition }
 
-// Select clause expressions
-select_expr = { complex_op | aggregate_expr | qualified_column | identifier }
-column_operand = { aggregate_expr | qualified_column | identifier | number }
-parenthesized_expr = { left_parenthesis ~ select_expr ~ right_parenthesis }
+// Projection clause expressions
+projection_expr = { complex_op | aggregate_expr | qualified_column | identifier }
+column_operand = { aggregate_expr | qualified_column | subquery | identifier | number }
+parenthesized_expr = { left_parenthesis ~ projection_expr ~ right_parenthesis }
 
 complex_op = { 
     (parenthesized_expr | column_operand) ~ 
@@ -116,11 +135,11 @@ column_list = {
 }
 
 column_item = {
-    (qualified_column | aggregate_expr | identifier |  complex_op) ~
+    (qualified_column | aggregate_expr | identifier | complex_op | string | subquery) ~
     (as_keyword ~ identifier)?
 }
 
-select_clause = { "select" ~ distinct_keyword? ~ (asterisk | column_list) }
+projection_clause = { "select" ~ distinct_keyword? ~ (asterisk | column_list) }
 
 // Binary logical operators
 binary_op = { 

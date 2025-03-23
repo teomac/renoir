@@ -1,12 +1,12 @@
 use super::error::SqlParseError;
-use super::sql_ast_structure::*;
+use super::{sql_ast_structure::*, SqlParser};
 use crate::dsl::languages::sql::ast_parser::Rule;
 use pest::iterators::Pair;
 
 pub struct ConditionParser;
 
 impl ConditionParser {
-    pub fn parse(pair: Pair<Rule>) -> Result<WhereClause, SqlParseError> {
+    pub fn parse(pair: Pair<Rule>) -> Result<WhereClause, Box<SqlParseError>> {
         let mut inner = pair.into_inner();
         inner.next(); // Skip WHERE keyword
 
@@ -17,7 +17,7 @@ impl ConditionParser {
         Self::parse_where_conditions(conditions)
     }
 
-    fn parse_where_conditions(pair: Pair<Rule>) -> Result<WhereClause, SqlParseError> {
+    fn parse_where_conditions(pair: Pair<Rule>) -> Result<WhereClause, Box<SqlParseError>> {
         let mut pairs = pair.into_inner().peekable();
 
         // Get the first condition or term
@@ -29,10 +29,10 @@ impl ConditionParser {
             Rule::where_term => Self::parse_where_term(first)?,
             Rule::condition => Self::parse_condition(first)?,
             _ => {
-                return Err(SqlParseError::InvalidInput(format!(
+                return Err(Box::new(SqlParseError::InvalidInput(format!(
                     "Unexpected rule: {:?}",
                     first.as_rule()
-                )))
+                ))))
             }
         };
 
@@ -42,10 +42,10 @@ impl ConditionParser {
                 "AND" => BinaryOp::And,
                 "OR" => BinaryOp::Or,
                 _ => {
-                    return Err(SqlParseError::InvalidInput(format!(
+                    return Err(Box::new(SqlParseError::InvalidInput(format!(
                         "Invalid binary operator: {}",
                         op.as_str()
-                    )))
+                    ))))
                 }
             };
 
@@ -57,10 +57,10 @@ impl ConditionParser {
                 Rule::where_term => Self::parse_where_term(right_term)?,
                 Rule::condition => Self::parse_condition(right_term)?,
                 _ => {
-                    return Err(SqlParseError::InvalidInput(format!(
+                    return Err(Box::new(SqlParseError::InvalidInput(format!(
                         "Unexpected rule: {:?}",
                         right_term.as_rule()
-                    )))
+                    ))))
                 }
             };
 
@@ -74,7 +74,7 @@ impl ConditionParser {
         Ok(left)
     }
 
-    fn parse_where_term(pair: Pair<Rule>) -> Result<WhereClause, SqlParseError> {
+    fn parse_where_term(pair: Pair<Rule>) -> Result<WhereClause, Box<SqlParseError>> {
         let mut inner = pair.into_inner();
 
         // Get first element
@@ -91,16 +91,122 @@ impl ConditionParser {
                 Self::parse_where_conditions(conditions)
             }
             Rule::condition => Self::parse_condition(first),
-            _ => Err(SqlParseError::InvalidInput(format!(
+            _ => Err(Box::new(SqlParseError::InvalidInput(format!(
                 "Invalid where term: {:?}",
                 first.as_rule()
-            ))),
+            )))),
         }
     }
 
-    fn parse_condition(pair: Pair<Rule>) -> Result<WhereClause, SqlParseError> {
-        let mut inner = pair.into_inner();
+    fn parse_condition(pair: Pair<Rule>) -> Result<WhereClause, Box<SqlParseError>> {
+        // Check the condition type by examining the first child rule
+        let mut check_pairs = pair.clone().into_inner();
+        let first_rule = check_pairs.next();
 
+        if let Some(first) = first_rule {
+            if first.as_rule() == Rule::boolean {
+                // Handle boolean expressions directly
+                let value = match first.as_str() {
+                    "true" => true,
+                    "false" => false,
+                    _ => {
+                        return Err(Box::new(SqlParseError::InvalidInput(
+                            "Invalid boolean value".to_string(),
+                        ))
+                        .into())
+                    }
+                };
+
+                return Ok(WhereClause::Base(WhereBaseCondition::Boolean(value)));
+            }
+            // Handle EXISTS expression directly
+            if first.as_rule() == Rule::exists_expr {
+                // Get the inner parts of EXISTS expression
+                let mut exists_inner = first.into_inner();
+
+                // First part is the EXISTS keyword
+                let exists_keyword = exists_inner.next().ok_or_else(|| {
+                    SqlParseError::InvalidInput("Missing EXISTS keyword".to_string())
+                })?;
+
+                // Check if it's negated (NOT EXISTS)
+                let is_negated = exists_keyword.as_str().to_uppercase().contains("NOT");
+
+                // Next part is the subquery expression
+                let subquery_expr = exists_inner.next().ok_or_else(|| {
+                    SqlParseError::InvalidInput("Missing subquery in EXISTS".to_string())
+                })?;
+
+                // Now parse the subquery from the subquery expression
+                if subquery_expr.as_rule() != Rule::subquery_expr {
+                    return Err(Box::new(SqlParseError::InvalidInput(format!(
+                        "Expected subquery expression after EXISTS, got {:?}",
+                        subquery_expr.as_rule()
+                    ))));
+                }
+
+                // Process the subquery
+                let subquery = SqlParser::parse_subquery(subquery_expr)?;
+
+                return Ok(WhereClause::Base(WhereBaseCondition::Exists(
+                    Box::new(subquery),
+                    is_negated,
+                )));
+            }
+
+            // Handle IN expression directly
+            if first.as_rule() == Rule::in_expr {
+                // Get the inner parts of IN expression
+                let mut in_inner = first.into_inner();
+
+                // First part is the column reference (variable or table_column)
+                let column_ref = in_inner.next().ok_or_else(|| {
+                    SqlParseError::InvalidInput(
+                        "Missing column reference in IN expression".to_string(),
+                    )
+                })?;
+
+                // Parse the column reference
+                let column = match column_ref.as_rule() {
+                    Rule::variable => ColumnRef {
+                        table: None,
+                        column: column_ref.as_str().to_string(),
+                    },
+                    Rule::table_column => Self::parse_column_ref(column_ref)?,
+                    _ => {
+                        return Err(Box::new(SqlParseError::InvalidInput(format!(
+                            "Expected column reference in IN expression, got {:?}",
+                            column_ref.as_rule()
+                        ))))
+                    }
+                };
+
+                // Next part is the IN keyword
+                let in_keyword = in_inner
+                    .next()
+                    .ok_or_else(|| SqlParseError::InvalidInput("Missing IN keyword".to_string()))?;
+
+                // Check if it's negated (NOT IN)
+                let is_negated = in_keyword.as_str().to_uppercase().contains("NOT");
+
+                // Last part is the subquery
+                let subquery_expr = in_inner.next().ok_or_else(|| {
+                    SqlParseError::InvalidInput("Missing subquery in IN expression".to_string())
+                })?;
+
+                // Parse the inner SQL directly
+                let subquery = SqlParser::parse_subquery(subquery_expr)?;
+
+                return Ok(WhereClause::Base(WhereBaseCondition::In(
+                    column,
+                    Box::new(subquery),
+                    is_negated,
+                )));
+            }
+        }
+
+        // If we get here, it's a regular comparison or NULL check
+        let mut inner = pair.into_inner();
         let left = inner.next().ok_or_else(|| {
             SqlParseError::InvalidInput("Missing left side of condition".to_string())
         })?;
@@ -115,10 +221,10 @@ impl ConditionParser {
                     "IS NULL" => NullOp::IsNull,
                     "IS NOT NULL" => NullOp::IsNotNull,
                     _ => {
-                        return Err(SqlParseError::InvalidInput(format!(
+                        return Err(Box::new(SqlParseError::InvalidInput(format!(
                             "Invalid null operator: {}",
                             operator.as_str()
-                        )))
+                        ))))
                     }
                 };
 
@@ -142,10 +248,10 @@ impl ConditionParser {
                     "=" => ComparisonOp::Equal,
                     "!=" | "<>" => ComparisonOp::NotEqual,
                     _ => {
-                        return Err(SqlParseError::InvalidInput(format!(
+                        return Err(Box::new(SqlParseError::InvalidInput(format!(
                             "Invalid operator: {}",
                             operator.as_str()
-                        )))
+                        ))))
                     }
                 };
 
@@ -157,11 +263,14 @@ impl ConditionParser {
                     },
                 )))
             }
-            _ => Err(SqlParseError::InvalidInput("Expected operator".to_string())),
+            _ => Err(Box::new(SqlParseError::InvalidInput(format!(
+                "Expected operator, got {:?}",
+                operator.as_rule()
+            )))),
         }
     }
 
-    fn parse_arithmetic_expr(pair: Pair<Rule>) -> Result<ArithmeticExpr, SqlParseError> {
+    fn parse_arithmetic_expr(pair: Pair<Rule>) -> Result<ArithmeticExpr, Box<SqlParseError>> {
         match pair.as_rule() {
             Rule::arithmetic_expr => {
                 let mut pairs = pair.into_inner().peekable();
@@ -186,14 +295,19 @@ impl ConditionParser {
 
                 Ok(left)
             }
-            _ => Err(SqlParseError::InvalidInput(format!(
+            Rule::subquery_expr => {
+                // New: Handle subquery in arithmetic expression
+                let subquery = SqlParser::parse_subquery(pair)?;
+                Ok(ArithmeticExpr::Subquery(Box::new(subquery)))
+            }
+            _ => Err(Box::new(SqlParseError::InvalidInput(format!(
                 "Expected arithmetic expression, got {:?}",
                 pair.as_rule()
-            ))),
+            )))),
         }
     }
 
-    fn parse_arithmetic_term(pair: Pair<Rule>) -> Result<ArithmeticExpr, SqlParseError> {
+    fn parse_arithmetic_term(pair: Pair<Rule>) -> Result<ArithmeticExpr, Box<SqlParseError>> {
         match pair.as_rule() {
             Rule::arithmetic_term => {
                 let mut inner = pair.into_inner();
@@ -216,14 +330,19 @@ impl ConditionParser {
                     _ => Self::parse_arithmetic_factor(first),
                 }
             }
-            _ => Err(SqlParseError::InvalidInput(format!(
+            Rule::subquery_expr => {
+                // New: Handle subquery in arithmetic expression
+                let subquery = SqlParser::parse_subquery(pair)?;
+                Ok(ArithmeticExpr::Subquery(Box::new(subquery)))
+            }
+            _ => Err(Box::new(SqlParseError::InvalidInput(format!(
                 "Expected arithmetic primary, got {:?}",
                 pair.as_rule()
-            ))),
+            )))),
         }
     }
 
-    fn parse_arithmetic_factor(pair: Pair<Rule>) -> Result<ArithmeticExpr, SqlParseError> {
+    fn parse_arithmetic_factor(pair: Pair<Rule>) -> Result<ArithmeticExpr, Box<SqlParseError>> {
         let factor = pair
             .into_inner()
             .next()
@@ -237,9 +356,9 @@ impl ConditionParser {
                 } else if let Ok(float_val) = factor.as_str().parse::<f64>() {
                     SqlLiteral::Float(float_val)
                 } else {
-                    return Err(SqlParseError::InvalidInput(
+                    return Err(Box::new(SqlParseError::InvalidInput(
                         "Invalid number format".to_string(),
-                    ));
+                    )));
                 };
                 Ok(ArithmeticExpr::Literal(value))
             }
@@ -248,9 +367,9 @@ impl ConditionParser {
                     "true" => SqlLiteral::Boolean(true),
                     "false" => SqlLiteral::Boolean(false),
                     _ => {
-                        return Err(SqlParseError::InvalidInput(
+                        return Err(Box::new(SqlParseError::InvalidInput(
                             "Invalid boolean value".to_string(),
-                        ))
+                        )))
                     }
                 };
                 Ok(ArithmeticExpr::Literal(value))
@@ -298,9 +417,9 @@ impl ConditionParser {
                     "COUNT" => AggregateFunction::Count,
                     "AVG" => AggregateFunction::Avg,
                     _ => {
-                        return Err(SqlParseError::InvalidInput(
+                        return Err(Box::new(SqlParseError::InvalidInput(
                             "Unknown aggregate function".to_string(),
-                        ))
+                        )))
                     }
                 };
 
@@ -310,14 +429,19 @@ impl ConditionParser {
 
                 Ok(ArithmeticExpr::Aggregate(func, col_ref))
             }
-            _ => Err(SqlParseError::InvalidInput(format!(
+            Rule::subquery_expr => {
+                // New: Handle subquery in arithmetic expression
+                let subquery = SqlParser::parse_subquery(factor)?;
+                Ok(ArithmeticExpr::Subquery(Box::new(subquery)))
+            }
+            _ => Err(Box::new(SqlParseError::InvalidInput(format!(
                 "Invalid arithmetic factor: {:?}",
                 factor.as_rule()
-            ))),
+            )))),
         }
     }
 
-    fn parse_column_ref(pair: Pair<Rule>) -> Result<ColumnRef, SqlParseError> {
+    fn parse_column_ref(pair: Pair<Rule>) -> Result<ColumnRef, Box<SqlParseError>> {
         match pair.as_rule() {
             Rule::asterisk => Ok(ColumnRef {
                 table: None,
@@ -344,34 +468,46 @@ impl ConditionParser {
                 table: None,
                 column: pair.as_str().to_string(),
             }),
-            _ => Err(SqlParseError::InvalidInput(format!(
+            _ => Err(Box::new(SqlParseError::InvalidInput(format!(
                 "Expected column reference, got {:?}",
                 pair.as_rule()
-            ))),
+            )))),
         }
     }
 
-    fn parse_where_field(pair: Pair<Rule>) -> Result<WhereField, SqlParseError> {
+    fn parse_where_field(pair: Pair<Rule>) -> Result<WhereField, Box<SqlParseError>> {
         match pair.as_rule() {
             Rule::arithmetic_expr => Ok(WhereField {
                 column: None,
                 value: None,
                 arithmetic: Some(Self::parse_arithmetic_expr(pair)?),
+                subquery: None,
             }),
+            Rule::subquery_expr => {
+                // New: Handle subquery in WHERE field
+                let subquery = SqlParser::parse_subquery(pair)?;
+                Ok(WhereField {
+                    column: None,
+                    value: None,
+                    arithmetic: None,
+                    subquery: Some(Box::new(subquery)),
+                })
+            }
             Rule::boolean => {
                 let value = match pair.as_str() {
                     "true" => SqlLiteral::Boolean(true),
                     "false" => SqlLiteral::Boolean(false),
                     _ => {
-                        return Err(SqlParseError::InvalidInput(
+                        return Err(Box::new(SqlParseError::InvalidInput(
                             "Invalid boolean value".to_string(),
-                        ))
+                        )))
                     }
                 };
                 Ok(WhereField {
                     column: None,
                     value: Some(value),
                     arithmetic: None,
+                    subquery: None,
                 })
             }
             Rule::string_literal => {
@@ -382,6 +518,7 @@ impl ConditionParser {
                     column: None,
                     value: Some(SqlLiteral::String(clean_str)),
                     arithmetic: None,
+                    subquery: None,
                 })
             }
             Rule::number => {
@@ -411,6 +548,7 @@ impl ConditionParser {
                     column: None,
                     value: Some(value),
                     arithmetic: None,
+                    subquery: None,
                 })
             }
             Rule::table_column => {
@@ -432,6 +570,7 @@ impl ConditionParser {
                     }),
                     value: None,
                     arithmetic: None,
+                    subquery: None,
                 })
             }
             Rule::variable => Ok(WhereField {
@@ -441,11 +580,12 @@ impl ConditionParser {
                 }),
                 value: None,
                 arithmetic: None,
+                subquery: None,
             }),
-            _ => Err(SqlParseError::InvalidInput(format!(
+            _ => Err(Box::new(SqlParseError::InvalidInput(format!(
                 "Expected where field, got {:?}",
                 pair.as_rule()
-            ))),
+            )))),
         }
     }
 }

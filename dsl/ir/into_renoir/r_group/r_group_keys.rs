@@ -1,15 +1,14 @@
-use crate::dsl::ir::ir_ast_structure::{
-    AggregateType, Group
+use crate::dsl::ir::ir_ast_structure::{AggregateType, GroupClause};
+use crate::dsl::ir::r_group::conditions::{
+    r_group_conditions::parse_group_conditions, r_group_filter::create_filter_operation,
+    r_group_fold::create_fold_operation,
 };
-use crate::dsl::ir::r_sink::{base::r_sink_utils::collect_sink_aggregates, grouped::r_sink_grouped::process_grouping_projections};
 use crate::dsl::ir::r_utils::check_alias;
-use crate::dsl::ir::AggregateFunction;
+use crate::dsl::ir::{AggregateFunction, ProjectionColumn};
 use crate::dsl::ir::{ColumnRef, QueryObject};
 use indexmap::IndexMap;
-use crate::dsl::ir::r_group::conditions::{
-    r_group_conditions::parse_group_conditions, 
-    r_group_filter::create_filter_operation, 
-    r_group_fold::create_fold_operation};
+
+use crate::dsl::struct_object::utils::*;
 
 // Base enum for tracking accumulator values
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -82,91 +81,85 @@ impl GroupAccumulatorInfo {
 /// # Returns
 ///
 /// A String containing the Renoir operator chain for the group by operation
-pub fn process_group_by(group_by: &Group, query_object: &QueryObject) -> String {
-    let mut group_string = String::new();
-    let table_names = query_object.get_all_table_names();
+pub fn process_group_by(
+    keys: &Vec<ColumnRef>,
+    group_condition: &Option<GroupClause>,
+    stream_name: &String,
+    query_object: &mut QueryObject,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let mut group_string_keys = String::new();
+    let mut group_string_condition = String::new();
 
     // Validate GROUP BY columns
-    for col in &group_by.columns {
+    for col in keys {
         if query_object.has_join {
             let table = col
                 .table
                 .as_ref()
                 .expect("Column in GROUP BY must have table reference in JOIN query");
             let table_name = check_alias(table, query_object);
-            query_object.check_column_validity(col, &table_name);
+            check_column_validity(col, &table_name, query_object);
         } else {
-            let table_name = table_names
-                .first()
-                .expect("No tables found in query object");
-            query_object.check_column_validity(col, table_name);
+            check_column_validity(col, stream_name, query_object);
         }
     }
 
     // Generate GROUP BY operation
-    let group_by_keys = process_group_by_keys(&group_by.columns, query_object);
-    group_string.push_str(&format!(".group_by(|x| ({}))", group_by_keys));
+    let group_by_keys = process_group_by_keys(keys, query_object);
+    group_string_keys.push_str(&format!(".group_by(|x| ({}))", group_by_keys));
 
     // Process having conditions if present
     let mut acc_info = GroupAccumulatorInfo::new();
-    if let Some(ref group_condition) = group_by.group_condition {
+    if let Some(ref condition) = group_condition {
         // First parse conditions and collect information
-        parse_group_conditions(group_condition, query_object, &mut acc_info, group_by);
+        parse_group_conditions(condition, query_object, &mut acc_info, keys);
 
-        //now collect all the aggregates from the sink. We need to add them to the fold
-        let sink_agg = collect_sink_aggregates(query_object);
+        //collect all the aggregates from the sink
+        let sink_agg = &query_object.projection_agg;
 
         //insert all the aggregates from the sink into the accumulator
-        sink_agg.iter().for_each(|agg| {
-            let col_type = query_object.get_type(&agg.column);
-            let agg_value =
-                GroupAccumulatorValue::Aggregate(agg.function.clone(), agg.column.clone());
-            if agg.function == AggregateType::Avg {
-                acc_info.add_avg(agg.column.clone(), col_type);
-            } else if agg.function == AggregateType::Count {
-                acc_info.add_aggregate(agg_value, "usize".to_string());
-            } else {
-                acc_info.add_aggregate(agg_value, col_type);
+        for agg in sink_agg {
+            match agg {
+                ProjectionColumn::Aggregate(agg, _) => {
+                    let col_type = query_object.get_type(&agg.column);
+                    let agg_value =
+                        GroupAccumulatorValue::Aggregate(agg.function.clone(), agg.column.clone());
+                    if agg.function == AggregateType::Avg {
+                        acc_info.add_avg(agg.column.clone(), col_type);
+                    } else if agg.function == AggregateType::Count {
+                        acc_info.add_aggregate(agg_value, "usize".to_string());
+                    } else {
+                        acc_info.add_aggregate(agg_value, col_type);
+                    }
+                }
+                _ => panic!("Unexpected ProjectionColumn type in sink"),
             }
-        });
+        }
 
-        // Then generate operations using the collected information
-        group_string.push_str(&create_fold_operation(&acc_info, group_by, query_object));
-
-        group_string.push_str(&create_filter_operation(
-            group_condition,
-            group_by,
+        // Generate operations using the collected information
+        if !acc_info.agg_positions.is_empty() {
+            group_string_condition.push_str(&create_fold_operation(
+                &acc_info,
+                stream_name,
+                query_object,
+            ));
+        }
+        group_string_condition.push_str(&create_filter_operation(
+            condition,
+            keys,
             query_object,
             &acc_info,
         ));
-
-        // Process select clauses, keeping in mind the grouping
-        group_string.push_str(&process_grouping_projections(query_object, &acc_info));
-    } else {
-        //now collect all the aggregates from the sink. We need to add them to the fold
-        let sink_agg = collect_sink_aggregates(query_object);
-
-        //insert all the aggregates from the sink into the accumulator
-        sink_agg.iter().for_each(|agg| {
-            let col_type = query_object.get_type(&agg.column);
-            let agg_value =
-                GroupAccumulatorValue::Aggregate(agg.function.clone(), agg.column.clone());
-            if agg.function == AggregateType::Avg {
-                let _ = acc_info.add_avg(agg.column.clone(), col_type);
-            } else if agg.function == AggregateType::Count {
-                let _ = acc_info.add_aggregate(agg_value, "usize".to_string());
-            } else {
-                let _ = acc_info.add_aggregate(agg_value, col_type);
-            }
-        });
-        // Then generate operations using the collected information
-        group_string.push_str(&create_fold_operation(&acc_info, group_by, query_object));
-        // Process select clauses, keeping in mind the grouping
-        group_string.push_str(&process_grouping_projections(query_object, &acc_info));
     }
 
-    group_string.push_str(".drop_key()");
-    group_string
+    // Store the operation in the correct stream
+    let stream = query_object.get_mut_stream(stream_name);
+    stream.insert_op(group_string_keys);
+    if !group_string_condition.is_empty() {
+        stream.insert_op(group_string_condition);
+    }
+
+    Ok(())
 }
 
 /// Process the group by keys and generate the corresponding tuple of column references.
@@ -179,33 +172,99 @@ pub fn process_group_by(group_by: &Group, query_object: &QueryObject) -> String 
 /// # Returns
 ///
 /// A String containing the tuple of column references for group by
-fn process_group_by_keys(columns: &Vec<ColumnRef>, query_object: &QueryObject) -> String {
+fn process_group_by_keys(columns: &[ColumnRef], query_object: &mut QueryObject) -> String {
     if !query_object.has_join {
+        let stream_name = query_object
+            .streams
+            .keys()
+            .cloned()
+            .collect::<Vec<String>>()[0]
+            .clone();
+        let stream = query_object.get_stream(&stream_name).clone();
         // No joins - simple reference to columns
-        columns
+        let final_string = columns
             .iter()
             .map(|col| {
-                query_object.check_column_validity(col, &String::new());
-                format!("x.{}.clone()", col.column)
-            })
-            .collect::<Vec<_>>()
-            .join(", ")
-    } else {
-        // With joins - need to handle tuple access
-        columns
-            .iter()
-            .map(|col| {
-                let table = col.table.as_ref().unwrap();
-                let table_name = check_alias(table, query_object);
-                query_object.check_column_validity(col, &table_name);
+                let col_stream = if col.table.is_some() {
+                    query_object
+                        .get_stream_from_alias(col.table.as_ref().unwrap())
+                        .unwrap()
+                        .clone()
+                } else {
+                    stream_name.clone()
+                };
+                check_column_validity(col, &col_stream, query_object);
+                let needs_casting = stream.get_field_type(&col.column) == "f64";
                 format!(
-                    "x{}.{}.clone()",
-                    query_object.table_to_tuple_access.get(&table_name).unwrap(),
-                    col.column
+                    "x.{}.clone(){}",
+                    col.column,
+                    if needs_casting {
+                        ".map(OrderedFloat)"
+                    } else {
+                        ""
+                    }
                 )
             })
             .collect::<Vec<_>>()
-            .join(", ")
+            .join(", ");
+
+        let stream = query_object.get_mut_stream(&stream_name);
+        stream.is_keyed = true;
+        stream.key_columns.extend(columns.to_owned());
+
+        final_string
+    } else {
+        // With joins - need to handle tuple access
+        let final_string = columns
+            .iter()
+            .map(|col| {
+                let stream_name = if col.table.is_some() {
+                    query_object
+                        .get_stream_from_alias(col.table.as_ref().unwrap())
+                        .unwrap()
+                        .clone()
+                } else {
+                    let all_streams = query_object
+                        .streams
+                        .keys()
+                        .cloned()
+                        .collect::<Vec<String>>();
+                    if all_streams.len() == 1 {
+                        all_streams[0].clone()
+                    } else {
+                        panic!(
+                            "Column {} does not have a table reference in a join query",
+                            col.column
+                        );
+                    }
+                };
+
+                let stream = query_object.get_stream(&stream_name);
+
+                stream.check_if_column_exists(&col.column);
+
+                let needs_casting = stream.get_field_type(&col.column) == "f64";
+
+                let stream_access = stream.get_access().get_base_path();
+
+                let mut_stream = query_object.get_mut_stream(&stream_name);
+                mut_stream.is_keyed = true;
+                mut_stream.key_columns.push(col.clone());
+
+                format!(
+                    "x{}.{}.clone(){}",
+                    stream_access,
+                    col.column,
+                    if needs_casting {
+                        ".map(OrderedFloat)"
+                    } else {
+                        ""
+                    }
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+
+        final_string
     }
 }
-

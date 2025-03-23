@@ -6,7 +6,7 @@ use pest::iterators::Pair;
 pub struct OrderParser;
 
 impl OrderParser {
-    pub fn parse(pair: Pair<Rule>) -> Result<OrderByClause, IrParseError> {
+    pub fn parse(pair: Pair<Rule>) -> Result<Vec<OrderByItem>, Box<IrParseError>> {
         let mut inner = pair.into_inner();
 
         inner
@@ -38,10 +38,10 @@ impl OrderParser {
                             column: column_ref.as_str().to_string(),
                         },
                         _ => {
-                            return Err(IrParseError::InvalidInput(format!(
+                            return Err(Box::new(IrParseError::InvalidInput(format!(
                                 "Expected column reference, got {:?}",
                                 column_ref.as_rule()
-                            )))
+                            ))))
                         }
                     };
 
@@ -52,16 +52,16 @@ impl OrderParser {
                                 "asc" => OrderDirection::Asc,
                                 "desc" => OrderDirection::Desc,
                                 _ => {
-                                    return Err(IrParseError::InvalidInput(
+                                    return Err(Box::new(IrParseError::InvalidInput(
                                         "Invalid sort direction".to_string(),
-                                    ))
+                                    )))
                                 }
                             },
                             _ => {
-                                return Err(IrParseError::InvalidInput(format!(
+                                return Err(Box::new(IrParseError::InvalidInput(format!(
                                     "Expected order direction, got {:?}",
                                     dir.as_rule()
-                                )))
+                                ))))
                             }
                         }
                     } else {
@@ -71,22 +71,24 @@ impl OrderParser {
                     items.push(OrderByItem { column, direction });
                 }
                 _ => {
-                    return Err(IrParseError::InvalidInput(format!(
+                    return Err(Box::new(IrParseError::InvalidInput(format!(
                         "Expected order item, got {:?}",
                         item.as_rule()
-                    )))
+                    ))))
                 }
             }
         }
 
         if items.is_empty() {
-            return Err(IrParseError::InvalidInput("Empty order clause".to_string()));
+            return Err(Box::new(IrParseError::InvalidInput(
+                "Empty order clause".to_string(),
+            )));
         }
 
-        Ok(OrderByClause { items })
+        Ok(items)
     }
 
-    fn parse_qualified_column(pair: Pair<Rule>) -> Result<ColumnRef, IrParseError> {
+    fn parse_qualified_column(pair: Pair<Rule>) -> Result<ColumnRef, Box<IrParseError>> {
         let mut inner = pair.into_inner();
         let table = inner
             .next()

@@ -1,27 +1,30 @@
 use super::error::IrParseError;
-use super::ir_ast_structure::*;
+use super::literal::LiteralParser;
+use super::{ir_ast_structure::*, IrParser};
 use crate::dsl::ir::ast_parser::Rule;
 use pest::iterators::Pair;
 
 pub struct ConditionParser;
 
 impl ConditionParser {
-    pub fn parse(pair: Pair<Rule>) -> Result<WhereClause, IrParseError> {
+    pub fn parse(pair: Pair<Rule>) -> Result<FilterClause, Box<IrParseError>> {
         let mut inner = pair.into_inner();
 
         // Skip 'where' keyword if present
-        if inner.peek().map_or(false, |p| p.as_str() == "where") {
+        if inner.peek().is_some_and(|p| p.as_str() == "where") {
             inner.next();
         }
 
         let conditions = inner
             .next()
-            .ok_or_else(|| IrParseError::InvalidInput("Missing where conditions".to_string()))?;
+            .ok_or_else(|| IrParseError::InvalidInput("Missing filter conditions".to_string()))?;
 
         Self::parse_conditions(conditions)
     }
 
-    pub fn parse_conditions(conditions_pair: Pair<Rule>) -> Result<WhereClause, IrParseError> {
+    pub fn parse_conditions(
+        conditions_pair: Pair<Rule>,
+    ) -> Result<FilterClause, Box<IrParseError>> {
         let mut pairs = conditions_pair.into_inner().peekable();
 
         let first = pairs
@@ -29,13 +32,13 @@ impl ConditionParser {
             .ok_or_else(|| IrParseError::InvalidInput("Expected condition".to_string()))?;
 
         let mut left = match first.as_rule() {
-            Rule::where_term => Self::parse_term(first)?,
+            Rule::filter_term => Self::parse_term(first)?,
             Rule::condition => Self::parse_single_condition(first)?,
             _ => {
-                return Err(IrParseError::InvalidInput(format!(
+                return Err(Box::new(IrParseError::InvalidInput(format!(
                     "Unexpected rule: {:?}",
                     first.as_rule()
-                )))
+                ))))
             }
         };
 
@@ -45,10 +48,10 @@ impl ConditionParser {
                 "&&" => BinaryOp::And,
                 "||" => BinaryOp::Or,
                 _ => {
-                    return Err(IrParseError::InvalidInput(format!(
+                    return Err(Box::new(IrParseError::InvalidInput(format!(
                         "Invalid binary operator: {}",
                         op.as_str()
-                    )))
+                    ))))
                 }
             };
 
@@ -57,17 +60,17 @@ impl ConditionParser {
             })?;
 
             let right = match right_term.as_rule() {
-                Rule::where_term => Self::parse_term(right_term)?,
+                Rule::filter_term => Self::parse_term(right_term)?,
                 Rule::condition => Self::parse_single_condition(right_term)?,
                 _ => {
-                    return Err(IrParseError::InvalidInput(format!(
+                    return Err(Box::new(IrParseError::InvalidInput(format!(
                         "Unexpected rule: {:?}",
                         right_term.as_rule()
-                    )))
+                    ))))
                 }
             };
 
-            left = WhereClause::Expression {
+            left = FilterClause::Expression {
                 left: Box::new(left),
                 binary_op: op,
                 right: Box::new(right),
@@ -77,7 +80,7 @@ impl ConditionParser {
         Ok(left)
     }
 
-    fn parse_term(pair: Pair<Rule>) -> Result<WhereClause, IrParseError> {
+    fn parse_term(pair: Pair<Rule>) -> Result<FilterClause, Box<IrParseError>> {
         let mut inner = pair.into_inner();
 
         let first = inner
@@ -93,14 +96,16 @@ impl ConditionParser {
                 Self::parse_conditions(conditions)
             }
             Rule::condition => Self::parse_single_condition(first),
-            _ => Err(IrParseError::InvalidInput(format!(
+            _ => Err(Box::new(IrParseError::InvalidInput(format!(
                 "Invalid term: {:?}",
                 first.as_rule()
-            ))),
+            )))),
         }
     }
 
-    fn parse_single_condition(condition_pair: Pair<Rule>) -> Result<WhereClause, IrParseError> {
+    fn parse_single_condition(
+        condition_pair: Pair<Rule>,
+    ) -> Result<FilterClause, Box<IrParseError>> {
         let mut inner = condition_pair.into_inner();
 
         // Get the first field
@@ -109,6 +114,20 @@ impl ConditionParser {
         })?;
 
         match first.as_rule() {
+            Rule::boolean_keyword => {
+                let value = match first.as_str() {
+                    "true" => true,
+                    "false" => false,
+                    _ => {
+                        return Err(Box::new(IrParseError::InvalidInput(
+                            "Invalid boolean value".to_string(),
+                        ))
+                        .into())
+                    }
+                };
+
+                Ok(FilterClause::Base(FilterConditionType::Boolean(value)))
+            }
             Rule::arithmetic_expr => {
                 // Handle comparison condition
                 let operator_pair = inner
@@ -126,14 +145,14 @@ impl ConditionParser {
                     "==" => ComparisonOp::Equal, // Changed from = to ==
                     "!=" => ComparisonOp::NotEqual,
                     op => {
-                        return Err(IrParseError::InvalidInput(format!(
+                        return Err(Box::new(IrParseError::InvalidInput(format!(
                             "Invalid operator: {}",
                             op
-                        )))
+                        ))))
                     }
                 };
 
-                Ok(WhereClause::Base(WhereConditionType::Comparison(
+                Ok(FilterClause::Base(FilterConditionType::Comparison(
                     Condition {
                         left_field: Self::parse_arithmetic_expr(first)?,
                         operator,
@@ -141,7 +160,68 @@ impl ConditionParser {
                     },
                 )))
             }
-            Rule::qualified_column | Rule::identifier => {
+            Rule::in_expr => {
+                let mut inner = first.into_inner();
+
+                // Parse column reference first
+                let column = inner.next().ok_or_else(|| {
+                    IrParseError::InvalidInput("Missing column in IN expression".to_string())
+                })?;
+
+                let col_ref = match column.as_rule() {
+                    Rule::qualified_column => Self::parse_qualified_column(column)?,
+                    Rule::identifier => ColumnRef {
+                        table: None,
+                        column: column.as_str().to_string(),
+                    },
+                    _ => {
+                        return Err(Box::new(IrParseError::InvalidInput(
+                            "Invalid column reference in IN expression".to_string(),
+                        )))
+                    }
+                };
+
+                // Check for NOT (it's optional)
+                let is_negated = if let Some(token) = inner.next() {
+                    token.as_str().to_lowercase() == "not"
+                } else {
+                    false
+                };
+
+                // If we found NOT, we need to skip past it to get to IN
+                if is_negated {
+                    inner.next(); // Skip the IN keyword
+                } else {
+                    // The token we got wasn't NOT, it was IN, so we don't need to skip again
+                }
+
+                // Parse the subquery
+                let subquery = inner.next().ok_or_else(|| {
+                    IrParseError::InvalidInput("Missing subquery in IN expression".to_string())
+                })?;
+                let subquery_plan = IrParser::parse_subquery(subquery)?;
+
+                Ok(FilterClause::Base(FilterConditionType::In(
+                    InCondition::InSubquery { field: col_ref, subquery: subquery_plan, negated: is_negated }
+                )))
+            }
+            Rule::exists_keyword => {
+                // Check if this is "not exists" or just "exists"
+                let is_negated = first.as_str().to_lowercase().starts_with("not");
+
+                // Get the subquery expression
+                let subquery_expr = inner.next().ok_or_else(|| {
+                    IrParseError::InvalidInput("Missing subquery in EXISTS clause".to_string())
+                })?;
+
+                // Parse the subquery
+                let subquery = IrParser::parse_subquery(subquery_expr)?;
+
+                Ok(FilterClause::Base(FilterConditionType::Exists(
+                    subquery, is_negated,
+                )))
+            }
+            Rule::qualified_column | Rule::identifier | Rule::number | Rule::subquery => {
                 // Check if this is a NULL check
                 let operator_pair = inner
                     .next()
@@ -152,33 +232,33 @@ impl ConditionParser {
                         "is null" => NullOp::IsNull,
                         "is not null" => NullOp::IsNotNull,
                         _ => {
-                            return Err(IrParseError::InvalidInput(format!(
+                            return Err(Box::new(IrParseError::InvalidInput(format!(
                                 "Invalid null operator: {}",
                                 operator_pair.as_str()
-                            )))
+                            ))))
                         }
                     };
 
-                    Ok(WhereClause::Base(WhereConditionType::NullCheck(
+                    Ok(FilterClause::Base(FilterConditionType::NullCheck(
                         NullCondition {
                             field: Self::parse_field_reference(first)?,
                             operator,
                         },
                     )))
                 } else {
-                    Err(IrParseError::InvalidInput(
+                    Err(Box::new(IrParseError::InvalidInput(
                         "Expected null operator".to_string(),
-                    ))
+                    )))
                 }
             }
-            _ => Err(IrParseError::InvalidInput(format!(
+            _ => Err(Box::new(IrParseError::InvalidInput(format!(
                 "Unexpected token in condition: {:?}",
                 first.as_rule()
-            ))),
+            )))),
         }
     }
 
-    fn parse_arithmetic_expr(pair: Pair<Rule>) -> Result<ComplexField, IrParseError> {
+    fn parse_arithmetic_expr(pair: Pair<Rule>) -> Result<ComplexField, Box<IrParseError>> {
         let mut inner = pair.into_inner();
         let first_term = inner
             .next()
@@ -195,6 +275,7 @@ impl ConditionParser {
                     literal: None,
                     aggregate: None,
                     nested_expr: Some(Box::new((result, op.as_str().to_string(), next_field))),
+                    subquery: None,
                 };
             }
         }
@@ -202,7 +283,7 @@ impl ConditionParser {
         Ok(result)
     }
 
-    fn parse_arithmetic_term(pair: Pair<Rule>) -> Result<ComplexField, IrParseError> {
+    fn parse_arithmetic_term(pair: Pair<Rule>) -> Result<ComplexField, Box<IrParseError>> {
         let inner = pair
             .clone()
             .into_inner()
@@ -221,14 +302,24 @@ impl ConditionParser {
                 Self::parse_arithmetic_expr(expr)
             }
             Rule::arithmetic_factor => Self::parse_arithmetic_operand(inner),
-            _ => Err(IrParseError::InvalidInput(format!(
+            Rule::subquery => {
+                let subquery = IrParser::parse_subquery(inner)?;
+                Ok(ComplexField {
+                    column_ref: None,
+                    literal: None,
+                    aggregate: None,
+                    nested_expr: None,
+                    subquery: Some(subquery),
+                })
+            }
+            _ => Err(Box::new(IrParseError::InvalidInput(format!(
                 "Unexpected token in arithmetic term: {:?}",
                 inner.as_rule()
-            ))),
+            )))),
         }
     }
 
-    fn parse_arithmetic_operand(pair: Pair<Rule>) -> Result<ComplexField, IrParseError> {
+    fn parse_arithmetic_operand(pair: Pair<Rule>) -> Result<ComplexField, Box<IrParseError>> {
         let operand = pair
             .into_inner()
             .next()
@@ -240,6 +331,7 @@ impl ConditionParser {
                 literal: Some(Self::parse_literal(operand)?),
                 aggregate: None,
                 nested_expr: None,
+                subquery: None,
             }),
             Rule::qualified_column => {
                 let column_ref = Self::parse_qualified_column(operand)?;
@@ -248,6 +340,7 @@ impl ConditionParser {
                     literal: None,
                     aggregate: None,
                     nested_expr: None,
+                    subquery: None,
                 })
             }
             Rule::identifier => Ok(ComplexField {
@@ -258,6 +351,7 @@ impl ConditionParser {
                 literal: None,
                 aggregate: None,
                 nested_expr: None,
+                subquery: None,
             }),
             Rule::aggregate_expr => {
                 let agg_func = Self::parse_aggregate_function(operand)?;
@@ -266,16 +360,17 @@ impl ConditionParser {
                     literal: None,
                     aggregate: Some(agg_func),
                     nested_expr: None,
+                    subquery: None,
                 })
             }
-            _ => Err(IrParseError::InvalidInput(format!(
+            _ => Err(Box::new(IrParseError::InvalidInput(format!(
                 "Invalid operand type: {:?}",
                 operand.as_rule()
-            ))),
+            )))),
         }
     }
 
-    fn parse_literal(pair: Pair<Rule>) -> Result<IrLiteral, IrParseError> {
+    fn parse_literal(pair: Pair<Rule>) -> Result<IrLiteral, Box<IrParseError>> {
         match pair.as_rule() {
             Rule::value => {
                 let inner = pair
@@ -292,31 +387,35 @@ impl ConditionParser {
                     }
                     Rule::number => {
                         // Try to parse as integer first, then as float
-                        inner
+                        Ok(inner
                             .as_str()
                             .parse::<i64>()
                             .map(IrLiteral::Integer)
                             .or_else(|_| inner.as_str().parse::<f64>().map(IrLiteral::Float))
-                            .map_err(|_| IrParseError::InvalidInput("Invalid number".to_string()))
+                            .map_err(|_| {
+                                IrParseError::InvalidInput("Invalid number".to_string())
+                            })?)
                     }
                     Rule::boolean_keyword => match inner.as_str() {
                         "true" => Ok(IrLiteral::Boolean(true)),
                         "false" => Ok(IrLiteral::Boolean(false)),
-                        _ => Err(IrParseError::InvalidInput(
+                        _ => Err(Box::new(IrParseError::InvalidInput(
                             "Invalid boolean value".to_string(),
-                        )),
+                        ))),
                     },
-                    _ => Err(IrParseError::InvalidInput(format!(
+                    _ => Err(Box::new(IrParseError::InvalidInput(format!(
                         "Invalid literal type: {:?}",
                         inner.as_rule()
-                    ))),
+                    )))),
                 }
             }
-            _ => Err(IrParseError::InvalidInput("Expected value".to_string())),
+            _ => Err(Box::new(IrParseError::InvalidInput(
+                "Expected value".to_string(),
+            ))),
         }
     }
 
-    fn parse_qualified_column(pair: Pair<Rule>) -> Result<ColumnRef, IrParseError> {
+    fn parse_qualified_column(pair: Pair<Rule>) -> Result<ColumnRef, Box<IrParseError>> {
         let mut inner = pair.into_inner();
         let table = inner
             .next()
@@ -340,7 +439,7 @@ impl ConditionParser {
         })
     }
 
-    fn parse_aggregate_function(pair: Pair<Rule>) -> Result<AggregateFunction, IrParseError> {
+    fn parse_aggregate_function(pair: Pair<Rule>) -> Result<AggregateFunction, Box<IrParseError>> {
         let mut inner = pair.into_inner();
 
         let func_type = inner.next().ok_or_else(|| {
@@ -354,10 +453,10 @@ impl ConditionParser {
             "sum" => AggregateType::Sum,
             "count" => AggregateType::Count,
             _ => {
-                return Err(IrParseError::InvalidInput(format!(
+                return Err(Box::new(IrParseError::InvalidInput(format!(
                     "Invalid aggregate function: {}",
                     func_type.as_str()
-                )))
+                ))))
             }
         };
 
@@ -379,10 +478,10 @@ impl ConditionParser {
                     column: column_ref.as_str().to_string(),
                 },
                 _ => {
-                    return Err(IrParseError::InvalidInput(format!(
+                    return Err(Box::new(IrParseError::InvalidInput(format!(
                         "Invalid column reference in aggregate: {:?}",
                         column_ref.as_rule()
-                    )))
+                    ))))
                 }
             }
         };
@@ -390,7 +489,7 @@ impl ConditionParser {
         Ok(AggregateFunction { function, column })
     }
 
-    fn parse_field_reference(pair: Pair<Rule>) -> Result<ComplexField, IrParseError> {
+    fn parse_field_reference(pair: Pair<Rule>) -> Result<ComplexField, Box<IrParseError>> {
         match pair.as_rule() {
             Rule::qualified_column => {
                 let col_ref = Self::parse_qualified_column(pair)?;
@@ -399,6 +498,7 @@ impl ConditionParser {
                     literal: None,
                     aggregate: None,
                     nested_expr: None,
+                    subquery: None,
                 })
             }
             Rule::identifier => Ok(ComplexField {
@@ -409,11 +509,33 @@ impl ConditionParser {
                 literal: None,
                 aggregate: None,
                 nested_expr: None,
+                subquery: None,
             }),
-            _ => Err(IrParseError::InvalidInput(format!(
+            Rule::number => {
+                let num = LiteralParser::parse(pair.as_str())
+                    .map_err(|e| IrParseError::InvalidInput(e.to_string()))?;
+                Ok(ComplexField {
+                    column_ref: None,
+                    literal: Some(num),
+                    aggregate: None,
+                    nested_expr: None,
+                    subquery: None,
+                })
+            }
+            Rule::subquery => {
+                let subquery = IrParser::parse_subquery(pair)?;
+                Ok(ComplexField {
+                    column_ref: None,
+                    literal: None,
+                    aggregate: None,
+                    nested_expr: None,
+                    subquery: Some(subquery),
+                })
+            }
+            _ => Err(Box::new(IrParseError::InvalidInput(format!(
                 "Expected field reference, got {:?}",
                 pair.as_rule()
-            ))),
+            )))),
         }
     }
 }

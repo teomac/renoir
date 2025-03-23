@@ -1,125 +1,148 @@
 use super::error::IrParseError;
-use super::ir_ast_structure::*;
+use super::{ir_ast_structure::*, IrParser};
 use crate::dsl::ir::ast_parser::Rule;
 use pest::iterators::Pair;
-
+use std::sync::Arc;
 pub struct SourceParser;
 
 impl SourceParser {
-    pub fn parse(pair: Pair<Rule>) -> Result<FromClause, IrParseError> {
+    pub fn parse(pair: Pair<Rule>) -> Result<Arc<IrPlan>, Box<IrParseError>> {
+        let has_join = pair.as_str().contains("join");
+
         let mut inner = pair.into_inner();
 
-        // Skip 'from' if present
-        if inner.peek().map_or(false, |p| p.as_str() == "from") {
+        // Skip 'scan' keyword if present
+        if inner.peek().is_some_and(|p| p.as_str() == "from") {
             inner.next();
         }
 
+        // Parse the initial scan
         let scan_expr = inner
             .next()
             .ok_or_else(|| IrParseError::InvalidInput("Missing source expression".to_string()))?;
-        let scan = Self::parse_scan(scan_expr)?;
+        let mut current_plan = Arc::new(Self::parse_scan(scan_expr, has_join)?);
 
-        let mut joins = Vec::new();
-
-        while inner.peek().is_some() {
-            // Check if the next token is a join_type or "join"
+        // Process any joins
+        while let Some(pair) = inner.next() {
+            // Look for join type first
             let mut join_type = JoinType::Inner; // Default join type
 
-            // Look for join type first
-            if let Some(token) = inner.peek() {
-                if token.as_rule() == Rule::join_type {
-                    let join_type_token = inner.next().unwrap();
-                    join_type = match join_type_token.as_str() {
-                        "inner" => JoinType::Inner,
-                        "left" => JoinType::Left,
-                        "outer" => JoinType::Outer,
-                        _ => {
-                            return Err(IrParseError::InvalidInput(format!(
-                                "Invalid join type: {}",
-                                join_type_token.as_str()
-                            )))
-                        }
-                    };
-                }
-            }
-
-            // Now look for "join" keyword
-            if inner.peek().map_or(false, |p| p.as_str() == "join") {
-                // Consume 'join' token
+            if pair.as_rule() == Rule::join_type {
+                join_type = match pair.as_str() {
+                    "inner" => JoinType::Inner,
+                    "left" => JoinType::Left,
+                    "outer" => JoinType::Outer,
+                    _ => {
+                        return Err(Box::new(IrParseError::InvalidInput(format!(
+                            "Invalid join type: {}",
+                            pair.as_str()
+                        ))))
+                    }
+                };
+                // Get next token which should be 'join'
                 inner.next();
-
-                // Parse the join scan
-                let join_scan_expr = inner
-                    .next()
-                    .ok_or_else(|| IrParseError::InvalidInput("Missing join stream".to_string()))?;
-                let join_scan = Self::parse_scan(join_scan_expr)?;
-
-                // Expect and skip 'on' keyword
-                if inner.next().map_or(true, |p| p.as_str() != "on") {
-                    return Err(IrParseError::InvalidInput(
-                        "Missing ON in join clause".to_string(),
-                    ));
-                }
-
-                // Parse join condition
-                let condition_pair = inner.next().ok_or_else(|| {
-                    IrParseError::InvalidInput("Missing join condition".to_string())
-                })?;
-                let condition = JoinCondition::parse(condition_pair)?;
-
-                joins.push(JoinClause {
-                    join_type,
-                    join_scan,
-                    condition,
-                });
+            } else if pair.as_str() != "join" {
+                return Err(Box::new(IrParseError::InvalidInput(format!(
+                    "Expected join keyword, got {}",
+                    pair.as_str()
+                ))));
             }
+
+            // Parse the join scan
+            let join_scan_expr = inner
+                .next()
+                .ok_or_else(|| IrParseError::InvalidInput("Missing join stream".to_string()))?;
+            let right_plan = Arc::new(Self::parse_scan(join_scan_expr, has_join)?);
+
+            // Expect and skip 'on' keyword
+            if inner.next().is_none_or(|p| p.as_str() != "on") {
+                return Err(Box::new(IrParseError::InvalidInput(
+                    "Missing ON in join clause".to_string(),
+                )));
+            }
+
+            // Parse join condition
+            let condition_pair = inner
+                .next()
+                .ok_or_else(|| IrParseError::InvalidInput("Missing join condition".to_string()))?;
+            let conditions = JoinCondition::parse(condition_pair)?;
+
+            // Create new join plan
+            current_plan = Arc::new(IrPlan::Join {
+                left: current_plan,
+                right: right_plan,
+                condition: conditions,
+                join_type,
+            });
         }
-        if joins.is_empty() {
-            Ok(FromClause { scan, joins: None })
-        } else {
-            Ok(FromClause {
-                scan,
-                joins: Some(joins),
-            })
-        }
+
+        Ok(current_plan)
     }
 
-    fn parse_scan(pair: Pair<Rule>) -> Result<ScanClause, IrParseError> {
+    fn parse_scan(pair: Pair<Rule>, has_join: bool) -> Result<IrPlan, Box<IrParseError>> {
         let mut inner = pair.into_inner();
-        let mut stream_name = None;
-        let mut alias = None;
-        let mut input_source = None;
+        let table_name = inner
+            .next()
+            .ok_or_else(|| IrParseError::InvalidInput("Missing stream name".to_string()))?;
 
-        while let Some(pair) = inner.next() {
+        let mut alias = None;
+        let mut stream_input = None;
+
+        for pair in inner {
             match pair.as_rule() {
                 Rule::identifier => {
-                    if stream_name.is_none() {
-                        stream_name = Some(pair.as_str().to_string());
-                    } else {
+                    if alias.is_none() {
                         alias = Some(pair.as_str().to_string());
                     }
                 }
                 Rule::stream_input => {
-                    input_source = Some(pair.as_str().to_string());
+                    stream_input = Some(pair.as_str().to_string());
                 }
                 _ => {} // Skip other tokens
             }
         }
 
-        Ok(ScanClause {
-            stream_name: stream_name
-                .ok_or_else(|| IrParseError::InvalidInput("Missing stream name".to_string()))?,
-            alias,
-            input_source: input_source
-                .ok_or_else(|| IrParseError::InvalidInput("Missing input source".to_string()))?,
-        })
+        // Input source is required
+        if stream_input.is_none() {
+            return Err(Box::new(IrParseError::InvalidInput(
+                "Missing input source for stream".to_string(),
+            )));
+        }
+
+        match table_name.as_rule() {
+            Rule::identifier => {
+                if alias.is_none() && has_join {
+                    alias = Some(table_name.as_str().to_string().clone());
+                }
+
+                Ok(IrPlan::Scan {
+                    stream_name: stream_input.unwrap(),
+                    alias,
+                    input: IrPlan::Table {
+                        table_name: table_name.as_str().to_string(),
+                    }
+                    .into(),
+                })
+            }
+            Rule::subquery => {
+                let subquery = IrParser::parse_subquery(table_name)?;
+                Ok(IrPlan::Scan {
+                    stream_name: stream_input.unwrap(),
+                    alias,
+                    input: subquery,
+                })
+            }
+            _ => Err(Box::new(IrParseError::InvalidInput(
+                "Invalid input source for stream".to_string(),
+            ))),
+        }
     }
 
-    fn parse_qualified_column(pair: Pair<Rule>) -> Result<ColumnRef, IrParseError> {
+    fn parse_qualified_column(pair: Pair<Rule>) -> Result<ColumnRef, Box<IrParseError>> {
         if pair.as_rule() != Rule::qualified_column {
-            return Err(IrParseError::InvalidInput(
+            return Err(Box::new(IrParseError::InvalidInput(
                 "Join condition must use qualified column references".to_string(),
-            ));
+            )));
         }
 
         let mut inner = pair.into_inner();
@@ -142,7 +165,7 @@ impl SourceParser {
 }
 
 impl JoinCondition {
-    fn parse(pair: Pair<Rule>) -> Result<Self, IrParseError> {
+    fn parse(pair: Pair<Rule>) -> Result<Vec<JoinCondition>, Box<IrParseError>> {
         let mut conditions = Vec::new();
         let mut pairs = pair.into_inner().peekable();
 
@@ -151,17 +174,17 @@ impl JoinCondition {
                 IrParseError::InvalidInput("Missing right side of join condition".to_string())
             })?;
 
-            conditions.push(JoinPair {
+            conditions.push(JoinCondition {
                 left_col: SourceParser::parse_qualified_column(left_pair)?,
                 right_col: SourceParser::parse_qualified_column(right_pair)?,
             });
 
             // Skip the AND if present
-            if pairs.peek().map_or(false, |p| p.as_str() == "AND") {
+            if pairs.peek().is_some_and(|p| p.as_str() == "AND") {
                 pairs.next();
             }
         }
 
-        Ok(JoinCondition { conditions })
+        Ok(conditions)
     }
 }

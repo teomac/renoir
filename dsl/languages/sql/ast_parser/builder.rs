@@ -12,16 +12,16 @@ use pest::iterators::Pairs;
 pub struct SqlASTBuilder;
 
 impl SqlASTBuilder {
-    pub fn build_ast_from_pairs(pairs: Pairs<Rule>) -> Result<SqlAST, SqlParseError> {
-        for pair in pairs {
+    pub fn build_ast_from_pairs(pairs: Pairs<Rule>) -> Result<SqlAST, Box<SqlParseError>> {
+        let mut pairs = pairs.clone();
+        if let Some(pair) = pairs.next() {
             match pair.as_rule() {
                 Rule::query => {
                     let mut inner = pair.clone().into_inner();
                     inner.next(); // Skip SELECT keyword
 
                     let distinct = inner
-                        .next()
-                        .map_or(false, |token| token.as_rule() == Rule::distinct_keyword);
+                        .next().is_some_and(|token| token.as_rule() == Rule::distinct_keyword);
 
                     if !distinct {
                         // If the next token is not DISTINCT, we need to go back to the beginning
@@ -69,12 +69,12 @@ impl SqlASTBuilder {
 
                                     Ok(SelectColumn { selection, alias })
                                 })
-                                .collect::<Result<Vec<_>, _>>()?
+                                .collect::<Result<Vec<_>, Box<SqlParseError>>>()?
                         }
                         _ => {
-                            return Err(SqlParseError::InvalidInput(
+                            return Err(Box::new(SqlParseError::InvalidInput(
                                 "Invalid SELECT clause".to_string(),
-                            ))
+                            )))
                         }
                     };
 
@@ -95,7 +95,7 @@ impl SqlASTBuilder {
 
                     let mut order_by_part = None;
 
-                    while let Some(next_part) = inner.next() {
+                    for next_part in inner {
                         match next_part.as_rule() {
                             Rule::where_expr => where_part = Some(next_part),
                             Rule::group_by_expr => group_by_part = Some(next_part),
@@ -136,11 +136,15 @@ impl SqlASTBuilder {
 
                     return Ok(ast);
                 }
-                _ => return Err(SqlParseError::InvalidInput("Expected query".to_string())),
+                _ => {
+                    return Err(Box::new(SqlParseError::InvalidInput(
+                        "Expected query".to_string(),
+                    )))
+                }
             }
         }
-        Err(SqlParseError::InvalidInput(
+        Err(Box::new(SqlParseError::InvalidInput(
             "No valid query found".to_string(),
-        ))
+        )))
     }
 }
