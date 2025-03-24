@@ -212,7 +212,7 @@ fn process_complex_field(
             }
 
             // Get the single value or empty string if no results
-            let result_str = values.first().map(|s| *s).unwrap_or("").to_string();
+            let result_str = values.first().copied().unwrap_or("").to_string();
 
             // Convert the result string to appropriate IrLiteral
             let literal = LiteralParser::parse(&result_str)

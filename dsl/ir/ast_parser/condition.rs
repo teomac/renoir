@@ -121,8 +121,7 @@ impl ConditionParser {
                     _ => {
                         return Err(Box::new(IrParseError::InvalidInput(
                             "Invalid boolean value".to_string(),
-                        ))
-                        .into())
+                        )))
                     }
                 };
 

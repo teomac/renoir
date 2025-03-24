@@ -186,8 +186,7 @@ impl GroupByParser {
                     _ => {
                         return Err(Box::new(SqlParseError::InvalidInput(
                             "Invalid boolean value".to_string(),
-                        ))
-                        .into())
+                        )))
                     }
                 };
 
