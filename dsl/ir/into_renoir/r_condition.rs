@@ -284,7 +284,7 @@ fn process_condition(condition: &FilterConditionType, query_object: &QueryObject
                     "x{}.{}.as_ref().unwrap(){}",
                     stream.get_access().get_base_path(),
                     field.column,
-                    if c_type == "String" { ".as_str()" } else { ""}
+                    if c_type == "String" { ".as_str()" } else { "" }
                 );
 
                 // Generate the final string

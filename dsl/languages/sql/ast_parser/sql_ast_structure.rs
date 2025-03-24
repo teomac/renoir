@@ -131,7 +131,7 @@ pub enum HavingClause {
 pub enum HavingBaseCondition {
     Comparison(HavingCondition),
     NullCheck(HavingNullCondition),
-    Exists(Box<SqlAST>, bool),       // Subquery, negated
+    Exists(Box<SqlAST>, bool),        // Subquery, negated
     In(ColumnRef, Box<SqlAST>, bool), // Column, subquery, negated
     Boolean(bool),
 }

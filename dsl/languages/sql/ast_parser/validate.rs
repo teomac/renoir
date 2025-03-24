@@ -6,7 +6,7 @@ pub fn validate_ast(ast: &SqlAST) -> Result<(), Box<SqlParseError>> {
     validate_no_aggregates_in_where(&ast.filter)?;
     validate_having_columns_in_group_by(ast)?;
     validate_order_by(ast)?;
-    
+
     for select_column in &ast.select.select {
         validate_select_subquery(&select_column.selection)?;
     }
@@ -114,12 +114,12 @@ fn validate_no_aggregates_in_where(clause: &Option<WhereClause>) -> Result<(), B
         match where_clause {
             WhereClause::Base(base_condition) => match base_condition {
                 WhereBaseCondition::Comparison(cond) => {
-                                check_where_field_for_aggregates(&cond.left_field)?;
-                                check_where_field_for_aggregates(&cond.right_field)?;
-                            }
+                    check_where_field_for_aggregates(&cond.left_field)?;
+                    check_where_field_for_aggregates(&cond.right_field)?;
+                }
                 WhereBaseCondition::NullCheck(null_cond) => {
-                                check_where_field_for_aggregates(&null_cond.field)?;
-                            }
+                    check_where_field_for_aggregates(&null_cond.field)?;
+                }
                 WhereBaseCondition::Exists(_, _) => { /*TODO */ }
                 WhereBaseCondition::In(_, _, _) => { /*TODO */ }
                 WhereBaseCondition::Boolean(_) => { /*TODO */ }

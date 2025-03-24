@@ -234,29 +234,29 @@ fn process_filter_condition(
                             .collect::<Vec<String>>()
                             .join(", ");
 
-                            let is_key = keys.iter().any(|k| k.column == field.column);
-                            let key_position = if is_key {
-                                keys.iter().position(|k| k.column == field.column).unwrap()
-                            } else {
-                                panic!("Field in IN condition must be a group by key")
-                            };
-    
-                            // Generate the condition with correct tuple access
-                            let single_key = keys.len() == 1;
-                            let c_type = query_object.get_type(field);
-    
-                            let access_str = if single_key {
-                                format!("x.0{}", if c_type == "String" { ".as_ref()" } else { "" })
-                            } else {
-                                format!(
-                                    "x.0.{}{}", 
-                                    key_position,
-                                    if c_type == "String" { ".as_ref()" } else { "" }
-                                )
-                            };
-    
-                            // Generate the final string with proper null checks
+                        let is_key = keys.iter().any(|k| k.column == field.column);
+                        let key_position = if is_key {
+                            keys.iter().position(|k| k.column == field.column).unwrap()
+                        } else {
+                            panic!("Field in IN condition must be a group by key")
+                        };
+
+                        // Generate the condition with correct tuple access
+                        let single_key = keys.len() == 1;
+                        let c_type = query_object.get_type(field);
+
+                        let access_str = if single_key {
+                            format!("x.0{}", if c_type == "String" { ".as_ref()" } else { "" })
+                        } else {
                             format!(
+                                "x.0.{}{}",
+                                key_position,
+                                if c_type == "String" { ".as_ref()" } else { "" }
+                            )
+                        };
+
+                        // Generate the final string with proper null checks
+                        format!(
                                 "if {}.is_some() {{{}vec![{}].contains(&{}.unwrap(){})}} else {{false}}",
                                 access_str,
                                 if *negated { "!" } else { "" },
@@ -264,7 +264,7 @@ fn process_filter_condition(
                                 access_str,
                                 if c_type == "String" { ".as_str()" } else { "" }
                             )
-                        }
+                    }
                     InCondition::InSubquery { .. } => panic!("We should not have InSubquery here"),
                 },
                 GroupBaseCondition::Exists(_, _) => {

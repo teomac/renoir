@@ -188,7 +188,8 @@ impl FromParser {
 
             // Skip the AND operator if present
             if condition_pairs
-                .peek().is_some_and(|p| p.as_str().to_uppercase() == "AND")
+                .peek()
+                .is_some_and(|p| p.as_str().to_uppercase() == "AND")
             {
                 condition_pairs.next();
             }

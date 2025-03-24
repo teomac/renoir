@@ -79,7 +79,6 @@ pub fn create_template(query_object: &QueryObject, is_subquery: bool) -> String 
 
     let all_stream_names = all_streams.keys().cloned().collect::<Vec<String>>();
 
-
     for (i, stream_name) in all_stream_names.iter().enumerate() {
         let mut stream;
         if i == all_stream_names.len() - 1 {
@@ -129,7 +128,6 @@ pub fn create_template(query_object: &QueryObject, is_subquery: bool) -> String 
 
     // Create the main.rs content
     format!(
-        
         r#"
         #![allow(non_camel_case_types)]
         #![allow(unused_variables)]
@@ -195,10 +193,13 @@ pub fn generate_struct_declarations(query_object: &QueryObject) -> String {
             struct_def.push_str(&format!("struct {} {{\n", struct_name));
 
             // Generate field definitions directly from table to struct mapping
-            let fields_str = fields.iter().fold(String::new(), |mut output, (field_name, field_type)| {
-                let _ = writeln!(output, "{}: Option<{}>,\n", field_name, field_type);
-                output
-            });
+            let fields_str =
+                fields
+                    .iter()
+                    .fold(String::new(), |mut output, (field_name, field_type)| {
+                        let _ = writeln!(output, "{}: Option<{}>,\n", field_name, field_type);
+                        output
+                    });
 
             struct_def.push_str(&fields_str);
             struct_def.push_str("}\n\n");

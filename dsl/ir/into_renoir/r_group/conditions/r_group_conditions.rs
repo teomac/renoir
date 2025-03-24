@@ -16,30 +16,30 @@ pub fn parse_group_conditions(
         GroupClause::Base(base_cond) => {
             match base_cond {
                 GroupBaseCondition::Comparison(comp) => {
-                                // Process both sides of comparison
-                                collect_field_aggregates(&comp.left_field, acc_info, query_object, keys);
-                                collect_field_aggregates(&comp.right_field, acc_info, query_object, keys);
+                    // Process both sides of comparison
+                    collect_field_aggregates(&comp.left_field, acc_info, query_object, keys);
+                    collect_field_aggregates(&comp.right_field, acc_info, query_object, keys);
 
-                                // Type check the comparison
-                                let left_type = query_object.get_complex_field_type(&comp.left_field);
-                                let right_type = query_object.get_complex_field_type(&comp.right_field);
+                    // Type check the comparison
+                    let left_type = query_object.get_complex_field_type(&comp.left_field);
+                    let right_type = query_object.get_complex_field_type(&comp.right_field);
 
-                                // Validate types are compatible for comparison
-                                if left_type != right_type
-                                    && !((left_type == "f64" || left_type == "i64" || left_type == "usize")
-                                        && (right_type == "f64"
-                                            || right_type == "i64"
-                                            || right_type == "usize"))
-                                {
-                                    panic!(
-                                        "Invalid comparison between incompatible types: {} and {}",
-                                        left_type, right_type
-                                    );
-                                }
-                            }
+                    // Validate types are compatible for comparison
+                    if left_type != right_type
+                        && !((left_type == "f64" || left_type == "i64" || left_type == "usize")
+                            && (right_type == "f64"
+                                || right_type == "i64"
+                                || right_type == "usize"))
+                    {
+                        panic!(
+                            "Invalid comparison between incompatible types: {} and {}",
+                            left_type, right_type
+                        );
+                    }
+                }
                 GroupBaseCondition::NullCheck(null_check) => {
-                                collect_field_aggregates(&null_check.field, acc_info, query_object, keys);
-                            }
+                    collect_field_aggregates(&null_check.field, acc_info, query_object, keys);
+                }
                 GroupBaseCondition::In(..) => (),
                 GroupBaseCondition::Exists(_, _) => (),
                 GroupBaseCondition::Boolean(_) => (),

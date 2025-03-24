@@ -190,7 +190,7 @@ impl GroupParser {
 
                 let col_ref = match column.as_rule() {
                     Rule::qualified_column | Rule::identifier => Self::parse_column_ref(column)?,
-                    
+
                     _ => {
                         return Err(Box::new(IrParseError::InvalidInput(
                             "Invalid column reference in IN expression".to_string(),
@@ -219,21 +219,25 @@ impl GroupParser {
                 let subquery_plan = IrParser::parse_subquery(subquery)?;
 
                 Ok(GroupClause::Base(GroupBaseCondition::In(
-                    InCondition::InSubquery { field: col_ref, subquery: subquery_plan, negated: is_negated }
+                    InCondition::InSubquery {
+                        field: col_ref,
+                        subquery: subquery_plan,
+                        negated: is_negated,
+                    },
                 )))
             }
             Rule::exists_keyword => {
                 // Check if this is "not exists" or just "exists"
                 let is_negated = first.as_str().to_lowercase().starts_with("not");
-    
+
                 // Get the subquery expression
                 let subquery_expr = inner.next().ok_or_else(|| {
                     IrParseError::InvalidInput("Missing subquery in EXISTS clause".to_string())
                 })?;
-    
+
                 // Parse the subquery
                 let subquery = IrParser::parse_subquery(subquery_expr)?;
-    
+
                 Ok(GroupClause::Base(GroupBaseCondition::Exists(
                     subquery, is_negated,
                 )))

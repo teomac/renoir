@@ -7,11 +7,13 @@ use indexmap::IndexMap;
 pub fn create_fold_operation(
     acc_info: &GroupAccumulatorInfo,
     stream_name: &String,
+    keys: &String,
     query_object: &mut QueryObject,
 ) -> String {
     let mut tuple_types = Vec::new();
     let mut tuple_inits = Vec::new();
     let mut update_code = String::new();
+    let mut global_update_code = String::new();
 
     let single_agg = acc_info.agg_positions.len() == 1;
 
@@ -68,6 +70,12 @@ pub fn create_fold_operation(
                             format!("x{}.{}", stream.get_access().get_base_path(), col.column)
                         };
 
+                        let acc_access = if single_agg {
+                            "acc".to_string()
+                        } else {
+                            format!("acc.{}", pos)
+                        };
+
                         match agg_type {
                             AggregateType::Count => {
                                 if col.column == "*" {
@@ -80,6 +88,15 @@ pub fn create_fold_operation(
                                         },
                                         if single_agg {
                                             String::from("")
+                                        } else {
+                                            format!(".{}", pos)
+                                        }
+                                    ));
+                                    global_update_code.push_str(&format!(
+                                        "    {} += local_acc{};\n",
+                                        acc_access,
+                                        if single_agg {
+                                            "".to_string()
                                         } else {
                                             format!(".{}", pos)
                                         }
@@ -113,7 +130,15 @@ pub fn create_fold_operation(
                                             format!(".{}", pos)
                                         }
                                     ));
-
+                                    global_update_code.push_str(&format!(
+                                        "    {} += local_acc{};\n",
+                                        acc_access,
+                                        if single_agg {
+                                            "".to_string()
+                                        } else {
+                                            format!(".{}", pos)
+                                        }
+                                    ));
                                     agg_map.insert(
                                         AggregateFunction {
                                             column: col.clone(),
@@ -159,6 +184,14 @@ pub fn create_fold_operation(
                                     } else {
                                         ""
                                     }
+                                ));
+                                global_update_code.push_str(&format!(
+                                    "    {} = Some({}.unwrap_or(0{}) + local_acc{}.unwrap_or(0{}));\n",
+                                    acc_access,
+                                    acc_access,
+                                    if col_type == "f64" { ".0" } else { "" },
+                                    if single_agg { "".to_string() } else { format!(".{}", pos) },
+                                    if col_type == "f64" { ".0" } else { "" }
                                 ));
 
                                 agg_map.insert(
@@ -214,6 +247,12 @@ pub fn create_fold_operation(
                                     } else {
                                         String::from("&mut ")
                                     }
+                                ));
+                                global_update_code.push_str(&format!(
+                                    "    if let Some(val) = local_acc{} {{ {} = Some({}.unwrap_or(val).max(val)); }}\n",
+                                    if single_agg { "".to_string() } else { format!(".{}", pos) },
+                                    acc_access,
+                                    acc_access
                                 ));
 
                                 agg_map.insert(
@@ -271,6 +310,13 @@ pub fn create_fold_operation(
                                     }
                                 ));
 
+                                global_update_code.push_str(&format!(
+                                    "    if let Some(val) = local_acc{} {{ {} = Some({}.unwrap_or(val).min(val)); }}\n",
+                                    if single_agg { "".to_string() } else { format!(".{}", pos) },
+                                    acc_access,
+                                    acc_access
+                                ));
+
                                 agg_map.insert(
                                     AggregateFunction {
                                         column: col.clone(),
@@ -298,9 +344,15 @@ pub fn create_fold_operation(
     let tuple_type = format!("({})", tuple_types.join(", "));
     let tuple_init = format!("({})", tuple_inits.join(", "));
 
-    let mut fold_str = format!(".fold({}, |acc: &mut {}, x| {{ \n", tuple_init, tuple_type);
-    fold_str.push_str(&update_code);
-    fold_str.push_str("\n})\n");
+    let fold_str = format!(
+        ".group_by_fold(|x| ({}), {}, |acc: &mut {}, x| {{ \n{}}}, |acc: &mut {}, local_acc| {{\n{}}})\n",
+        keys,
+        tuple_init,
+        tuple_type,
+        update_code,
+        tuple_type,
+        global_update_code
+    );
 
     let stream = query_object.get_mut_stream(stream_name);
     stream.update_agg_position(agg_map);

@@ -2,7 +2,7 @@ use core::panic;
 use std::{io, sync::Arc};
 
 use crate::dsl::ir::ast_parser::ir_ast_structure::ComplexField;
-use crate::dsl::ir::{self, ir_ast_to_renoir, InCondition};
+use crate::dsl::ir::{ir_ast_to_renoir, InCondition};
 use crate::dsl::{
     ir::{
         literal::LiteralParser, Condition, FilterClause, FilterConditionType, GroupBaseCondition,

@@ -4,7 +4,7 @@ use core::panic;
 pub fn create_star_map(stream_name: &String, query_object: &QueryObject) -> String {
     let stream = query_object.get_stream(stream_name);
     let mut result = format!(".map(|x| {} {{ ", stream.final_struct_name);
-    
+
     //cases: JOIN -> WITH GROUP / WITHOUT GROUP
     //and
     // NO JOIN -> WITH GROUP / WITHOUT GROUP

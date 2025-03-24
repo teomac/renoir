@@ -36,13 +36,11 @@ pub fn process_projections(
 
         stream.insert_op(final_string.clone());
 
-
         if stream.is_keyed {
             stream.insert_op(".drop_key()".to_string());
         }
-        
-        stream.final_struct = result_column_types;
 
+        stream.final_struct = result_column_types;
 
         return Ok(());
     }

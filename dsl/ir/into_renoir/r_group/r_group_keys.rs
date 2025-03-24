@@ -89,6 +89,7 @@ pub fn process_group_by(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut group_string_keys = String::new();
     let mut group_string_condition = String::new();
+    let mut group_string_fold = String::new();
 
     // Validate GROUP BY columns
     for col in keys {
@@ -106,7 +107,6 @@ pub fn process_group_by(
 
     // Generate GROUP BY operation
     let group_by_keys = process_group_by_keys(keys, query_object);
-    group_string_keys.push_str(&format!(".group_by(|x| ({}))", group_by_keys));
 
     // Process having conditions if present
     let mut acc_info = GroupAccumulatorInfo::new();
@@ -138,11 +138,14 @@ pub fn process_group_by(
 
         // Generate operations using the collected information
         if !acc_info.agg_positions.is_empty() {
-            group_string_condition.push_str(&create_fold_operation(
+            group_string_fold.push_str(&create_fold_operation(
                 &acc_info,
                 stream_name,
+                &group_by_keys,
                 query_object,
             ));
+        } else {
+            group_string_keys.push_str(&format!(".group_by(|x| ({}))", group_by_keys));
         }
         group_string_condition.push_str(&create_filter_operation(
             condition,
@@ -154,7 +157,11 @@ pub fn process_group_by(
 
     // Store the operation in the correct stream
     let stream = query_object.get_mut_stream(stream_name);
-    stream.insert_op(group_string_keys);
+    if !group_string_keys.is_empty() {
+        stream.insert_op(group_string_keys);
+    } else {
+        stream.insert_op(group_string_fold);
+    }
     if !group_string_condition.is_empty() {
         stream.insert_op(group_string_condition);
     }

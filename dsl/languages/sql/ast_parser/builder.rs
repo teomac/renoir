@@ -21,7 +21,8 @@ impl SqlASTBuilder {
                     inner.next(); // Skip SELECT keyword
 
                     let distinct = inner
-                        .next().is_some_and(|token| token.as_rule() == Rule::distinct_keyword);
+                        .next()
+                        .is_some_and(|token| token.as_rule() == Rule::distinct_keyword);
 
                     if !distinct {
                         // If the next token is not DISTINCT, we need to go back to the beginning

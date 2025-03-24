@@ -18,7 +18,8 @@ impl ProjectionParser {
 
         // Check for 'distinct' keyword
         if inner
-            .peek().is_some_and(|p| p.as_rule() == Rule::distinct_keyword)
+            .peek()
+            .is_some_and(|p| p.as_rule() == Rule::distinct_keyword)
         {
             inner.next();
             distinct = true;

@@ -53,7 +53,7 @@ pub struct QueryObject {
 
     pub projection_agg: Vec<ProjectionColumn>, //projection aggregates.
                                                //Here we store ONLY the aggregates in the final projection, that we will need to generate the fold in case of a group by
-                                            }
+}
 
 impl Default for QueryObject {
     fn default() -> Self {
@@ -367,7 +367,7 @@ impl QueryObject {
                     stream.final_struct_name = format!("{}_clone", stream.final_struct_name);
                 }
                 stream.is_keyed = false;
-            stream.key_columns.clear();
+                stream.key_columns.clear();
             }
         }
 
@@ -386,13 +386,14 @@ impl QueryObject {
             .map(|stream| stream.source_table.clone())
             .collect::<Vec<_>>();
 
-        if first_time{
-        for table in tables_info_keys.iter() {
-            //if the table is not in the stream_tables, remove it from the tables_info object
-            if table != &main_table && !stream_tables.contains(table) {
-                temp_tables_info.shift_remove(table);
+        if first_time {
+            for table in tables_info_keys.iter() {
+                //if the table is not in the stream_tables, remove it from the tables_info object
+                if table != &main_table && !stream_tables.contains(table) {
+                    temp_tables_info.shift_remove(table);
+                }
             }
-        }}
+        }
 
         //we also update the table_to_csv object
         let mut temp_table_to_csv = self.table_to_csv.clone();
@@ -539,7 +540,7 @@ impl QueryObject {
 
                             //first we need to collect all the keys from all the streams
                             let mut keys = stream.key_columns.clone();
-                            for stream in all_streams.clone(){
+                            for stream in all_streams.clone() {
                                 keys.extend(self.get_stream(&stream).key_columns.clone());
                             }
 
@@ -595,7 +596,6 @@ impl QueryObject {
                                     self.tables_info.get(table).unwrap()
                                 } else {
                                     &stream.final_struct.clone()
-                                  
                                 };
 
                                 for (col_name, col_type) in struct_map {
