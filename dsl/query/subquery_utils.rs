@@ -2,7 +2,7 @@ use core::panic;
 use std::{io, sync::Arc};
 
 use crate::dsl::ir::ast_parser::ir_ast_structure::ComplexField;
-use crate::dsl::ir::{ir_ast_to_renoir, InCondition};
+use crate::dsl::ir::{self, ir_ast_to_renoir, InCondition};
 use crate::dsl::{
     ir::{
         literal::LiteralParser, Condition, FilterClause, FilterConditionType, GroupBaseCondition,
@@ -336,13 +336,15 @@ fn process_filter_condition(
                             let mut ir_literals = Vec::new();
                             if has_results {
                                 // convert the result to a vector of irLiterals
-                                let values: Vec<&str> = result
+                                let mut values: Vec<&str> = result
                                     .trim()
                                     .trim_start_matches('[')
                                     .trim_end_matches(']')
                                     .split(',')
                                     .map(|s| s.trim().trim_matches('"'))
                                     .collect();
+                                values.sort();
+                                values.dedup();
 
                                 for value in values {
                                     let literal = LiteralParser::parse(value).map_err(|e| {
@@ -466,13 +468,15 @@ fn process_group_condition(
                             let mut ir_literals = Vec::new();
                             if has_results {
                                 // convert the result to a vector of irLiterals
-                                let values: Vec<&str> = result
+                                let mut values: Vec<&str> = result
                                     .trim()
                                     .trim_start_matches('[')
                                     .trim_end_matches(']')
                                     .split(',')
                                     .map(|s| s.trim().trim_matches('"'))
                                     .collect();
+                                values.sort();
+                                values.dedup();
 
                                 for value in values {
                                     let literal = LiteralParser::parse(value).map_err(|e| {
