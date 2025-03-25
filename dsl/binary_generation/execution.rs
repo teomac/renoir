@@ -2,6 +2,7 @@ use super::creation;
 use std::fs;
 use std::io;
 use std::process::Command;
+use super::cleaning::preprocess_rust_code;
 
 pub fn binary_execution(
     output_path: &str,
@@ -11,6 +12,9 @@ pub fn binary_execution(
     if let Some(parent) = std::path::Path::new(output_path).parent() {
         fs::create_dir_all(parent)?;
     }
+
+    preprocess_rust_code(&rust_project.project_path)?;
+
 
     // Added: Format the code using cargo fmt
     let fmt_status = Command::new("cargo")
