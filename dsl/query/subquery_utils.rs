@@ -532,7 +532,7 @@ fn manage_nested_join(
 
     query_object
         .table_to_struct_name
-        .insert(alias.clone().unwrap(), stream.final_struct_name.to_string());
+        .insert(alias.clone().unwrap(), stream.final_struct_name.last().unwrap().to_string());
     query_object
         .alias_to_stream
         .insert(alias.clone().unwrap(), stream_name.to_string());
@@ -540,7 +540,7 @@ fn manage_nested_join(
         .tables_info
         .insert(alias.clone().unwrap(), stream.final_struct.clone());
     query_object.structs.insert(
-        stream.final_struct_name.clone(),
+        stream.final_struct_name.last().unwrap().clone(),
         stream.final_struct.clone(),
     );
 

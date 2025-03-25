@@ -219,7 +219,7 @@ pub fn generate_struct_declarations(query_object: &QueryObject) -> String {
             result.push_str(
                 "#[derive(Clone, Debug, Serialize, Deserialize, PartialOrd, PartialEq, Default)]\n",
             );
-            result.push_str(&format!("struct {} {{\n", stream.final_struct_name));
+            result.push_str(&format!("struct {} {{\n", stream.final_struct_name.last().unwrap()));
 
             // Add fields from stream
             for (field_name, field_type) in stream.final_struct.clone() {

@@ -106,7 +106,7 @@ impl QueryObject {
 
         stream
             .final_struct_name
-            .push_str(&format!("Struct_{}", stream_name.clone()).to_string());
+            .push(format!("Struct_{}", stream_name.clone()).to_string());
 
         self.streams.insert(stream_name.clone(), stream);
     }
@@ -310,9 +310,9 @@ impl QueryObject {
             stream.source_table = main_table.clone();
             //if stream.final_struct_name is empty, we have to set it to the result_column_types
             if stream.final_struct_name.is_empty() {
-                stream.final_struct_name = format!("Struct_{}", stream.id.clone());
+                stream.final_struct_name.push(format!("Struct_{}", stream.id.clone()));
             } else {
-                stream.final_struct_name = format!("{}_clone", stream.final_struct_name);
+                stream.final_struct_name.push(format!("{}_clone", stream.final_struct_name.last().unwrap()));
             }
             stream.is_keyed = false;
             stream.key_columns.clear();
@@ -362,9 +362,9 @@ impl QueryObject {
                 stream.source_table = join_table.clone();
                 //if stream.final_struct_name is empty, we have to set it to the result_column_types
                 if stream.final_struct_name.is_empty() {
-                    stream.final_struct_name = format!("Struct_{}", stream.id.clone());
+                    stream.final_struct_name.push(format!("Struct_{}", stream.id.clone()));
                 } else {
-                    stream.final_struct_name = format!("{}_clone", stream.final_struct_name);
+                    stream.final_struct_name.push(format!("{}_clone", stream.final_struct_name.last().unwrap()));
                 }
                 stream.is_keyed = false;
                 stream.key_columns.clear();

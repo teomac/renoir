@@ -356,7 +356,7 @@ pub fn create_map(
 
     let mut check_list = Vec::new();
 
-    result.push_str(&format!(".map(|x| {} {{\n", stream.final_struct_name));
+    result.push_str(&format!(".map(|x| {} {{\n", stream.final_struct_name.last().unwrap()));
 
     let is_single_acc = acc_info.value_positions.len() == 1;
 

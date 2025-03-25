@@ -13,7 +13,7 @@ pub struct StreamInfo {
     pub key_columns: Vec<ColumnRef>, // Key columns
     pub op_chain: Vec<String>, // Operator chain
     pub final_struct: IndexMap<String, String>, // Final structure of the stream
-    pub final_struct_name: String, // Name of the final structure
+    pub final_struct_name: Vec<String>, // Name of the final structure
     pub join_tree: Option<JoinTree>, // Join tree
     pub agg_position: IndexMap<AggregateFunction, String>, // Aggregate function → position mappings
 }
@@ -60,7 +60,7 @@ impl StreamInfo {
             key_columns: Vec::new(),
             op_chain: Vec::new(),
             final_struct: IndexMap::new(),
-            final_struct_name: String::new(),
+            final_struct_name: Vec::new(),
             join_tree: None,
             agg_position: IndexMap::new(),
         }
@@ -92,14 +92,6 @@ impl StreamInfo {
 
     pub fn source_equals(&self, other: &StreamInfo) -> bool {
         self.source_table == other.source_table && self.alias == other.alias
-    }
-
-    pub fn update_final_struct(&mut self, final_struct: IndexMap<String, String>) {
-        self.final_struct = final_struct;
-    }
-
-    pub fn update_final_struct_name(&mut self, final_struct_name: String) {
-        self.final_struct_name = final_struct_name;
     }
 
     pub fn get_access(&self) -> AccessPath {

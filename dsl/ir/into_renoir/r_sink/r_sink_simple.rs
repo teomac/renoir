@@ -12,7 +12,7 @@ pub fn create_simple_map(
     let mut all_streams = Vec::new();
 
     let main_stream = query_object.get_stream(stream_name);
-    let mut map_string = format!(".map(|x| {} {{ ", main_stream.final_struct_name);
+    let mut map_string = format!(".map(|x| {} {{ ", main_stream.final_struct_name.last().unwrap());
     //if it has a join tree, get all the streams involved in the join
     if main_stream.join_tree.is_some() {
         all_streams.extend(

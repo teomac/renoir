@@ -110,5 +110,81 @@ pub fn process_join(
 
     query_object.get_mut_stream(left_stream).join_tree = Some(join_tree);
 
+    let mut final_join_op = String::new();
+
+    match join_type {
+        JoinType::Left => {
+            let left_stream_info = query_object.get_stream(left_stream);
+            let right_stream_info = query_object.get_stream(right_stream);
+
+            final_join_op.push_str(&format!(
+                ".filter_map(|x| {{ if x{}.is_none() {{ 
+                    Some(({}, {}::default())) 
+                }} else {{ 
+                    Some(({}, x{}.unwrap())) 
+                }} }})",
+                right_stream_info.get_access().get_base_path(),
+                format!("x{}", left_stream_info.get_access().get_base_path()),
+                if right_stream_info.final_struct_name.len() > 1 {
+                    right_stream_info
+                        .final_struct_name
+                        .get(right_stream_info.final_struct_name.len() - 2)
+                        .unwrap().clone()
+                } else {
+                    format!("Struct_{}", right_stream_info.source_table)
+                },
+                format!("x{}", left_stream_info.get_access().get_base_path()),
+                right_stream_info.get_access().get_base_path(),
+            ));
+        }
+        JoinType::Outer => {
+            let left_stream_info = query_object.get_stream(left_stream);
+            let right_stream_info = query_object.get_stream(right_stream);
+
+            final_join_op.push_str(&format!(
+                ".filter_map(|x| {{ if x{}.is_none() || x{}.is_none() {{
+                    Some((
+                        if x{}.is_none() {{ {}::default() }} else {{ x{}.unwrap() }},
+                        if x{}.is_none() {{ {}::default() }} else {{ x{}.unwrap() }}
+                    ))
+                }} else {{ 
+                    Some((x{}.unwrap(), x{}.unwrap()))
+                }} }})",
+                left_stream_info.get_access().get_base_path(),
+                right_stream_info.get_access().get_base_path(),
+                left_stream_info.get_access().get_base_path(),
+                if left_stream_info.final_struct_name.len() > 1 {
+                    left_stream_info
+                        .final_struct_name
+                        .get(left_stream_info.final_struct_name.len() - 2)
+                        .unwrap().clone()
+                } else {
+                    format!("Struct_{}", left_stream_info.source_table)
+                },
+                left_stream_info.get_access().get_base_path(),
+                right_stream_info.get_access().get_base_path(),
+                if right_stream_info.final_struct_name.len() > 1 {
+                    right_stream_info
+                        .final_struct_name
+                        .get(right_stream_info.final_struct_name.len() - 2)
+                        .unwrap().clone()
+                } else {
+                    format!("Struct_{}", right_stream_info.source_table)
+                },
+                right_stream_info.get_access().get_base_path(),
+                left_stream_info.get_access().get_base_path(),
+                right_stream_info.get_access().get_base_path()
+            ));
+        }
+        JoinType::Inner => {
+            // Inner join doesn't need filter_map
+        }
+    }
+
+    if !final_join_op.is_empty() {
+        let temp = query_object.get_mut_stream(left_stream);
+        temp.insert_op(final_join_op);
+    }
+
     Ok(())
 }
