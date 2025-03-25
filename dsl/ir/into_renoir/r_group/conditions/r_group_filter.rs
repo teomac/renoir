@@ -55,6 +55,9 @@ fn process_filter_condition(
                     let left_type = query_object.get_complex_field_type(&comp.left_field);
                     let right_type = query_object.get_complex_field_type(&comp.right_field);
 
+                    println!("Left type: {}", left_type);
+                    println!("Right type: {}", right_type);
+
                     // Process left and right expressions
                     let left_expr = process_filter_field(
                         &comp.left_field,
@@ -112,13 +115,24 @@ fn process_filter_condition(
                         format!("{} {} {}", left_expr, operator, right_expr)
                     } else {
                         // Same types
-                        format!(
+                        if left_type == "i64" && right_type == "i64"{
+                            format!(
+                                "if {} {{({} as f64) {} ({} as f64)}} else {{ false }}",
+                                check_list.join(" && "),
+                                left_expr,
+                                operator,
+                                right_expr
+                            )
+
+                        }
+                        else{format!(
                             "if {} {{({}) {} ({})}} else {{ false }}",
                             check_list.join(" && "),
                             left_expr,
                             operator,
                             right_expr
-                        )
+                        )}
+                        
                     }
                 }
                 GroupBaseCondition::NullCheck(null_check) => {

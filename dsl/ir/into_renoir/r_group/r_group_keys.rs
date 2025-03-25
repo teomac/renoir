@@ -128,7 +128,10 @@ pub fn process_group_by(
                         acc_info.add_avg(agg.column.clone(), col_type);
                     } else if agg.function == AggregateType::Count {
                         acc_info.add_aggregate(agg_value, "usize".to_string());
-                    } else {
+                    } else if agg.function == AggregateType::Max || agg.function == AggregateType::Min {
+                        acc_info.add_aggregate(agg_value, "f64".to_string());
+                    }
+                    else {
                         acc_info.add_aggregate(agg_value, col_type);
                     }
                 }

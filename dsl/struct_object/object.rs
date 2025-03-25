@@ -256,7 +256,6 @@ impl QueryObject {
 
     //method to populate the QueryObject with the necessary information
     pub fn populate(mut self, ir_ast: &Arc<IrPlan>) -> Self {
-        let mut first_time = true;
         // empty result_col_types, projection_agg, has_join, order_by, limit, distinct
         self.result_column_types.clear();
         self.projection_agg.clear();
@@ -303,7 +302,6 @@ impl QueryObject {
                 &main_alias.clone().unwrap_or(String::new()),
             );
         } else {
-            first_time = false;
             //update the columns
             let stream = self.get_mut_stream(main_stream);
             //update source table
@@ -355,7 +353,6 @@ impl QueryObject {
                         .unwrap_or_else(|| panic!("Alias not found for table {}", &join_table)),
                 );
             } else {
-                first_time = false;
                 //update the columns
                 let stream = self.get_mut_stream(join_stream);
                 //update source table
@@ -374,32 +371,6 @@ impl QueryObject {
         self.streams.sort_unstable_keys();
 
         //////////////////////////////////////////////
-        //manipulate the tables_info object.
-        //if a table is not the main one and is not in the joined_tables, remove it from the tables_info object.
-        let tables_info_keys = self.get_all_table_names();
-        let mut temp_tables_info = self.tables_info.clone();
-
-        //now collect in a vec all the table_names from the streams
-        let stream_tables = self
-            .streams
-            .values()
-            .map(|stream| stream.source_table.clone())
-            .collect::<Vec<_>>();
-
-        if first_time {
-            for table in tables_info_keys.iter() {
-                //if the table is not in the stream_tables, remove it from the tables_info object
-                if table != &main_table && !stream_tables.contains(table) {
-                    temp_tables_info.shift_remove(table);
-                }
-            }
-        }
-
-
-        //now we update the table_to_csv object and the tables_info object
-
-        self.set_tables_info(temp_tables_info.clone());
-
         let all_tables = self.get_all_table_names();
 
         // Process paths
@@ -431,6 +402,7 @@ impl QueryObject {
             self.structs.insert(
                 format!("Struct_{}", name),
                 self.tables_info.get(name.as_str()).unwrap().clone(),
+         
             );
         }
 

@@ -114,36 +114,32 @@ pub fn process_join(
 
     match join_type {
         JoinType::Left => {
-            let left_stream_info = query_object.get_stream(left_stream);
             let right_stream_info = query_object.get_stream(right_stream);
 
             final_join_op.push_str(&format!(
-                ".filter_map(|x| {{ if x{}.is_none() {{ 
-                    Some(({}, {}::default())) 
+                ".filter_map(|x| {{ if x.1.is_none() {{ 
+                    Some((x.0, {}::default())) 
                 }} else {{ 
-                    Some(({}, x{}.unwrap())) 
+                    Some((x.0, x.1.unwrap())) 
                 }} }})",
-                right_stream_info.get_access().get_base_path(),
-                format!("x{}", left_stream_info.get_access().get_base_path()),
                 if right_stream_info.final_struct_name.len() > 1 {
                     right_stream_info
                         .final_struct_name
                         .get(right_stream_info.final_struct_name.len() - 2)
-                        .unwrap().clone()
+                        .unwrap()
+                        .clone()
                 } else {
                     format!("Struct_{}", right_stream_info.source_table)
                 },
-                format!("x{}", left_stream_info.get_access().get_base_path()),
-                right_stream_info.get_access().get_base_path(),
             ));
         }
         JoinType::Outer => {
             let left_stream_info = query_object.get_stream(left_stream);
             let right_stream_info = query_object.get_stream(right_stream);
-    
+
             // Determine if left side is from a previous join by checking join_tree
             let left_is_join = left_stream_info.join_tree.is_some();
-    
+
             let left_default = if left_is_join {
                 let struct_types = left_stream_info
                     .join_tree
@@ -164,13 +160,14 @@ pub fn process_join(
                         }
                     })
                     .collect::<Vec<String>>();
-                
-                format!("({}::default(), {}::default())", 
-                    struct_types[0], 
-                    struct_types[1]
+
+                format!(
+                    "({}::default(), {}::default())",
+                    struct_types[0], struct_types[1]
                 )
             } else {
-                format!("{}::default()", 
+                format!(
+                    "{}::default()",
                     if left_stream_info.final_struct_name.len() > 1 {
                         left_stream_info
                             .final_struct_name
@@ -182,22 +179,17 @@ pub fn process_join(
                     }
                 )
             };
-    
+
             final_join_op.push_str(&format!(
-                ".filter_map(|x| {{ if x.0.is_none() || x{}.is_none() {{
+                ".filter_map(|x| {{ if x.0.is_none() || x.1.is_none() {{
                     Some((
                         if x.0.is_none() {{ {} }} else {{ x.0.unwrap() }},
-                        if x{}.is_none() {{ {}::default() }} else {{ x{}.unwrap() }}
+                        if x.1.is_none() {{ {}::default() }} else {{ x.1.unwrap() }}
                     ))
                 }} else {{ 
-                    Some((x.0.unwrap(), x{}.unwrap()))
+                    Some((x.0.unwrap(), x.1.unwrap()))
                 }} }})",
-                //left_stream_info.get_access().get_base_path(),
-                right_stream_info.get_access().get_base_path(),
-                //left_stream_info.get_access().get_base_path(),
                 left_default,
-                //left_stream_info.get_access().get_base_path(),
-                right_stream_info.get_access().get_base_path(),
                 if right_stream_info.final_struct_name.len() > 1 {
                     right_stream_info
                         .final_struct_name
@@ -207,9 +199,6 @@ pub fn process_join(
                 } else {
                     format!("Struct_{}", right_stream_info.source_table)
                 },
-                right_stream_info.get_access().get_base_path(),
-                //left_stream_info.get_access().get_base_path(),
-                right_stream_info.get_access().get_base_path()
             ));
         }
         JoinType::Inner => {
