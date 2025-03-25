@@ -140,39 +140,75 @@ pub fn process_join(
         JoinType::Outer => {
             let left_stream_info = query_object.get_stream(left_stream);
             let right_stream_info = query_object.get_stream(right_stream);
-
+    
+            // Determine if left side is from a previous join by checking join_tree
+            let left_is_join = left_stream_info.join_tree.is_some();
+    
+            let left_default = if left_is_join {
+                let struct_types = left_stream_info
+                    .join_tree
+                    .as_ref()
+                    .unwrap()
+                    .get_involved_streams()
+                    .iter()
+                    .map(|stream| {
+                        let stream_info = query_object.get_stream(stream);
+                        if stream_info.final_struct_name.len() > 1 {
+                            stream_info
+                                .final_struct_name
+                                .get(stream_info.final_struct_name.len() - 2)
+                                .unwrap()
+                                .clone()
+                        } else {
+                            format!("Struct_{}", stream_info.source_table)
+                        }
+                    })
+                    .collect::<Vec<String>>();
+                
+                format!("({}::default(), {}::default())", 
+                    struct_types[0], 
+                    struct_types[1]
+                )
+            } else {
+                format!("{}::default()", 
+                    if left_stream_info.final_struct_name.len() > 1 {
+                        left_stream_info
+                            .final_struct_name
+                            .get(left_stream_info.final_struct_name.len() - 2)
+                            .unwrap()
+                            .clone()
+                    } else {
+                        format!("Struct_{}", left_stream_info.source_table)
+                    }
+                )
+            };
+    
             final_join_op.push_str(&format!(
-                ".filter_map(|x| {{ if x{}.is_none() || x{}.is_none() {{
+                ".filter_map(|x| {{ if x.0.is_none() || x{}.is_none() {{
                     Some((
-                        if x{}.is_none() {{ {}::default() }} else {{ x{}.unwrap() }},
+                        if x.0.is_none() {{ {} }} else {{ x.0.unwrap() }},
                         if x{}.is_none() {{ {}::default() }} else {{ x{}.unwrap() }}
                     ))
                 }} else {{ 
-                    Some((x{}.unwrap(), x{}.unwrap()))
+                    Some((x.0.unwrap(), x{}.unwrap()))
                 }} }})",
-                left_stream_info.get_access().get_base_path(),
+                //left_stream_info.get_access().get_base_path(),
                 right_stream_info.get_access().get_base_path(),
-                left_stream_info.get_access().get_base_path(),
-                if left_stream_info.final_struct_name.len() > 1 {
-                    left_stream_info
-                        .final_struct_name
-                        .get(left_stream_info.final_struct_name.len() - 2)
-                        .unwrap().clone()
-                } else {
-                    format!("Struct_{}", left_stream_info.source_table)
-                },
-                left_stream_info.get_access().get_base_path(),
+                //left_stream_info.get_access().get_base_path(),
+                left_default,
+                //left_stream_info.get_access().get_base_path(),
                 right_stream_info.get_access().get_base_path(),
                 if right_stream_info.final_struct_name.len() > 1 {
                     right_stream_info
                         .final_struct_name
                         .get(right_stream_info.final_struct_name.len() - 2)
-                        .unwrap().clone()
+                        .unwrap()
+                        .clone()
                 } else {
                     format!("Struct_{}", right_stream_info.source_table)
                 },
                 right_stream_info.get_access().get_base_path(),
-                left_stream_info.get_access().get_base_path(),
+                //left_stream_info.get_access().get_base_path(),
                 right_stream_info.get_access().get_base_path()
             ));
         }

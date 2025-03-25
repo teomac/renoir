@@ -395,16 +395,9 @@ impl QueryObject {
             }
         }
 
-        //we also update the table_to_csv object
-        let mut temp_table_to_csv = self.table_to_csv.clone();
-        for (table, _) in self.table_to_csv.iter() {
-            if !stream_tables.contains(table) {
-                temp_table_to_csv.shift_remove(table);
-            }
-        }
 
         //now we update the table_to_csv object and the tables_info object
-        self.set_table_to_csv(temp_table_to_csv.clone());
+
         self.set_tables_info(temp_tables_info.clone());
 
         let all_tables = self.get_all_table_names();
