@@ -135,18 +135,6 @@ pub fn process_group_by(
                 _ => panic!("Unexpected ProjectionColumn type in sink"),
             }
         }
-
-        // Generate operations using the collected information
-        if !acc_info.agg_positions.is_empty() {
-            group_string_fold.push_str(&create_fold_operation(
-                &acc_info,
-                stream_name,
-                &group_by_keys,
-                query_object,
-            ));
-        } else {
-            group_string_keys.push_str(&format!(".group_by(|x| ({}))", group_by_keys));
-        }
         group_string_condition.push_str(&create_filter_operation(
             condition,
             keys,
@@ -155,8 +143,21 @@ pub fn process_group_by(
         ));
     }
 
+     // Generate operations using the collected information
+     if !acc_info.agg_positions.is_empty() {
+        group_string_fold.push_str(&create_fold_operation(
+            &acc_info,
+            stream_name,
+            &group_by_keys,
+            query_object,
+        ));
+    } else {
+        group_string_keys.push_str(&format!(".group_by(|x| ({}))", group_by_keys));
+    }
+
     // Store the operation in the correct stream
     let stream = query_object.get_mut_stream(stream_name);
+    stream.is_keyed = true;
     if !group_string_keys.is_empty() {
         stream.insert_op(group_string_keys);
     } else {
