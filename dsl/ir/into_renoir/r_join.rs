@@ -92,24 +92,6 @@ pub fn process_join(
     let stream = query_object.get_mut_stream(left_stream);
     stream.insert_op(join_op);
 
-    // Create or update join tree
-    let join_tree = JoinTree::Join {
-        left: Box::new(match &query_object.get_stream(left_stream).join_tree {
-            Some(tree) => tree.clone(),
-            None => JoinTree::Leaf(left_stream.clone()),
-        }),
-        right: Box::new(match &query_object.get_stream(right_stream).join_tree {
-            Some(tree) => tree.clone(),
-            None => JoinTree::Leaf(right_stream.clone()),
-        }),
-        join_type: join_type.clone(),
-    };
-
-    // Store join tree and update access paths
-    join_tree.update_access_paths(query_object);
-
-    query_object.get_mut_stream(left_stream).join_tree = Some(join_tree);
-
     let mut final_join_op = String::new();
 
     match join_type {
@@ -117,10 +99,10 @@ pub fn process_join(
             let right_stream_info = query_object.get_stream(right_stream);
 
             final_join_op.push_str(&format!(
-                ".filter_map(|x| {{ if x.1.is_none() {{ 
-                    Some((x.0, {}::default())) 
-                }} else {{ 
-                    Some((x.0, x.1.unwrap())) 
+                ".filter_map(|x| {{ if x.1.is_none() {{
+                    Some((x.0, {}::default()))
+                }} else {{
+                    Some((x.0, x.1.unwrap()))
                 }} }})",
                 if right_stream_info.final_struct_name.len() > 1 {
                     right_stream_info
@@ -140,32 +122,19 @@ pub fn process_join(
             // Determine if left side is from a previous join by checking join_tree
             let left_is_join = left_stream_info.join_tree.is_some();
 
-            let left_default = if left_is_join {
-                let struct_types = left_stream_info
+            // Get the current nesting level and structure
+            let nesting_level = if left_is_join {
+                left_stream_info
                     .join_tree
                     .as_ref()
                     .unwrap()
-                    .get_involved_streams()
-                    .iter()
-                    .map(|stream| {
-                        let stream_info = query_object.get_stream(stream);
-                        if stream_info.final_struct_name.len() > 1 {
-                            stream_info
-                                .final_struct_name
-                                .get(stream_info.final_struct_name.len() - 2)
-                                .unwrap()
-                                .clone()
-                        } else {
-                            format!("Struct_{}", stream_info.source_table)
-                        }
-                    })
-                    .collect::<Vec<String>>();
-
-                format!(
-                    "({}::default(), {}::default())",
-                    struct_types[0], struct_types[1]
-                )
+                    .get_nesting_level()
             } else {
+                0
+            };
+
+            // Generate the left default expression based on nesting level
+            let left_default = if nesting_level == 0 {
                 format!(
                     "{}::default()",
                     if left_stream_info.final_struct_name.len() > 1 {
@@ -178,6 +147,15 @@ pub fn process_join(
                         format!("Struct_{}", left_stream_info.source_table)
                     }
                 )
+            } else if nesting_level == 1 {
+                format!(
+                    "({}, {})",
+                    format!("{}::default()", left_stream_info.get_initial_struct_name()),
+                    format!("{}::default()", left_stream_info.get_second_struct_name(query_object))
+                )
+            } else {
+                // For deeper nesting, we need to reconstruct the entire nested tuple
+                left_stream_info.generate_nested_default(&query_object)
             };
 
             final_join_op.push_str(&format!(
@@ -186,7 +164,7 @@ pub fn process_join(
                         if x.0.is_none() {{ {} }} else {{ x.0.unwrap() }},
                         if x.1.is_none() {{ {}::default() }} else {{ x.1.unwrap() }}
                     ))
-                }} else {{ 
+                }} else {{
                     Some((x.0.unwrap(), x.1.unwrap()))
                 }} }})",
                 left_default,
@@ -205,6 +183,24 @@ pub fn process_join(
             // Inner join doesn't need filter_map
         }
     }
+
+    // Create or update join tree
+    let join_tree = JoinTree::Join {
+        left: Box::new(match &query_object.get_stream(left_stream).join_tree {
+            Some(tree) => tree.clone(),
+            None => JoinTree::Leaf(left_stream.clone()),
+        }),
+        right: Box::new(match &query_object.get_stream(right_stream).join_tree {
+            Some(tree) => tree.clone(),
+            None => JoinTree::Leaf(right_stream.clone()),
+        }),
+        join_type: join_type.clone(),
+    };
+
+    // Store join tree and update access paths
+    join_tree.update_access_paths(query_object);
+
+    query_object.get_mut_stream(left_stream).join_tree = Some(join_tree);
 
     if !final_join_op.is_empty() {
         let temp = query_object.get_mut_stream(left_stream);

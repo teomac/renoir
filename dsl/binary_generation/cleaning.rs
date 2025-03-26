@@ -18,8 +18,6 @@ pub fn preprocess_rust_code(project_path: &PathBuf) -> io::Result<()> {
     // Write the cleaned content back
     fs::write(main_rs_path, filtered_content)?;
     
-    println!("Removed unused struct definitions from main.rs");
-    
     Ok(())
 }
 

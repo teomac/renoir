@@ -40,8 +40,13 @@ impl AccessPath {
         self.null_check_required
     }
 
-    pub fn update_base_path(&mut self, base_path: String) {
-        self.base_path = base_path;
+    pub fn update_base_path(&mut self, new_path: String) {
+        // Prepend .0 to the existing path if it exists
+        if !self.base_path.is_empty() {
+            self.base_path = format!(".0{}", self.base_path);
+        } else {
+            self.base_path = new_path;
+        }
     }
 }
 
@@ -70,18 +75,6 @@ impl StreamInfo {
         self.initial_columns = columns;
     }
 
-    pub fn update_access(&mut self, access: AccessPath) {
-        self.access = access;
-    }
-
-    pub fn update_keyed(&mut self, is_keyed: bool) {
-        self.is_keyed = is_keyed;
-    }
-
-    pub fn update_key_columns(&mut self, key_columns: Vec<ColumnRef>) {
-        self.key_columns = key_columns;
-    }
-
     pub fn insert_op(&mut self, op: String) {
         self.op_chain.push(op);
     }
@@ -106,12 +99,81 @@ impl StreamInfo {
         self.initial_columns.get(field).unwrap().clone()
     }
 
-    pub fn insert_agg_position(&mut self, agg: AggregateFunction, position: String) {
-        self.agg_position.insert(agg, position);
-    }
-
     pub fn update_agg_position(&mut self, agg: IndexMap<AggregateFunction, String>) {
         self.agg_position = agg;
+    }
+
+    pub fn get_initial_struct_name(&self) -> String {
+        if self.final_struct_name.len() > 1 {
+            self.final_struct_name.get(0).unwrap().clone()
+        } else {
+            format!("Struct_{}", self.source_table)
+        }
+    }
+
+    pub fn get_second_struct_name(&self, query_object: &QueryObject) -> String {
+        // Get the immediate right child stream from the join tree
+        if let Some(ref join_tree) = self.join_tree {
+            match join_tree {
+                JoinTree::Join { right, .. } => {
+                    match &**right {
+                        JoinTree::Leaf(stream_name) => {
+                            // Get the stream info for the right stream and return its final struct name
+                            let right_stream = query_object.get_stream(stream_name);
+                            if right_stream.final_struct_name.len() > 1 {
+                                right_stream.final_struct_name.get(right_stream.final_struct_name.len() - 2).unwrap().clone()
+                            } else {
+                               format!("Struct_{}", right_stream.source_table)
+                            }
+                           
+                        },
+                        _ => panic!("Unexpected join tree structure")
+                    }
+                },
+                _ => panic!("Expected a join tree")
+            }
+        } else {
+            // Fallback
+            format!("Struct_{}", self.source_table)
+        }
+    }
+
+    pub fn generate_nested_default(&self, query_object: &QueryObject) -> String {
+        if !self.join_tree.is_some() {
+            return format!("{}::default()", 
+                if self.final_struct_name.len() > 1 {
+                    self.final_struct_name.get(self.final_struct_name.len() - 2).unwrap().clone()
+                } else {
+                    format!("Struct_{}", self.source_table)
+                }
+            );
+        }
+    
+        let join_tree = self.join_tree.as_ref().unwrap();
+        
+        // Recursively build the nested default structure based on the actual join tree
+        fn build_default(tree: &JoinTree, query_object: &QueryObject) -> String {
+            match tree {
+                JoinTree::Leaf(stream_name) => {
+                    let stream = query_object.get_stream(stream_name);
+                    if stream.final_struct_name.len() > 1 {
+                        format!("{}::default()", 
+                            stream.final_struct_name.get(stream.final_struct_name.len() - 2).unwrap()
+                        )
+                    } else {
+                        format!("Struct_{}::default()", stream.source_table)
+                    }
+                },
+                JoinTree::Join { left, right, .. } => {
+                    let left_str = build_default(left, query_object);
+                    let right_str = build_default(right, query_object);
+                    format!("({}, {})", left_str, right_str)
+                }
+            }
+        }
+    
+    
+        build_default(join_tree, query_object)
     }
 }
 
@@ -191,6 +253,15 @@ impl JoinTree {
                         .access
                         .update_base_path(".1".to_string());
                 }
+            }
+        }
+    }
+
+    pub fn get_nesting_level(&self) -> usize {
+        match self {
+            JoinTree::Leaf(_) => 0,
+            JoinTree::Join { left, right, .. } => {
+                1 + left.get_nesting_level().max(right.get_nesting_level())
             }
         }
     }
