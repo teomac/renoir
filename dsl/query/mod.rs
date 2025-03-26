@@ -114,8 +114,18 @@ pub fn query_csv(
         ));
     }
 
+    let structs = query_object.structs.clone();
+    let streams = query_object.streams.clone();
+
+    //step 4.5: update fields
+    let fields = query_object.get_mut_fields();
+    fields.output_path = output_path.clone();
+    fields.fill(structs, streams);
+    fields.fill_main();
+
     // step 5: generate main.rs and update it in the Rust project
-    let main = create_template(&query_object, false);
+    //let main = create_template(&query_object, false);
+    let main = fields.main.clone();
     rust_project.update_main_rs(&main)?;
 
     // step 6: compile the binary

@@ -149,13 +149,13 @@ pub fn process_join(
                 )
             } else if nesting_level == 1 {
                 format!(
-                    "({}, {})",
-                    format!("{}::default()", left_stream_info.get_initial_struct_name()),
-                    format!("{}::default()", left_stream_info.get_second_struct_name(query_object))
+                    "({}::default(), {}::default())",
+                    left_stream_info.get_initial_struct_name(),
+                    left_stream_info.get_second_struct_name(query_object)
                 )
             } else {
                 // For deeper nesting, we need to reconstruct the entire nested tuple
-                left_stream_info.generate_nested_default(&query_object)
+                left_stream_info.generate_nested_default(query_object)
             };
 
             final_join_op.push_str(&format!(

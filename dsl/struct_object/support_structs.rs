@@ -105,7 +105,7 @@ impl StreamInfo {
 
     pub fn get_initial_struct_name(&self) -> String {
         if self.final_struct_name.len() > 1 {
-            self.final_struct_name.get(0).unwrap().clone()
+            self.final_struct_name.first().unwrap().clone()
         } else {
             format!("Struct_{}", self.source_table)
         }
@@ -139,7 +139,7 @@ impl StreamInfo {
     }
 
     pub fn generate_nested_default(&self, query_object: &QueryObject) -> String {
-        if !self.join_tree.is_some() {
+        if self.join_tree.is_none() {
             return format!("{}::default()", 
                 if self.final_struct_name.len() > 1 {
                     self.final_struct_name.get(self.final_struct_name.len() - 2).unwrap().clone()

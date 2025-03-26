@@ -1,8 +1,8 @@
 use super::support_structs::StreamInfo;
-use crate::dsl::ir::{
+use crate::dsl::{binary_generation::fields::Fields, ir::{
     ir_ast_structure::{AggregateType, ComplexField},
     ColumnRef, IrLiteral, IrPlan, ProjectionColumn,
-};
+}};
 use crate::dsl::struct_object::utils::check_column_validity;
 use core::panic;
 use indexmap::IndexMap;
@@ -25,6 +25,9 @@ pub struct QueryObject {
     pub has_join: bool,              // true if the query has a join
     pub output_path: String,         //output path
     pub ir_ast: Option<Arc<IrPlan>>, //ir ast
+
+    pub fields: Fields,
+
     pub result_column_types: IndexMap<String, String>, // key: result column name, value: data type
 
     //ex. SELECT power * total_km AS product FROM table1
@@ -74,6 +77,7 @@ impl QueryObject {
             result_column_types: IndexMap::new(),
             output_path: String::new(),
             ir_ast: None,
+            fields: Fields::new(),
             order_by_string: String::new(),
             limit_string: String::new(),
             projection_agg: Vec::new(),
@@ -161,6 +165,10 @@ impl QueryObject {
         self.streams
             .get_mut(stream_name)
             .unwrap_or_else(|| panic!("Stream {} does not exist.", stream_name))
+    }
+
+    pub fn get_mut_fields(&mut self) -> &mut Fields {
+        &mut self.fields
     }
 
     //method to check if a stream already exists

@@ -131,7 +131,7 @@ pub fn create_template(query_object: &QueryObject, is_subquery: bool) -> String 
         r#"
         #![allow(non_camel_case_types)]
         #![allow(unused_variables)]
-        use renoir::prelude::*;
+        use renoir::{{config::ConfigBuilder, prelude::*}};
         use serde::{{Deserialize, Serialize}};
         use serde_json;
         use std::fs;
@@ -141,7 +141,9 @@ pub fn create_template(query_object: &QueryObject, is_subquery: bool) -> String 
         {}
 
         fn main() {{
-            let ctx = StreamContext::new_local();
+            let config = ConfigBuilder::new_local(1).unwrap();
+
+            let ctx = StreamContext::new(config.clone());
 
             {}
             {}

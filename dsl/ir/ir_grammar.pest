@@ -135,7 +135,7 @@ column_list = {
 }
 
 column_item = {
-    (qualified_column | identifier | string | aggregate_expr | subquery | complex_op ) ~
+    (aggregate_expr | qualified_column | identifier | string | subquery | complex_op ) ~
     (as_keyword ~ identifier)?
 }
 

@@ -2,10 +2,10 @@ use regex::Regex;
 use std::collections::HashSet;
 use std::fs;
 use std::io;
-use std::path::PathBuf;
+use std::path::Path;
 
 /// Preprocesses the Rust code to remove unused struct definitions
-pub fn preprocess_rust_code(project_path: &PathBuf) -> io::Result<()> {
+pub fn preprocess_rust_code(project_path: &Path) -> io::Result<()> {
     let main_rs_path = project_path.join("src").join("main.rs");
     let content = fs::read_to_string(&main_rs_path)?;
     
@@ -55,6 +55,7 @@ fn identify_used_structs(content: &str) -> HashSet<String> {
     // Also check for any structs used in type definitions of used structs
     // This is a recursive relationship, so we'll iterate until no new structs are found
     let mut prev_size = 0;
+    let type_re = Regex::new(r": Option<([A-Za-z0-9_]+)>").unwrap();
     while prev_size != used_structs.len() {
         prev_size = used_structs.len();
         
@@ -66,9 +67,7 @@ fn identify_used_structs(content: &str) -> HashSet<String> {
                 // Find the end of the struct definition
                 if let Some(struct_def_end) = content[struct_def_pos..].find("\n}") {
                     let struct_def = &content[struct_def_pos..(struct_def_pos + struct_def_end + 2)];
-                    
                     // Look for other struct types in this definition
-                    let type_re = Regex::new(r": Option<([A-Za-z0-9_]+)>").unwrap();
                     for cap in type_re.captures_iter(struct_def) {
                         if let Some(m) = cap.get(1) {
                             let type_name = m.as_str();

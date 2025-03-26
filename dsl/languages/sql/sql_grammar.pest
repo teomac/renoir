@@ -86,13 +86,15 @@ where_term = {
 where_expr = { where_keyword ~ where_conditions }
 
 column_item = {
+    aggregate_expr |
     table_column | 
     variable | 
     string_literal |
-    subquery_expr |
+    
     select_expr | 
-    aggregate_expr
+    subquery_expr 
 }
+
 column_with_alias = { column_item ~ (as_keyword ~ variable)? }
 column_list = { (column_with_alias ) ~ ("," ~ (column_with_alias ))* }
 select_expr = { 
@@ -100,7 +102,7 @@ select_expr = {
     (symbol ~ (parenthesized_expr | column_operand))*
 }
 
-column_operand = {subquery_expr | aggregate_expr | table_column | variable | number }
+column_operand = {aggregate_expr | table_column | variable | number | subquery_expr}
 parenthesized_expr = { l_paren ~ select_expr ~ r_paren }
 
 // Having clause
