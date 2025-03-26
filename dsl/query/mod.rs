@@ -2,7 +2,6 @@ use indexmap::IndexMap;
 use subquery_utils::manage_subqueries;
 
 use super::binary_generation::creation;
-use crate::dsl::binary_generation::creation::*;
 use crate::dsl::binary_generation::execution::*;
 use crate::dsl::csv_utils::csv_parsers::*;
 use crate::dsl::ir::*;
@@ -160,9 +159,23 @@ pub fn subquery_csv(
         panic!("Error converting IR AST to Renoir");
     }
 
-    // step 5: generate main.rs
-    let main = create_template(&query_object, true);
+    let structs = query_object.structs.clone();
+    let streams = query_object.streams.clone();
+    let result_columns = query_object.result_column_types.clone();
+
+    //step 4.5: update fields
+    let fields = query_object.get_mut_fields();
+    fields.output_path = output_path.clone();
+    fields.fill(structs, streams);
+    fields.fill_subquery_main(result_columns);
+
+    // step 5: generate main.rs and update it in the Rust project
+    let main = fields.main.clone();
     let _ = rust_project.update_main_rs(&main);
+
+    fields.main.clear();
+    fields.streams.clear();
+    fields.structs.clear();
 
     // step 6: compile the binary and return the output as string
     let output = binary_execution(output_path, rust_project);
