@@ -46,8 +46,13 @@ pub fn manage_subqueries(
                                 query_object.table_to_csv.clone(),
                             );
                             // Convert result to StringLiteral with the same alias
+                            // Clean up result, remove square brackets
+                            result = result.trim().trim_start_matches('[').trim_end_matches(']').to_string();
+
                             // Clean up the result string - remove quotes and whitespace/newlines
                             result = result.trim().trim_matches('"').to_string();
+
+                            println!("Result: {}", result);
 
                             ProjectionColumn::StringLiteral(result, alias.clone())
                         }
