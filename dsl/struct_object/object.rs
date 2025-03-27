@@ -1,12 +1,15 @@
 use super::support_structs::StreamInfo;
-use crate::dsl::{binary_generation::fields::Fields, ir::{
-    ir_ast_structure::{AggregateType, ComplexField},
-    ColumnRef, IrLiteral, IrPlan, ProjectionColumn,
-}};
 use crate::dsl::struct_object::utils::check_column_validity;
+use crate::dsl::{
+    binary_generation::fields::Fields,
+    ir::{
+        ir_ast_structure::{AggregateType, ComplexField},
+        ColumnRef, IrLiteral, IrPlan, ProjectionColumn,
+    },
+};
 use core::panic;
 use indexmap::IndexMap;
-use std::sync::Arc;
+use std::{result, sync::Arc};
 
 #[derive(Clone, Debug)]
 pub struct QueryObject {
@@ -316,9 +319,14 @@ impl QueryObject {
             stream.source_table = main_table.clone();
             //if stream.final_struct_name is empty, we have to set it to the result_column_types
             if stream.final_struct_name.is_empty() {
-                stream.final_struct_name.push(format!("Struct_{}", stream.id.clone()));
+                stream
+                    .final_struct_name
+                    .push(format!("Struct_{}", stream.id.clone()));
             } else {
-                stream.final_struct_name.push(format!("{}_clone", stream.final_struct_name.last().unwrap()));
+                stream.final_struct_name.push(format!(
+                    "{}_clone",
+                    stream.final_struct_name.last().unwrap()
+                ));
             }
             stream.is_keyed = false;
             stream.key_columns.clear();
@@ -367,9 +375,14 @@ impl QueryObject {
                 stream.source_table = join_table.clone();
                 //if stream.final_struct_name is empty, we have to set it to the result_column_types
                 if stream.final_struct_name.is_empty() {
-                    stream.final_struct_name.push(format!("Struct_{}", stream.id.clone()));
+                    stream
+                        .final_struct_name
+                        .push(format!("Struct_{}", stream.id.clone()));
                 } else {
-                    stream.final_struct_name.push(format!("{}_clone", stream.final_struct_name.last().unwrap()));
+                    stream.final_struct_name.push(format!(
+                        "{}_clone",
+                        stream.final_struct_name.last().unwrap()
+                    ));
                 }
                 stream.is_keyed = false;
                 stream.key_columns.clear();
@@ -410,7 +423,6 @@ impl QueryObject {
             self.structs.insert(
                 format!("Struct_{}", name),
                 self.tables_info.get(name.as_str()).unwrap().clone(),
-         
             );
         }
 
@@ -668,9 +680,12 @@ impl QueryObject {
 
                     self.result_column_types.insert(col_name, result_type);
                 }
-                ProjectionColumn::StringLiteral(value, alias) => {
-                    let col_name =
-                        self.get_unique_name(alias.as_ref().unwrap_or(value), &mut used_names);
+                ProjectionColumn::StringLiteral(_, alias)
+                | ProjectionColumn::SubqueryVec(_, alias) => {
+                    let col_name = self.get_unique_name(
+                        alias.as_ref().unwrap_or(&format!("{}_result", stream_name).to_string()),
+                        &mut used_names,
+                    );
                     self.result_column_types
                         .insert(col_name, "String".to_string());
                 }

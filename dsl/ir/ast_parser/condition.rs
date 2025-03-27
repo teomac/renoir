@@ -279,6 +279,7 @@ impl ConditionParser {
                     aggregate: None,
                     nested_expr: Some(Box::new((result, op.as_str().to_string(), next_field))),
                     subquery: None,
+                    subquery_vec: None,
                 };
             }
         }
@@ -313,6 +314,7 @@ impl ConditionParser {
                     aggregate: None,
                     nested_expr: None,
                     subquery: Some(subquery),
+                    subquery_vec: None,
                 })
             }
             _ => Err(Box::new(IrParseError::InvalidInput(format!(
@@ -335,6 +337,7 @@ impl ConditionParser {
                 aggregate: None,
                 nested_expr: None,
                 subquery: None,
+                subquery_vec: None,
             }),
             Rule::qualified_column => {
                 let column_ref = Self::parse_qualified_column(operand)?;
@@ -344,6 +347,7 @@ impl ConditionParser {
                     aggregate: None,
                     nested_expr: None,
                     subquery: None,
+                    subquery_vec: None,
                 })
             }
             Rule::identifier => Ok(ComplexField {
@@ -355,6 +359,7 @@ impl ConditionParser {
                 aggregate: None,
                 nested_expr: None,
                 subquery: None,
+                subquery_vec: None,
             }),
             Rule::aggregate_expr => {
                 let agg_func = Self::parse_aggregate_function(operand)?;
@@ -364,6 +369,7 @@ impl ConditionParser {
                     aggregate: Some(agg_func),
                     nested_expr: None,
                     subquery: None,
+                    subquery_vec: None,
                 })
             }
             _ => Err(Box::new(IrParseError::InvalidInput(format!(
@@ -502,6 +508,7 @@ impl ConditionParser {
                     aggregate: None,
                     nested_expr: None,
                     subquery: None,
+                    subquery_vec: None,
                 })
             }
             Rule::identifier => Ok(ComplexField {
@@ -513,6 +520,7 @@ impl ConditionParser {
                 aggregate: None,
                 nested_expr: None,
                 subquery: None,
+                subquery_vec: None,
             }),
             Rule::number => {
                 let num = LiteralParser::parse(pair.as_str())
@@ -523,6 +531,7 @@ impl ConditionParser {
                     aggregate: None,
                     nested_expr: None,
                     subquery: None,
+                    subquery_vec: None,
                 })
             }
             Rule::subquery => {
@@ -533,6 +542,7 @@ impl ConditionParser {
                     aggregate: None,
                     nested_expr: None,
                     subquery: Some(subquery),
+                    subquery_vec: None,
                 })
             }
             _ => Err(Box::new(IrParseError::InvalidInput(format!(

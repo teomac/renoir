@@ -356,7 +356,7 @@ pub fn create_map(
 
     let mut check_list = Vec::new();
 
-    result.push_str(&format!(".map(|x| {} {{\n", stream.final_struct_name.last().unwrap()));
+    result.push_str(&format!(".map(move |x| {} {{\n", stream.final_struct_name.last().unwrap()));
 
     let is_single_acc = acc_info.value_positions.len() == 1;
 
@@ -494,6 +494,9 @@ pub fn create_map(
             }
             ProjectionColumn::StringLiteral(value, _) => {
                 format!("Some(\"{}\".to_string())", value)
+            }
+            ProjectionColumn::SubqueryVec(result , _) => {
+                format!("Some({}.first().unwrap().to_string().clone())", result)
             }
             _ => panic!("Invalid projection clause"),
         };

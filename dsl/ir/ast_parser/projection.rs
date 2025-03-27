@@ -225,6 +225,7 @@ impl ProjectionParser {
                 aggregate: None,
                 nested_expr: Some(Box::new((left_field, op, right_field))),
                 subquery: None,
+                subquery_vec: None,
             };
         }
 
@@ -284,6 +285,7 @@ impl ProjectionParser {
                 aggregate: None,
                 nested_expr: None,
                 subquery: None,
+                subquery_vec: None,
             }),
             Rule::qualified_column => Ok(ComplexField {
                 column_ref: Some(Self::parse_column_ref(operand)?),
@@ -291,6 +293,7 @@ impl ProjectionParser {
                 aggregate: None,
                 nested_expr: None,
                 subquery: None,
+                subquery_vec: None,
             }),
             Rule::identifier => Ok(ComplexField {
                 column_ref: Some(ColumnRef {
@@ -301,6 +304,7 @@ impl ProjectionParser {
                 aggregate: None,
                 nested_expr: None,
                 subquery: None,
+                subquery_vec: None,
             }),
             Rule::aggregate_expr => Ok(ComplexField {
                 column_ref: None,
@@ -308,6 +312,7 @@ impl ProjectionParser {
                 aggregate: Some(Self::parse_aggregate_function(operand)?),
                 nested_expr: None,
                 subquery: None,
+                subquery_vec: None,
             }),
             Rule::subquery => Ok(ComplexField {
                 column_ref: None,
@@ -315,6 +320,7 @@ impl ProjectionParser {
                 aggregate: None,
                 nested_expr: None,
                 subquery: Some(IrParser::parse_subquery(operand)?),
+                subquery_vec: None,
             }),
             _ => Err(Box::new(IrParseError::InvalidInput(format!(
                 "Invalid operand: {:?}",

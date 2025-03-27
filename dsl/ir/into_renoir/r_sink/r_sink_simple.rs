@@ -12,7 +12,7 @@ pub fn create_simple_map(
     let mut all_streams = Vec::new();
 
     let main_stream = query_object.get_stream(stream_name);
-    let mut map_string = format!(".map(|x| {} {{ ", main_stream.final_struct_name.last().unwrap());
+    let mut map_string = format!(".map(move |x| {} {{ ", main_stream.final_struct_name.last().unwrap());
     //if it has a join tree, get all the streams involved in the join
     if main_stream.join_tree.is_some() {
         all_streams.extend(
@@ -151,6 +151,17 @@ pub fn create_simple_map(
                             .unwrap()
                     });
                     format!("{}: Some(\"{}\".to_string())", field_name, value)
+                }
+                ProjectionColumn::SubqueryVec(result , alias) => {
+                    let field_name = alias.as_ref().unwrap_or_else(|| {
+                        query_object
+                            .result_column_types
+                            .iter()
+                            .nth(i) // Use i from enumerate instead
+                            .map(|(name, _)| name)
+                            .unwrap()
+                    });
+                    format!("{}: Some({}.first().unwrap().to_string().clone())", field_name, result)
                 }
                 _ => unreachable!("Should not have aggregates in simple map"),
             }

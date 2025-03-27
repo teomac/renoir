@@ -295,6 +295,7 @@ impl GroupParser {
                     aggregate: None,
                     nested_expr: Some(Box::new((result, op.as_str().to_string(), next_field))),
                     subquery: None,
+                    subquery_vec: None,
                 };
             }
         }
@@ -323,6 +324,7 @@ impl GroupParser {
                 aggregate: None,
                 nested_expr: None,
                 subquery: Some(IrParser::parse_subquery(inner)?),
+                subquery_vec: None,
             }),
             _ => Err(Box::new(IrParseError::InvalidInput(format!(
                 "Unexpected token in arithmetic term: {:?}",
@@ -344,6 +346,7 @@ impl GroupParser {
                 aggregate: None,
                 nested_expr: None,
                 subquery: None,
+                subquery_vec: None,
             }),
             Rule::qualified_column => Ok(ComplexField {
                 column_ref: Some(Self::parse_column_ref(operand)?),
@@ -351,6 +354,7 @@ impl GroupParser {
                 aggregate: None,
                 nested_expr: None,
                 subquery: None,
+                subquery_vec: None,
             }),
             Rule::identifier => Ok(ComplexField {
                 column_ref: Some(ColumnRef {
@@ -361,6 +365,7 @@ impl GroupParser {
                 aggregate: None,
                 nested_expr: None,
                 subquery: None,
+                subquery_vec: None,
             }),
             Rule::aggregate_expr => {
                 let agg_func = Self::parse_aggregate_function(operand)?;
@@ -370,6 +375,7 @@ impl GroupParser {
                     aggregate: Some(agg_func),
                     nested_expr: None,
                     subquery: None,
+                    subquery_vec: None,
                 })
             }
             Rule::subquery => Ok(ComplexField {
@@ -378,6 +384,7 @@ impl GroupParser {
                 aggregate: None,
                 nested_expr: None,
                 subquery: Some(IrParser::parse_subquery(operand)?),
+                subquery_vec: None,
             }),
             _ => Err(Box::new(IrParseError::InvalidInput(format!(
                 "Invalid operand type: {:?}",
@@ -507,6 +514,7 @@ impl GroupParser {
                     aggregate: None,
                     nested_expr: None,
                     subquery: None,
+                    subquery_vec: None,
                 })
             }
             Rule::identifier => Ok(ComplexField {
@@ -518,6 +526,7 @@ impl GroupParser {
                 aggregate: None,
                 nested_expr: None,
                 subquery: None,
+                subquery_vec: None,
             }),
             Rule::subquery => Ok(ComplexField {
                 column_ref: None,
@@ -525,6 +534,7 @@ impl GroupParser {
                 aggregate: None,
                 nested_expr: None,
                 subquery: Some(IrParser::parse_subquery(pair)?),
+                subquery_vec: None,
             }),
             _ => Err(Box::new(IrParseError::InvalidInput(format!(
                 "Expected field reference, got {:?}",

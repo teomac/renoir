@@ -1,7 +1,9 @@
 use indexmap::IndexMap;
+use subquery_utils_new::manage_subqueries_new;
 use subquery_utils::manage_subqueries;
 
 use super::binary_generation::creation;
+use super::binary_generation::fields::Fields;
 use crate::dsl::binary_generation::execution::*;
 use crate::dsl::csv_utils::csv_parsers::*;
 use crate::dsl::ir::*;
@@ -12,6 +14,7 @@ use std::io;
 use std::sync::Arc;
 
 pub mod subquery_utils;
+pub mod subquery_utils_new;
 
 /// Executes a query on CSV files and generates a Rust binary to process the query.
 ///
@@ -98,7 +101,8 @@ pub fn query_csv(
     let ir_query = sql_to_ir(query_str);
     let mut ir_ast = query_ir_to_ast(&ir_query);
     // step 3.5: manage subqueries
-    ir_ast = manage_subqueries(&ir_ast, &output_path.to_string(), &mut query_object).unwrap();
+    //ir_ast = manage_subqueries(&ir_ast, &output_path.to_string(), &mut query_object).unwrap();
+    ir_ast = manage_subqueries_new(&ir_ast, &output_path.to_string(), &mut query_object).unwrap();
 
     query_object = query_object.populate(&ir_ast);
     //println!("Ir AST: {:?}", query_object.ir_ast);
@@ -184,4 +188,49 @@ pub fn subquery_csv(
     } else {
         panic!("Error compiling the binary");
     }
+}
+
+pub fn subquery_csv_new(
+    ir_ast: Arc<IrPlan>,
+    output_path: &String,
+    tables_info: IndexMap<String, IndexMap<String, String>>,
+    tables_csv: IndexMap<String, String>,
+    is_single_result: bool,
+) -> (String, String, Fields) {
+    // step 1: create query_object
+    let mut query_object = QueryObject::new();
+    query_object.set_output_path(output_path);
+    query_object.set_tables_info(tables_info);
+    query_object.set_table_to_csv(tables_csv);
+
+    // step2: -----------
+
+    // step 3: check if there is a subquery
+    let ir_ast = manage_subqueries_new(&ir_ast, &output_path.to_string(), &mut query_object).unwrap();
+
+    // step 3.5: populate query_object with ir_ast
+    query_object = query_object.populate(&ir_ast);
+    query_object.collect_projection_aggregates(&ir_ast);
+
+    // step 4: convert Ir AST to renoir string
+    let result = ir_ast_to_renoir(&mut query_object);
+    if result.is_err() {
+        panic!("Error converting IR AST to Renoir");
+    }
+
+    let structs = query_object.structs.clone();
+    let streams = query_object.streams.clone();
+    let result_columns = query_object.result_column_types.clone();
+
+    //step 4.5: update fields
+    let fields = query_object.get_mut_fields();
+    fields.output_path = output_path.clone();
+    fields.fill(structs, streams);
+
+    let (subquery_result, subquery_result_type) = fields.collect_subquery_result(is_single_result);
+
+    // step 5: ----------------
+
+    // return the name of the result vec
+    (subquery_result, subquery_result_type, fields.clone())
 }

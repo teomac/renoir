@@ -1,6 +1,6 @@
 use indexmap::IndexMap;
 use crate::dsl::struct_object::support_structs::StreamInfo;
-use std::fmt::Write;
+use std::{collections::HashSet, fmt::Write};
 
 
 #[derive(Debug, Clone)]
@@ -51,6 +51,7 @@ impl Fields {
             "#);
 
         let mut streams = self.streams.clone();
+        streams.sort_unstable_keys();
         streams.reverse();
 
         for (i, (stream_name, stream)) in streams.iter().enumerate() {
@@ -164,7 +165,7 @@ impl Fields {
                     if let Some(values) = result {{
                 let values: Vec<_> = values
                     .iter()
-                    .filter_map(|record| record.{}.clone())
+                    .filter_map(|record| record{}.{}.clone())
                     .collect();
                 
                 if !values.is_empty() {{
@@ -176,6 +177,7 @@ impl Fields {
                 println!("");
                     }}"#,
                         stream_name,
+                        stream.access.base_path,
                         result_column_types.first().unwrap().0,
                     )
                     
@@ -186,6 +188,48 @@ impl Fields {
         }
 
         self.main.push_str("}");
+    }
+
+    pub fn collect_subquery_result(
+        &mut self,
+        is_single_result: bool,
+    ) -> (String, String) {
+        let stream_name = self.streams.last().unwrap().0.clone();
+        let new_result = format!("{}_result", stream_name);
+        let stream = self.streams.get_mut(&stream_name).unwrap();
+
+        let len_check = format!(r#"if {}.len() != 1 {{
+            panic!("Subquery did not return a single value");
+        }}"#, new_result);
+
+        stream.op_chain.push(format!(
+            r#"
+                .collect_vec();
+        ctx.execute_blocking();
+        let result = {}.get();
+        let mut {} = vec![];
+        if let Some(values) = result {{
+            let values: Vec<_> = values
+                .iter()
+                .filter_map(|record| record{}.{}.clone())
+                .collect();
+
+            {} = values;
+        }}
+
+        {}
+
+        let ctx = StreamContext::new(config.clone());  
+            "#,
+            stream_name,
+            new_result,
+            stream.access.base_path,
+            stream.final_struct.first().unwrap().0,
+            new_result,
+            if is_single_result {len_check} else {String::new()}
+        ));
+        
+        (new_result, stream.final_struct.first().unwrap().1.clone())
     }
 
 }

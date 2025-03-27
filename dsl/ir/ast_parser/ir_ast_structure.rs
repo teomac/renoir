@@ -109,6 +109,7 @@ pub enum ProjectionColumn {
     ComplexValue(ComplexField, Option<String>),
     StringLiteral(String, Option<String>),
     Subquery(Arc<IrPlan>, Option<String>),
+    SubqueryVec(String, Option<String>), // name of the result vec and optional alias
 }
 
 #[derive(Debug, PartialEq, Clone, Eq, Hash)]
@@ -139,6 +140,7 @@ pub struct ComplexField {
     pub aggregate: Option<AggregateFunction>,
     pub nested_expr: Option<Box<(ComplexField, String, ComplexField)>>,
     pub subquery: Option<Arc<IrPlan>>,
+    pub subquery_vec: Option<(String, String)>, // <name, type>
 }
 
 #[derive(Debug, PartialEq, Clone)]

@@ -4,18 +4,18 @@ pub struct SqlToIr;
 
 // index is used to propagate the stream number to the subqueries
 impl SqlToIr {
-    pub fn convert(sql_ast: &SqlAST, index: usize) -> String {
+    pub fn convert(sql_ast: &SqlAST, index: &mut usize, nested_index: usize) -> String {
         let mut parts = Vec::new();
 
         // FROM clause
-        let from_str = Self::from_clause_to_string(&sql_ast.from, index);
+        let from_str = Self::from_clause_to_string(&sql_ast.from, index, nested_index);
         parts.push(from_str);
 
         // WHERE clause (if present)
         if let Some(where_clause) = &sql_ast.filter {
             parts.push(format!(
                 "where {}",
-                Self::where_clause_to_string(where_clause, index)
+                Self::where_clause_to_string(where_clause, index, nested_index)
             ));
         }
 
@@ -23,7 +23,7 @@ impl SqlToIr {
         if let Some(group_by_clause) = &sql_ast.group_by {
             parts.push(format!(
                 "group {}",
-                Self::group_by_clause_to_string(group_by_clause, index)
+                Self::group_by_clause_to_string(group_by_clause, index, nested_index)
             ));
         }
 
@@ -53,16 +53,16 @@ impl SqlToIr {
                     }
                     SelectType::ComplexValue(left, op, right) => format!(
                         "{} {} {}",
-                        Self::convert_complex_field(left, index),
+                        Self::convert_complex_field(left, index, nested_index),
                         op,
-                        Self::convert_complex_field(right, index)
+                        Self::convert_complex_field(right, index, nested_index)
                     )
                     .trim()
                     .to_string(),
                     SelectType::StringLiteral(val) => format!("'{}'", val),
                     // Handle subquery in SELECT
                     SelectType::Subquery(subquery) => {
-                        format!("({})", Self::convert(subquery, index))
+                        format!("({})", Self::convert(subquery, index, nested_index + 1))
                     }
                 };
 
@@ -97,29 +97,48 @@ impl SqlToIr {
     }
 
     // Helper method to handle the FROM clause with subqueries
-    fn from_clause_to_string(from_clause: &FromClause, index: usize) -> String {
-        let mut stream_index = index;
+    fn from_clause_to_string(
+        from_clause: &FromClause,
+        stream_index: &mut usize,
+        nested_index: usize,
+    ) -> String {
         let mut from_str = match &from_clause.scan {
             FromSource::Table(scan_clause) => match &scan_clause.alias {
                 Some(alias) => format!(
-                    "from {} as {} in stream{}",
-                    scan_clause.variable, alias, stream_index
+                    "from {} as {} in {}{}",
+                    scan_clause.variable,
+                    alias,
+                    Self::get_stream_prefix(nested_index),
+                    stream_index
                 ),
-                None => format!("from {} in stream{}", scan_clause.variable, stream_index),
+                None => format!(
+                    "from {} in {}{}",
+                    scan_clause.variable,
+                    Self::get_stream_prefix(nested_index),
+                    stream_index
+                ),
             },
             FromSource::Subquery(subquery, alias) => {
-                let subquery_str = Self::convert(subquery, stream_index);
+                let subquery_str = Self::convert(subquery, stream_index, nested_index + 1);
                 match alias {
                     Some(alias_name) => format!(
-                        "from ({}) as {} in stream{}",
-                        subquery_str, alias_name, stream_index
+                        "from ({}) as {} in {}{}",
+                        subquery_str,
+                        alias_name,
+                        Self::get_stream_prefix(nested_index),
+                        stream_index
                     ),
-                    None => format!("from ({}) in stream{}", subquery_str, stream_index),
+                    None => format!(
+                        "from ({}) in {}{}",
+                        subquery_str,
+                        Self::get_stream_prefix(nested_index),
+                        stream_index
+                    ),
                 }
             }
         };
 
-        stream_index += 1;
+        *stream_index += 1;
 
         // iterate over join(s)
         if let Some(joins) = &from_clause.joins {
@@ -130,7 +149,7 @@ impl SqlToIr {
                         None => scan_clause.variable.clone(),
                     },
                     FromSource::Subquery(subquery, alias) => {
-                        let subquery_str = Self::convert(subquery, stream_index);
+                        let subquery_str = Self::convert(subquery, stream_index, nested_index + 1);
                         match alias {
                             Some(alias_name) => format!("({}) as {}", subquery_str, alias_name),
                             None => format!("({})", subquery_str),
@@ -153,14 +172,15 @@ impl SqlToIr {
                 };
 
                 from_str.push_str(&format!(
-                    " {}join {} in stream{} on {}",
+                    " {}join {} in {}{} on {}",
                     join_type_str,
                     join_source,
+                    Self::get_stream_prefix(nested_index),
                     stream_index,
                     conditions.join(" && ")
                 ));
 
-                stream_index += 1;
+                *stream_index += 1;
             }
         }
 
@@ -168,12 +188,16 @@ impl SqlToIr {
     }
 
     // Converts a WHERE clause from the SQL AST to its equivalent IR string representation.
-    fn where_clause_to_string(clause: &WhereClause, index: usize) -> String {
+    fn where_clause_to_string(
+        clause: &WhereClause,
+        index: &mut usize,
+        nested_index: usize,
+    ) -> String {
         match clause {
             WhereClause::Base(base_condition) => match base_condition {
                 WhereBaseCondition::Comparison(cond) => {
-                    let left = Self::convert_where_field(&cond.left_field, index);
-                    let right = Self::convert_where_field(&cond.right_field, index);
+                    let left = Self::convert_where_field(&cond.left_field, index, nested_index);
+                    let right = Self::convert_where_field(&cond.right_field, index, nested_index);
 
                     let op = match cond.operator {
                         ComparisonOp::Equal => "==",
@@ -187,7 +211,7 @@ impl SqlToIr {
                     format!("{} {} {}", left, op, right)
                 }
                 WhereBaseCondition::NullCheck(null_cond) => {
-                    let field = Self::convert_where_field(&null_cond.field, index);
+                    let field = Self::convert_where_field(&null_cond.field, index, nested_index);
                     let op = match null_cond.operator {
                         NullOp::IsNull => "is null",
                         NullOp::IsNotNull => "is not null",
@@ -195,7 +219,7 @@ impl SqlToIr {
                     format!("{} {}", field, op)
                 }
                 WhereBaseCondition::Exists(subquery, negated) => {
-                    let subquery_str = Self::convert(subquery, index);
+                    let subquery_str = Self::convert(subquery, index, nested_index + 1);
                     if *negated {
                         format!("not exists({})", subquery_str)
                     } else {
@@ -204,7 +228,7 @@ impl SqlToIr {
                 }
                 WhereBaseCondition::In(column, subquery, negated) => {
                     let column_str = column.to_string();
-                    let subquery_str = Self::convert(subquery, index);
+                    let subquery_str = Self::convert(subquery, index, nested_index + 1);
                     if *negated {
                         format!("{} not in ({})", column_str, subquery_str)
                     } else {
@@ -236,15 +260,21 @@ impl SqlToIr {
                 );
 
                 let left_str = if left_needs_parens {
-                    format!("({})", Self::where_clause_to_string(left, index))
+                    format!(
+                        "({})",
+                        Self::where_clause_to_string(left, index, nested_index)
+                    )
                 } else {
-                    Self::where_clause_to_string(left, index)
+                    Self::where_clause_to_string(left, index, nested_index)
                 };
 
                 let right_str = if right_needs_parens {
-                    format!("({})", Self::where_clause_to_string(right, index))
+                    format!(
+                        "({})",
+                        Self::where_clause_to_string(right, index, nested_index)
+                    )
                 } else {
-                    Self::where_clause_to_string(right, index)
+                    Self::where_clause_to_string(right, index, nested_index)
                 };
 
                 format!("{} {} {}", left_str, op_str, right_str)
@@ -253,14 +283,21 @@ impl SqlToIr {
     }
 
     /// Converts a WhereField to its string representation in IR format.
-    fn convert_where_field(field: &WhereField, index: usize) -> String {
+    fn convert_where_field(
+        field: &WhereField,
+        index: &mut usize,
+        nested_index: usize,
+    ) -> String {
         if let Some(ref arithmetic) = field.arithmetic {
             match arithmetic {
                 ArithmeticExpr::BinaryOp(_left, _op, _right) => {
                     // Add parentheses around binary operations
-                    format!("({})", Self::arithmetic_expr_to_string(arithmetic, index))
+                    format!(
+                        "({})",
+                        Self::arithmetic_expr_to_string(arithmetic, index, nested_index)
+                    )
                 }
-                _ => Self::arithmetic_expr_to_string(arithmetic, index),
+                _ => Self::arithmetic_expr_to_string(arithmetic, index, nested_index),
             }
         } else if let Some(ref column) = field.column {
             column.to_string()
@@ -272,14 +309,18 @@ impl SqlToIr {
                 SqlLiteral::Boolean(val) => val.to_string(),
             }
         } else if let Some(ref subquery) = field.subquery {
-            format!("({})", Self::convert(subquery, index))
+            format!("({})", Self::convert(subquery, index, nested_index + 1))
         } else {
             String::new()
         }
     }
 
     /// Converts an arithmetic expression to its string representation in IR format.
-    fn arithmetic_expr_to_string(expr: &ArithmeticExpr, index: usize) -> String {
+    fn arithmetic_expr_to_string(
+        expr: &ArithmeticExpr,
+        index: &mut usize,
+        nested_index: usize,
+    ) -> String {
         match expr {
             ArithmeticExpr::Column(col_ref) => col_ref.to_string(),
             ArithmeticExpr::Literal(lit) => match lit {
@@ -299,19 +340,23 @@ impl SqlToIr {
                 format!("{}({})", agg, col_ref)
             }
             ArithmeticExpr::BinaryOp(left, op, right) => {
-                let left_str = Self::arithmetic_expr_to_string(left, index);
-                let right_str = Self::arithmetic_expr_to_string(right, index);
+                let left_str = Self::arithmetic_expr_to_string(left, index, nested_index);
+                let right_str = Self::arithmetic_expr_to_string(right, index, nested_index);
                 format!("{} {} {}", left_str, op, right_str)
             }
             // Handle subquery in arithmetic expression
             ArithmeticExpr::Subquery(subquery) => {
-                format!("({})", Self::convert(subquery, index))
+                format!("({})", Self::convert(subquery, index, nested_index + 1))
             }
         }
     }
 
     // Updated group_by_clause_to_string to handle new having structure
-    fn group_by_clause_to_string(clause: &GroupByClause, index: usize) -> String {
+    fn group_by_clause_to_string(
+        clause: &GroupByClause,
+        index: &mut usize,
+        nested_index: usize,
+    ) -> String {
         let mut group_by_str = String::new();
 
         // Handle group by columns
@@ -326,7 +371,7 @@ impl SqlToIr {
         // Add having clause if present
         if let Some(having) = &clause.having {
             group_by_str.push_str(" {");
-            group_by_str.push_str(&Self::having_clause_to_string(having, index));
+            group_by_str.push_str(&Self::having_clause_to_string(having, index, nested_index));
             group_by_str.push('}');
         }
 
@@ -334,12 +379,16 @@ impl SqlToIr {
     }
 
     // Updated method to handle the recursive having clause structure with subqueries
-    fn having_clause_to_string(clause: &HavingClause, index: usize) -> String {
+    fn having_clause_to_string(
+        clause: &HavingClause,
+        index: &mut usize,
+        nested_index: usize,
+    ) -> String {
         match clause {
             HavingClause::Base(base_condition) => match base_condition {
                 HavingBaseCondition::Comparison(cond) => {
                     let left = if let Some(ref arithmetic) = cond.left_field.arithmetic {
-                        Self::arithmetic_expr_to_string(arithmetic, index)
+                        Self::arithmetic_expr_to_string(arithmetic, index, nested_index)
                     } else if cond.left_field.column.is_some() {
                         cond.left_field.column.as_ref().unwrap().to_string()
                     } else if cond.left_field.aggregate.is_some() {
@@ -356,7 +405,7 @@ impl SqlToIr {
                             cond.left_field.aggregate.as_ref().unwrap().1
                         )
                     } else if let Some(ref subquery) = cond.left_field.subquery {
-                        format!("({})", Self::convert(subquery, index))
+                        format!("({})", Self::convert(subquery, index, nested_index + 1))
                     } else {
                         match &cond.left_field.value {
                             Some(SqlLiteral::Float(val)) => format!("{:.2}", val),
@@ -377,7 +426,7 @@ impl SqlToIr {
                     };
 
                     let right = if let Some(ref arithmetic) = cond.right_field.arithmetic {
-                        Self::arithmetic_expr_to_string(arithmetic, index)
+                        Self::arithmetic_expr_to_string(arithmetic, index, nested_index)
                     } else if cond.right_field.column.is_some() {
                         cond.right_field.column.as_ref().unwrap().to_string()
                     } else if cond.right_field.aggregate.is_some() {
@@ -394,7 +443,7 @@ impl SqlToIr {
                             cond.right_field.aggregate.as_ref().unwrap().1
                         )
                     } else if let Some(ref subquery) = cond.right_field.subquery {
-                        format!("({})", Self::convert(subquery, index))
+                        format!("({})", Self::convert(subquery, index, nested_index + 1))
                     } else {
                         match &cond.right_field.value {
                             Some(SqlLiteral::Float(val)) => format!("{:.2}", val),
@@ -409,11 +458,11 @@ impl SqlToIr {
                 }
                 HavingBaseCondition::NullCheck(null_cond) => {
                     let field = if let Some(ref arithmetic) = null_cond.field.arithmetic {
-                        Self::arithmetic_expr_to_string(arithmetic, index)
+                        Self::arithmetic_expr_to_string(arithmetic, index, nested_index)
                     } else if let Some(ref column) = null_cond.field.column {
                         column.to_string()
                     } else if let Some(ref subquery) = null_cond.field.subquery {
-                        format!("({})", Self::convert(subquery, index))
+                        format!("({})", Self::convert(subquery, index, nested_index + 1))
                     } else {
                         String::new()
                     };
@@ -424,7 +473,7 @@ impl SqlToIr {
                     }
                 }
                 HavingBaseCondition::Exists(subquery, negated) => {
-                    let subquery_str = Self::convert(subquery, index);
+                    let subquery_str = Self::convert(subquery, index, nested_index + 1);
                     if *negated {
                         format!("not exists({})", subquery_str)
                     } else {
@@ -433,7 +482,7 @@ impl SqlToIr {
                 }
                 HavingBaseCondition::In(column, subquery, negated) => {
                     let column_str = column.to_string();
-                    let subquery_str = Self::convert(subquery, index);
+                    let subquery_str = Self::convert(subquery, index, nested_index + 1);
                     if *negated {
                         format!("{} not in ({})", column_str, subquery_str)
                     } else {
@@ -465,15 +514,21 @@ impl SqlToIr {
                 );
 
                 let left_str = if left_needs_parens {
-                    format!("({})", Self::having_clause_to_string(left, index))
+                    format!(
+                        "({})",
+                        Self::having_clause_to_string(left, index, nested_index)
+                    )
                 } else {
-                    Self::having_clause_to_string(left, index)
+                    Self::having_clause_to_string(left, index, nested_index)
                 };
 
                 let right_str = if right_needs_parens {
-                    format!("({})", Self::having_clause_to_string(right, index))
+                    format!(
+                        "({})",
+                        Self::having_clause_to_string(right, index, nested_index)
+                    )
                 } else {
-                    Self::having_clause_to_string(right, index)
+                    Self::having_clause_to_string(right, index, nested_index)
                 };
 
                 format!("{} {} {}", left_str, op_str, right_str)
@@ -502,15 +557,19 @@ impl SqlToIr {
     }
 
     //function used to convert complex field to string - updated to handle subqueries
-    fn convert_complex_field(field: &ComplexField, index: usize) -> String {
+    fn convert_complex_field(
+        field: &ComplexField,
+        index: &mut usize,
+        nested_index: usize,
+    ) -> String {
         if let Some(ref nested) = field.nested_expr {
             // Handle nested expression
             let (left_field, op, right_field) = &**nested;
             return format!(
                 "({} {} {})",
-                Self::convert_complex_field(left_field, index),
+                Self::convert_complex_field(left_field, index, nested_index),
                 op,
-                Self::convert_complex_field(right_field, index)
+                Self::convert_complex_field(right_field, index, nested_index)
             );
         }
 
@@ -533,9 +592,18 @@ impl SqlToIr {
             };
             format!("{}({})", agg, col_ref)
         } else if let Some(ref subquery) = field.subquery {
-            format!("({})", Self::convert(subquery, index))
+            format!("({})", Self::convert(subquery, index, nested_index + 1))
         } else {
             String::new()
+        }
+    }
+
+    fn get_stream_prefix(index: usize) -> String {
+        match index {
+            0 => "stream".to_string(),
+            1 => "substream".to_string(),
+            2 => "subsubstream".to_string(),
+            n => format!("sub{}stream", "sub".repeat(n)),
         }
     }
 }
