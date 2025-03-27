@@ -192,7 +192,7 @@ fn process_complex_field(
             let processed_subquery = manage_subqueries_new(subquery, output_path, query_object)?;
 
             // Execute the subquery to get result
-            let (result, result_type, _) = subquery_csv_new(
+            let (result, result_type, fields) = subquery_csv_new(
                 processed_subquery,
                 output_path,
                 query_object.tables_info.clone(),
@@ -200,7 +200,8 @@ fn process_complex_field(
                 true
             );
 
-
+            let temp_fields = query_object.get_mut_fields();
+            temp_fields.fill(fields.structs.clone(), fields.streams.clone());
 
 
             // Return new ComplexField with just the literal

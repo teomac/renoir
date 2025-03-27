@@ -1,6 +1,6 @@
 use indexmap::IndexMap;
 use crate::dsl::struct_object::support_structs::StreamInfo;
-use std::{collections::HashSet, fmt::Write};
+use std::fmt::Write;
 
 
 #[derive(Debug, Clone)]

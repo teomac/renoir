@@ -414,6 +414,12 @@ pub fn process_complex_field(
                 panic!("Column ref should have been handled earlier");
             }
         }
+    } else if let Some((ref result, ref result_type)) = field.subquery_vec {
+        if result_type == "String" {
+            format!("{}.first().unwrap().to_string().clone()", result)
+        } else {
+            format!("{}.first().unwrap().clone()", result)
+        }
     } else {
         panic!("Invalid ComplexField - no valid content");
     }

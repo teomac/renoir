@@ -9,7 +9,7 @@ use crate::dsl::{
 };
 use core::panic;
 use indexmap::IndexMap;
-use std::{result, sync::Arc};
+use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 pub struct QueryObject {
@@ -770,6 +770,8 @@ impl QueryObject {
                 AggregateType::Avg => "f64".to_string(),
                 _ => self.get_type(&agg.column),
             }
+        } else if let Some((_, ref result_type)) = field.subquery_vec{
+            result_type.to_string()
         } else {
             panic!("Invalid complex field - no valid content")
         }
