@@ -220,7 +220,7 @@ pub fn subquery_csv_new(
 
     let structs = query_object.structs.clone();
     let streams = query_object.streams.clone();
-    let result_columns = query_object.result_column_types.clone();
+    let _result_columns = query_object.result_column_types.clone();
 
     //step 4.5: update fields
     let fields = query_object.get_mut_fields();

@@ -15,7 +15,7 @@ pub fn create_filter_operation(
     acc_info: &GroupAccumulatorInfo,
 ) -> String {
     let mut filter_str = String::new();
-    filter_str.push_str(".filter(|x| ");
+    filter_str.push_str(".filter(move |x| ");
 
     // Process the conditions recursively
     filter_str.push_str(&process_filter_condition(
@@ -285,6 +285,11 @@ fn process_filter_condition(
                     panic!("Exists condition should be already parsed")
                 }
                 GroupBaseCondition::Boolean(boolean) => boolean.to_string(),
+                GroupBaseCondition::ExistsVec(vec, negated ) => {
+                    format!(" {}{}.is_empty()", 
+                    if *negated { "" } else { "!" },
+                     vec)
+                }
             }
         }
         GroupClause::Expression { left, op, right } => {

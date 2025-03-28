@@ -320,6 +320,9 @@ fn process_filter_condition(
                 FilterConditionType::Boolean(boolean) => {
                     Ok(FilterClause::Base(FilterConditionType::Boolean(*boolean)))
                 }
+                FilterConditionType::ExistsVec(vec, negated ) =>{
+                    Ok(FilterClause::Base(FilterConditionType::ExistsVec(vec.clone(), *negated)))
+                }
                 FilterConditionType::In(in_condition) => {
                     match in_condition {
                         InCondition::InSubquery {
@@ -451,6 +454,9 @@ fn process_group_condition(
                 }
                 GroupBaseCondition::Boolean(boolean) => {
                     Ok(GroupClause::Base(GroupBaseCondition::Boolean(*boolean)))
+                }
+                GroupBaseCondition::ExistsVec(vec, negated) => {
+                    Ok(GroupClause::Base(GroupBaseCondition::ExistsVec(vec.clone(), *negated)))
                 }
                 GroupBaseCondition::In(in_condition) => {
                     match in_condition {

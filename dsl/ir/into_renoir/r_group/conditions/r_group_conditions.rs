@@ -43,6 +43,7 @@ pub fn parse_group_conditions(
                 GroupBaseCondition::In(..) => (),
                 GroupBaseCondition::Exists(_, _) => (),
                 GroupBaseCondition::Boolean(_) => (),
+                GroupBaseCondition::ExistsVec(_, _) => (),
             }
         }
         GroupClause::Expression { left, op: _, right } => {

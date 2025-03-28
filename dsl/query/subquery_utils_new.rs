@@ -18,8 +18,6 @@ pub fn manage_subqueries_new(
     output_path: &String,
     query_object: &mut QueryObject,
 ) -> io::Result<Arc<IrPlan>> {
-
-
     match &**ir_ast {
         IrPlan::Project {
             input,
@@ -34,27 +32,24 @@ pub fn manage_subqueries_new(
                 .iter()
                 .map(|col| {
                     match col {
-                        ProjectionColumn::Subquery(subquery, alias ) => {
+                        ProjectionColumn::Subquery(subquery, alias) => {
                             // Recursively process nested subqueries within this subquery
                             let processed_subquery =
                                 manage_subqueries_new(subquery, output_path, query_object)
                                     .expect("Failed to process nested subquery");
 
-                            let (result, result_type, fields) = subquery_csv_new(
+                            let (result, _, fields) = subquery_csv_new(
                                 processed_subquery,
                                 output_path,
                                 query_object.tables_info.clone(),
                                 query_object.table_to_csv.clone(),
-                                true
+                                true,
                             );
 
                             let temp_fields = query_object.get_mut_fields();
                             temp_fields.fill(fields.structs.clone(), fields.streams.clone());
 
-
-
                             ProjectionColumn::SubqueryVec(result, alias.clone())
-
                         }
                         // Add handling for complex values that might contain subqueries
                         ProjectionColumn::ComplexValue(complex_field, alias) => {
@@ -197,12 +192,11 @@ fn process_complex_field(
                 output_path,
                 query_object.tables_info.clone(),
                 query_object.table_to_csv.clone(),
-                true
+                true,
             );
 
             let temp_fields = query_object.get_mut_fields();
             temp_fields.fill(fields.structs.clone(), fields.streams.clone());
-
 
             // Return new ComplexField with just the literal
             Ok(ComplexField {
@@ -279,28 +273,25 @@ fn process_filter_condition(
                         manage_subqueries_new(exists_subquery, output_path, query_object)?;
 
                     // Execute the subquery
-                    let result = subquery_csv(
+                    let (result, _,  fields) = subquery_csv_new(
                         processed_subquery,
                         output_path,
                         query_object.tables_info.clone(),
                         query_object.table_to_csv.clone(),
+                        false
                     );
 
-                    // Check if subquery returned any results
-                    let has_results = result.trim() != "[]";
-                    let bool_result = if *is_negated {
-                        !has_results
-                    } else {
-                        has_results
-                    };
+                    let temp_fields = query_object.get_mut_fields();
+                    temp_fields.fill(fields.structs.clone(), fields.streams.clone());
 
-                    Ok(FilterClause::Base(FilterConditionType::Boolean(
-                        bool_result,
-                    )))
+                    Ok(FilterClause::Base(FilterConditionType::ExistsVec(result.clone(), *is_negated)))
                 }
                 FilterConditionType::Boolean(boolean) => {
                     Ok(FilterClause::Base(FilterConditionType::Boolean(*boolean)))
                 }
+                FilterConditionType::ExistsVec(vec, negated) => Ok(FilterClause::Base(
+                    FilterConditionType::ExistsVec(vec.clone(), *negated),
+                )),
                 FilterConditionType::In(in_condition) => {
                     match in_condition {
                         InCondition::InSubquery {
@@ -410,28 +401,31 @@ fn process_group_condition(
                 }
                 GroupBaseCondition::Exists(ir_plan, is_negated) => {
                     // Process the subquery
-                    let processed_subquery = manage_subqueries_new(ir_plan, output_path, query_object)?;
+                    let processed_subquery =
+                        manage_subqueries_new(ir_plan, output_path, query_object)?;
 
                     // Execute the subquery
-                    let result = subquery_csv(
+                    let (result, _, fields) = subquery_csv_new(
                         processed_subquery,
                         output_path,
                         query_object.tables_info.clone(),
                         query_object.table_to_csv.clone(),
+                        false
                     );
 
-                    // Check if subquery returned any results
-                    let has_results = !result.trim().is_empty();
-                    let bool_result = if *is_negated {
-                        !has_results
-                    } else {
-                        has_results
-                    };
+                    let temp_fields = query_object.get_mut_fields();
+                    temp_fields.fill(fields.structs.clone(), fields.streams.clone());
 
-                    Ok(GroupClause::Base(GroupBaseCondition::Boolean(bool_result)))
+                   Ok(GroupClause::Base(GroupBaseCondition::ExistsVec(result.clone(), *is_negated)))
                 }
                 GroupBaseCondition::Boolean(boolean) => {
                     Ok(GroupClause::Base(GroupBaseCondition::Boolean(*boolean)))
+                }
+                GroupBaseCondition::ExistsVec(vec, negated) => {
+                    Ok(GroupClause::Base(GroupBaseCondition::ExistsVec(
+                        vec.clone(),
+                        *negated,
+                    )))
                 }
                 GroupBaseCondition::In(in_condition) => {
                     match in_condition {
@@ -506,8 +500,9 @@ fn manage_nested_join(
     query_object: &mut QueryObject,
 ) -> Arc<IrPlan> {
     // process all the subqueries in the nested joins
-    let processed_input = manage_subqueries_new(input, &query_object.output_path.clone(), query_object)
-        .expect("Failed to process nested join subqueries");
+    let processed_input =
+        manage_subqueries_new(input, &query_object.output_path.clone(), query_object)
+            .expect("Failed to process nested join subqueries");
 
     let mut object = query_object.clone().populate(&processed_input);
     let _ = ir_ast_to_renoir(&mut object);
@@ -518,9 +513,10 @@ fn manage_nested_join(
         .streams
         .insert(stream_name.clone(), stream.clone());
 
-    query_object
-        .table_to_struct_name
-        .insert(alias.clone().unwrap(), stream.final_struct_name.last().unwrap().to_string());
+    query_object.table_to_struct_name.insert(
+        alias.clone().unwrap(),
+        stream.final_struct_name.last().unwrap().to_string(),
+    );
     query_object
         .alias_to_stream
         .insert(alias.clone().unwrap(), stream_name.to_string());
@@ -536,5 +532,3 @@ fn manage_nested_join(
         table_name: alias.clone().unwrap(),
     })
 }
-
-

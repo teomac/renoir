@@ -68,6 +68,7 @@ pub enum FilterConditionType {
     In(InCondition),
     Exists(Arc<IrPlan>, bool), // true if is negated
     Boolean(bool),
+    ExistsVec(String, bool) // (vector name, true if negated)
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -87,6 +88,7 @@ pub enum GroupBaseCondition {
     In(InCondition),
     Exists(Arc<IrPlan>, bool), // true if is negated
     Boolean(bool),
+    ExistsVec(String, bool) // (vector name, true if negated)
 }
 
 #[derive(Debug, PartialEq, Clone)]

@@ -17,7 +17,7 @@ pub fn process_filter_clause(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let filter_string = process_filter(clause, query_object);
 
-    let final_string = format!(".filter(|x| {})", filter_string);
+    let final_string = format!(".filter(move |x| {})", filter_string);
 
     let stream = query_object.get_mut_stream(stream_name);
     stream.insert_op(final_string);
@@ -301,6 +301,11 @@ fn process_condition(condition: &FilterConditionType, query_object: &QueryObject
         },
         FilterConditionType::Exists(_, _) => panic!("Exists condition should be already parsed"),
         FilterConditionType::Boolean(boolean) => boolean.to_string(),
+        FilterConditionType::ExistsVec(vec, bool ) => { 
+            format!(" {}{}.is_empty()", 
+            if *bool { "" } else { "!" },
+             vec)
+        }
     }
 }
 

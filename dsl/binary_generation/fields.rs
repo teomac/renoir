@@ -187,7 +187,7 @@ impl Fields {
 
         }
 
-        self.main.push_str("}");
+        self.main.push('}');
     }
 
     pub fn collect_subquery_result(
