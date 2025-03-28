@@ -192,6 +192,12 @@ pub enum InCondition {
         subquery: Arc<IrPlan>,
         negated: bool,
     },
+    InVec {
+        field: ColumnRef,
+        vector_name: String,
+        vector_type: String,
+        negated: bool,
+    },
 }
 
 #[derive(Debug, PartialEq, Clone)]

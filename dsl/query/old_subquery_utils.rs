@@ -11,9 +11,9 @@ use crate::dsl::{
     struct_object::object::QueryObject,
 };
 
-use super::{subquery_csv, subquery_csv_new};
+use super::old_subquery_csv;
 
-pub fn manage_subqueries_new(
+pub fn old_manage_subqueries(
     ir_ast: &Arc<IrPlan>,
     output_path: &String,
     query_object: &mut QueryObject,
@@ -25,7 +25,7 @@ pub fn manage_subqueries_new(
             distinct,
         } => {
             // First recursively process any subqueries in the input
-            let processed_input = manage_subqueries_new(input, output_path, query_object)?;
+            let processed_input = old_manage_subqueries(input, output_path, query_object)?;
 
             // Process columns to find and replace subqueries
             let processed_columns = columns
@@ -35,21 +35,26 @@ pub fn manage_subqueries_new(
                         ProjectionColumn::Subquery(subquery, alias) => {
                             // Recursively process nested subqueries within this subquery
                             let processed_subquery =
-                                manage_subqueries_new(subquery, output_path, query_object)
+                                old_manage_subqueries(subquery, output_path, query_object)
                                     .expect("Failed to process nested subquery");
 
-                            let (result, _, fields) = subquery_csv_new(
+                            // Execute the processed subquery to get its result
+                            let mut result = old_subquery_csv(
                                 processed_subquery,
                                 output_path,
                                 query_object.tables_info.clone(),
                                 query_object.table_to_csv.clone(),
-                                true,
                             );
+                            // Convert result to StringLiteral with the same alias
+                            // Clean up result, remove square brackets
+                            result = result.trim().trim_start_matches('[').trim_end_matches(']').to_string();
 
-                            let temp_fields = query_object.get_mut_fields();
-                            temp_fields.fill(fields.structs.clone(), fields.streams.clone());
+                            // Clean up the result string - remove quotes and whitespace/newlines
+                            result = result.trim().trim_matches('"').to_string();
 
-                            ProjectionColumn::SubqueryVec(result, alias.clone())
+                            println!("Result: {}", result);
+
+                            ProjectionColumn::StringLiteral(result, alias.clone())
                         }
                         // Add handling for complex values that might contain subqueries
                         ProjectionColumn::ComplexValue(complex_field, alias) => {
@@ -76,7 +81,7 @@ pub fn manage_subqueries_new(
         // Recursively process other node types
         IrPlan::Filter { input, predicate } => {
             // Process input first
-            let processed_input = manage_subqueries_new(input, output_path, query_object)?;
+            let processed_input = old_manage_subqueries(input, output_path, query_object)?;
 
             // Process the predicate to handle any subqueries
             let processed_predicate =
@@ -92,7 +97,7 @@ pub fn manage_subqueries_new(
             keys,
             group_condition,
         } => {
-            let processed_input = manage_subqueries_new(input, output_path, query_object)?;
+            let processed_input = old_manage_subqueries(input, output_path, query_object)?;
 
             // Process the group condition if it exists
             let processed_condition = if let Some(condition) = group_condition {
@@ -117,8 +122,8 @@ pub fn manage_subqueries_new(
             condition,
             join_type,
         } => {
-            let processed_left = manage_subqueries_new(left, output_path, query_object)?;
-            let processed_right = manage_subqueries_new(right, output_path, query_object)?;
+            let processed_left = old_manage_subqueries(left, output_path, query_object)?;
+            let processed_right = old_manage_subqueries(right, output_path, query_object)?;
             Ok(Arc::new(IrPlan::Join {
                 left: processed_left,
                 right: processed_right,
@@ -127,7 +132,7 @@ pub fn manage_subqueries_new(
             }))
         }
         IrPlan::OrderBy { input, items } => {
-            let processed_input = manage_subqueries_new(input, output_path, query_object)?;
+            let processed_input = old_manage_subqueries(input, output_path, query_object)?;
             Ok(Arc::new(IrPlan::OrderBy {
                 input: processed_input,
                 items: items.clone(),
@@ -138,7 +143,7 @@ pub fn manage_subqueries_new(
             limit,
             offset,
         } => {
-            let processed_input = manage_subqueries_new(input, output_path, query_object)?;
+            let processed_input = old_manage_subqueries(input, output_path, query_object)?;
             Ok(Arc::new(IrPlan::Limit {
                 input: processed_input,
                 limit: *limit,
@@ -184,28 +189,48 @@ fn process_complex_field(
             ..
         } => {
             // Process the subquery itself first in case it contains nested subqueries
-            let processed_subquery = manage_subqueries_new(subquery, output_path, query_object)?;
+            let processed_subquery = old_manage_subqueries(subquery, output_path, query_object)?;
 
             // Execute the subquery to get result
-            let (result, result_type, fields) = subquery_csv_new(
+            let result = old_subquery_csv(
                 processed_subquery,
                 output_path,
                 query_object.tables_info.clone(),
                 query_object.table_to_csv.clone(),
-                true,
             );
 
-            let temp_fields = query_object.get_mut_fields();
-            temp_fields.fill(fields.structs.clone(), fields.streams.clone());
+            // Parse the result vector
+            let values: Vec<&str> = result
+                .trim()
+                .trim_start_matches('[')
+                .trim_end_matches(']')
+                .split(',')
+                .map(|s| s.trim().trim_matches('"'))
+                .collect();
+
+            // Validate that subquery returns exactly one value
+            if values.len() > 1 {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Subquery must return exactly one value when used in SELECT clause",
+                ));
+            }
+
+            // Get the single value or empty string if no results
+            let result_str = values.first().copied().unwrap_or("").to_string();
+
+            // Convert the result string to appropriate IrLiteral
+            let literal = LiteralParser::parse(&result_str)
+                .map_err(|e| io::Error::new(io::ErrorKind::Other, e.to_string()))?;
 
             // Return new ComplexField with just the literal
             Ok(ComplexField {
                 column_ref: None,
-                literal: None,
+                literal: Some(literal),
                 aggregate: None,
                 nested_expr: None,
                 subquery: None,
-                subquery_vec: Some((result, result_type)),
+                subquery_vec: None,
             })
         }
         ComplexField {
@@ -270,28 +295,34 @@ fn process_filter_condition(
                 FilterConditionType::Exists(exists_subquery, is_negated) => {
                     // Process the nested subqueries first
                     let processed_subquery =
-                        manage_subqueries_new(exists_subquery, output_path, query_object)?;
+                        old_manage_subqueries(exists_subquery, output_path, query_object)?;
 
                     // Execute the subquery
-                    let (result, _,  fields) = subquery_csv_new(
+                    let result = old_subquery_csv(
                         processed_subquery,
                         output_path,
                         query_object.tables_info.clone(),
                         query_object.table_to_csv.clone(),
-                        false
                     );
 
-                    let temp_fields = query_object.get_mut_fields();
-                    temp_fields.fill(fields.structs.clone(), fields.streams.clone());
+                    // Check if subquery returned any results
+                    let has_results = result.trim() != "[]";
+                    let bool_result = if *is_negated {
+                        !has_results
+                    } else {
+                        has_results
+                    };
 
-                    Ok(FilterClause::Base(FilterConditionType::ExistsVec(result.clone(), *is_negated)))
+                    Ok(FilterClause::Base(FilterConditionType::Boolean(
+                        bool_result,
+                    )))
                 }
                 FilterConditionType::Boolean(boolean) => {
                     Ok(FilterClause::Base(FilterConditionType::Boolean(*boolean)))
                 }
-                FilterConditionType::ExistsVec(vec, negated) => Ok(FilterClause::Base(
-                    FilterConditionType::ExistsVec(vec.clone(), *negated),
-                )),
+                FilterConditionType::ExistsVec(vec, negated ) =>{
+                    Ok(FilterClause::Base(FilterConditionType::ExistsVec(vec.clone(), *negated)))
+                }
                 FilterConditionType::In(in_condition) => {
                     match in_condition {
                         InCondition::InSubquery {
@@ -301,10 +332,10 @@ fn process_filter_condition(
                         } => {
                             // Process the subquery
                             let processed_subquery =
-                                manage_subqueries_new(subquery, output_path, query_object)?;
+                                old_manage_subqueries(subquery, output_path, query_object)?;
 
                             // Execute the subquery
-                            let result = subquery_csv(
+                            let result = old_subquery_csv(
                                 processed_subquery,
                                 output_path,
                                 query_object.tables_info.clone(),
@@ -342,6 +373,7 @@ fn process_filter_condition(
                             )))
                         }
                         InCondition::In { .. } => panic!("We should not get here"),
+                        InCondition::InVec { .. } => panic!("We should not get here"),
                     }
                 }
             }
@@ -401,31 +433,31 @@ fn process_group_condition(
                 }
                 GroupBaseCondition::Exists(ir_plan, is_negated) => {
                     // Process the subquery
-                    let processed_subquery =
-                        manage_subqueries_new(ir_plan, output_path, query_object)?;
+                    let processed_subquery = old_manage_subqueries(ir_plan, output_path, query_object)?;
 
                     // Execute the subquery
-                    let (result, _, fields) = subquery_csv_new(
+                    let result = old_subquery_csv(
                         processed_subquery,
                         output_path,
                         query_object.tables_info.clone(),
                         query_object.table_to_csv.clone(),
-                        false
                     );
 
-                    let temp_fields = query_object.get_mut_fields();
-                    temp_fields.fill(fields.structs.clone(), fields.streams.clone());
+                    // Check if subquery returned any results
+                    let has_results = !result.trim().is_empty();
+                    let bool_result = if *is_negated {
+                        !has_results
+                    } else {
+                        has_results
+                    };
 
-                   Ok(GroupClause::Base(GroupBaseCondition::ExistsVec(result.clone(), *is_negated)))
+                    Ok(GroupClause::Base(GroupBaseCondition::Boolean(bool_result)))
                 }
                 GroupBaseCondition::Boolean(boolean) => {
                     Ok(GroupClause::Base(GroupBaseCondition::Boolean(*boolean)))
                 }
                 GroupBaseCondition::ExistsVec(vec, negated) => {
-                    Ok(GroupClause::Base(GroupBaseCondition::ExistsVec(
-                        vec.clone(),
-                        *negated,
-                    )))
+                    Ok(GroupClause::Base(GroupBaseCondition::ExistsVec(vec.clone(), *negated)))
                 }
                 GroupBaseCondition::In(in_condition) => {
                     match in_condition {
@@ -436,10 +468,10 @@ fn process_group_condition(
                         } => {
                             // Process the subquery
                             let processed_subquery =
-                                manage_subqueries_new(subquery, output_path, query_object)?;
+                                old_manage_subqueries(subquery, output_path, query_object)?;
 
                             // Execute the subquery
-                            let result = subquery_csv(
+                            let result = old_subquery_csv(
                                 processed_subquery,
                                 output_path,
                                 query_object.tables_info.clone(),
@@ -475,6 +507,7 @@ fn process_group_condition(
                             })))
                         }
                         InCondition::In { .. } => panic!("We should not get here"),
+                        InCondition::InVec { .. } => panic!("We should not get here"),
                     }
                 }
             }
@@ -500,9 +533,8 @@ fn manage_nested_join(
     query_object: &mut QueryObject,
 ) -> Arc<IrPlan> {
     // process all the subqueries in the nested joins
-    let processed_input =
-        manage_subqueries_new(input, &query_object.output_path.clone(), query_object)
-            .expect("Failed to process nested join subqueries");
+    let processed_input = old_manage_subqueries(input, &query_object.output_path.clone(), query_object)
+        .expect("Failed to process nested join subqueries");
 
     let mut object = query_object.clone().populate(&processed_input);
     let _ = ir_ast_to_renoir(&mut object);
@@ -513,10 +545,9 @@ fn manage_nested_join(
         .streams
         .insert(stream_name.clone(), stream.clone());
 
-    query_object.table_to_struct_name.insert(
-        alias.clone().unwrap(),
-        stream.final_struct_name.last().unwrap().to_string(),
-    );
+    query_object
+        .table_to_struct_name
+        .insert(alias.clone().unwrap(), stream.final_struct_name.last().unwrap().to_string());
     query_object
         .alias_to_stream
         .insert(alias.clone().unwrap(), stream_name.to_string());

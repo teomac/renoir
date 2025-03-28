@@ -298,6 +298,71 @@ fn process_condition(condition: &FilterConditionType, query_object: &QueryObject
                 )
             }
             InCondition::InSubquery { .. } => panic!("We should not have InSubquery here"),
+            InCondition::InVec { field, vector_name, vector_type, negated } => {
+                // Check if the field is a column reference
+                let stream_name = if field.table.is_some() {
+                    query_object
+                        .get_stream_from_alias(field.table.as_ref().unwrap())
+                        .unwrap()
+                } else {
+                    let all_streams = &query_object.streams;
+                    if all_streams.len() > 1 {
+                        panic!("Invalid column reference - missing table name");
+                    }
+                    all_streams.first().unwrap().0
+                };
+
+                // Validate column
+                check_column_validity(field, stream_name, query_object);
+
+                let stream = query_object.get_stream(stream_name);
+                let c_type = query_object.get_type(field);
+
+                //compare column type with vector type
+                if c_type != *vector_type {
+                    //check if they are both numbers
+                    if (c_type == "f64" || c_type == "i64")
+                        && (*vector_type == "f64" || *vector_type == "i64")
+                    {
+                        //needs to cast the c_type to the actual vector type
+                        let cast_type = if c_type == "f64" { "i64" } else { "f64" };
+                        let condition_str = format!(
+                            "x{}.{}.as_ref().unwrap() as {}",
+                            stream.get_access().get_base_path(),
+                            field.column,
+                            cast_type
+                        );
+                        format!(
+                            "if x{}.{}.as_ref().is_some() {{{}{}.contains(&{})}} else {{false}}",
+                            stream.get_access().get_base_path(),
+                            field.column,
+                            if *negated { "!" } else { "" },
+                            vector_name,
+                            condition_str
+                        )
+                    } else {
+                        panic!("Invalid InCondition - column type {} does not match vector type {}", c_type, vector_type);
+                    }
+                } else{
+                    //standard case
+                     // Generate the condition
+                let condition_str = format!(
+                    "x{}.{}.as_ref().unwrap()",
+                    stream.get_access().get_base_path(),
+                    field.column,
+                );
+
+                // Generate the final string
+                format!(
+                    "if x{}.{}.as_ref().is_some() {{{}{}.contains(&{})}} else {{false}}",
+                    stream.get_access().get_base_path(),
+                    field.column,
+                    if *negated { "!" } else { "" },
+                    vector_name,
+                    condition_str
+                )
+                }
+            },
         },
         FilterConditionType::Exists(_, _) => panic!("Exists condition should be already parsed"),
         FilterConditionType::Boolean(boolean) => boolean.to_string(),

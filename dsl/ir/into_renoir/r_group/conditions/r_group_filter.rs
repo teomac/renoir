@@ -6,6 +6,7 @@ use crate::dsl::ir::ir_ast_structure::{
 use crate::dsl::ir::r_group::r_group_keys::GroupAccumulatorInfo;
 use crate::dsl::ir::{AggregateFunction, BinaryOp, ComparisonOp, InCondition, IrLiteral};
 use crate::dsl::ir::{ColumnRef, QueryObject};
+use crate::dsl::struct_object::utils::check_column_validity;
 
 // Function to create the filter operation
 pub fn create_filter_operation(
@@ -280,6 +281,90 @@ fn process_filter_condition(
                             )
                     }
                     InCondition::InSubquery { .. } => panic!("We should not have InSubquery here"),
+                    InCondition::InVec { field, vector_name, vector_type, negated} => {
+                        {
+                            // Check if the field is a column reference
+                            let stream_name = if field.table.is_some() {
+                                query_object
+                                    .get_stream_from_alias(field.table.as_ref().unwrap())
+                                    .unwrap()
+                            } else {
+                                let all_streams = &query_object.streams;
+                                if all_streams.len() > 1 {
+                                    panic!("Invalid column reference - missing table name");
+                                }
+                                all_streams.first().unwrap().0
+                            };
+            
+                            // Validate column
+                            check_column_validity(field, stream_name, query_object);
+            
+                            let c_type = query_object.get_type(field);
+
+                            //we need also to check if the column is a key or not
+                            let is_key = keys.iter().any(|k| k.column == field.column);
+                            let key_position = if is_key {
+                                keys.iter().position(|k| k.column == field.column).unwrap()
+                            } else {
+                                panic!("Field in IN condition must be a group by key")
+                            };
+
+                            // Generate the access string based on whether it's a key or not
+                            let access_str = if keys.len() == 1 {
+                                "x.0".to_string()
+                            } else {
+                                format!(
+                                    "x.0.{}",
+                                    key_position,
+                                )
+                            };
+            
+                            //compare column type with vector type
+                            if c_type != *vector_type {
+                                //check if they are both numbers
+                                if (c_type == "f64" || c_type == "i64")
+                                    && (*vector_type == "f64" || *vector_type == "i64")
+                                {
+                                    //needs to cast the c_type to the actual vector type
+                                    let cast_type = if c_type == "f64" { "i64" } else { "f64" };
+                                    let condition_str = format!(
+                                        "{}.{}.as_ref().unwrap() as {}",
+                                        access_str,
+                                        field.column,
+                                        cast_type
+                                    );
+                                    format!(
+                                        "if {}.{}.as_ref().is_some() {{{}{}.contains(&{})}} else {{false}}",
+                                        access_str,
+                                        field.column,
+                                        if *negated { "!" } else { "" },
+                                        vector_name,
+                                        condition_str
+                                    )
+                                } else {
+                                    panic!("Invalid InCondition - column type {} does not match vector type {}", c_type, vector_type);
+                                }
+                            } else{
+                                //standard case
+                                 // Generate the condition
+                            let condition_str = format!(
+                                "{}.{}.as_ref().unwrap()",
+                                access_str,
+                                field.column,
+                            );
+            
+                            // Generate the final string
+                            format!(
+                                "if {}.{}.as_ref().is_some() {{{}{}.contains(&{})}} else {{false}}",
+                                access_str,
+                                field.column,
+                                if *negated { "!" } else { "" },
+                                vector_name,
+                                condition_str
+                            )
+                            }
+                        }
+                    },
                 },
                 GroupBaseCondition::Exists(_, _) => {
                     panic!("Exists condition should be already parsed")
