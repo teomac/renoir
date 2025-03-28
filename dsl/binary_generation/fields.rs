@@ -165,7 +165,7 @@ impl Fields {
                     if let Some(values) = result {{
                 let values: Vec<_> = values
                     .iter()
-                    .filter_map(|record| record{}.{}.clone())
+                    .filter_map(|record| record.{}.clone())
                     .collect();
                 
                 if !values.is_empty() {{
@@ -177,7 +177,6 @@ impl Fields {
                 println!("");
                     }}"#,
                         stream_name,
-                        stream.access.base_path,
                         result_column_types.first().unwrap().0,
                     )
                     
@@ -194,7 +193,7 @@ impl Fields {
         &mut self,
         is_single_result: bool,
     ) -> (String, String) {
-        let stream_name = self.streams.last().unwrap().0.clone();
+        let stream_name = self.streams.first().unwrap().0.clone();
         let new_result = format!("{}_result", stream_name);
         let stream = self.streams.get_mut(&stream_name).unwrap();
 
@@ -211,7 +210,7 @@ impl Fields {
         if let Some(values) = result {{
             let values: Vec<_> = values
                 .iter()
-                .filter_map(|record| record{}.{}.clone())
+                .filter_map(|record| record.{}.clone())
                 .collect();
 
             {} = values;
@@ -223,7 +222,6 @@ impl Fields {
             "#,
             stream_name,
             new_result,
-            stream.access.base_path,
             stream.final_struct.first().unwrap().0,
             new_result,
             if is_single_result {len_check} else {String::new()}
