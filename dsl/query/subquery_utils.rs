@@ -5,8 +5,8 @@ use crate::dsl::ir::ast_parser::ir_ast_structure::ComplexField;
 use crate::dsl::ir::{ir_ast_to_renoir, InCondition};
 use crate::dsl::{
     ir::{
-        Condition, FilterClause, FilterConditionType, GroupBaseCondition,
-        GroupClause, IrPlan, NullCondition, ProjectionColumn,
+        Condition, FilterClause, FilterConditionType, GroupBaseCondition, GroupClause, IrPlan,
+        NullCondition, ProjectionColumn,
     },
     struct_object::object::QueryObject,
 };
@@ -329,6 +329,68 @@ fn process_filter_condition(
                         }
                         InCondition::In { .. } => panic!("We should not get here"),
                         InCondition::InVec { .. } => panic!("We should not get here"),
+                        InCondition::InComplex {
+                            field,
+                            values,
+                            negated,
+                        } => todo!(),
+                        InCondition::InSubqueryComplex {
+                            in_subquery,
+                            subquery,
+                            negated,
+                        } => {
+                            // Process the in subquery
+                            let processed_in_subquery =
+                                manage_subqueries(in_subquery, output_path, query_object)?;
+
+                            // Process the subquery
+                            let processed_subquery =
+                                manage_subqueries(subquery, output_path, query_object)?;
+
+                            let tables_info = query_object.tables_info.clone();
+                            let table_to_csv = query_object.table_to_csv.clone();
+
+                            // Execute the in subquery
+                            let (in_result, in_result_type, in_fields) = subquery_csv(
+                                processed_in_subquery,
+                                output_path,
+                                tables_info.clone(),
+                                table_to_csv.clone(),
+                                true,
+                            );
+
+                            let temp_fields = query_object.get_mut_fields();
+                            temp_fields.fill(in_fields.structs.clone(), in_fields.streams.clone());
+
+                            // Execute the subquery
+                            let (result, result_type, fields) = subquery_csv(
+                                processed_subquery,
+                                output_path,
+                                tables_info,
+                                table_to_csv,
+                                false,
+                            );
+
+                            let temp_fields = query_object.get_mut_fields();
+                            temp_fields.fill(fields.structs.clone(), fields.streams.clone());
+
+                            Ok(FilterClause::Base(FilterConditionType::In(
+                                InCondition::InVecComplex {
+                                    field_name: in_result,
+                                    field_type: in_result_type,
+                                    vector_name: result,
+                                    vector_type: result_type,
+                                    negated: *negated,
+                                },
+                            )))
+                        }
+                        InCondition::InVecComplex {
+                            field_name,
+                            field_type,
+                            vector_name,
+                            vector_type,
+                            negated,
+                        } => todo!(),
                     }
                 }
             }
@@ -388,8 +450,7 @@ fn process_group_condition(
                 }
                 GroupBaseCondition::Exists(ir_plan, is_negated) => {
                     // Process the subquery
-                    let processed_subquery =
-                        manage_subqueries(ir_plan, output_path, query_object)?;
+                    let processed_subquery = manage_subqueries(ir_plan, output_path, query_object)?;
 
                     // Execute the subquery
                     let (result, _, fields) = subquery_csv(
@@ -417,37 +478,95 @@ fn process_group_condition(
                 GroupBaseCondition::In(in_condition) => {
                     match in_condition {
                         InCondition::InSubquery {
-                            field,
-                            subquery,
-                            negated,
-                        } => {
-                            // Process the subquery
-                            let processed_subquery =
-                                manage_subqueries(subquery, output_path, query_object)?;
+                                                field,
+                                                subquery,
+                                                negated,
+                                            } => {
+                                                // Process the subquery
+                                                let processed_subquery =
+                                                    manage_subqueries(subquery, output_path, query_object)?;
 
-                            // Execute the subquery
-                            let (result, result_type, fields) = subquery_csv(
-                                processed_subquery,
-                                output_path,
-                                query_object.tables_info.clone(),
-                                query_object.table_to_csv.clone(),
-                                false,
-                            );
+                                                // Execute the subquery
+                                                let (result, result_type, fields) = subquery_csv(
+                                                    processed_subquery,
+                                                    output_path,
+                                                    query_object.tables_info.clone(),
+                                                    query_object.table_to_csv.clone(),
+                                                    false,
+                                                );
 
-                            let temp_fields = query_object.get_mut_fields();
-                            temp_fields.fill(fields.structs.clone(), fields.streams.clone());
+                                                let temp_fields = query_object.get_mut_fields();
+                                                temp_fields.fill(fields.structs.clone(), fields.streams.clone());
 
-                            Ok(GroupClause::Base(GroupBaseCondition::In(
-                                InCondition::InVec { 
-                                    field: field.clone(),
-                                    vector_name: result,
-                                    vector_type: result_type,
-                                    negated: *negated,
-                                 }
-                            )))
-                        }
+                                                Ok(GroupClause::Base(GroupBaseCondition::In(
+                                                    InCondition::InVec {
+                                                        field: field.clone(),
+                                                        vector_name: result,
+                                                        vector_type: result_type,
+                                                        negated: *negated,
+                                                    },
+                                                )))
+                                            }
                         InCondition::In { .. } => panic!("We should not get here"),
                         InCondition::InVec { .. } => panic!("We should not get here"),
+                        InCondition::InSubqueryComplex {
+                                                in_subquery,
+                                                subquery,
+                                                negated,
+                                            } => {
+                                                // Process the in subquery
+                                                let processed_in_subquery =
+                                                    manage_subqueries(in_subquery, output_path, query_object)?;
+
+                                                // Process the subquery
+                                                let processed_subquery =
+                                                    manage_subqueries(subquery, output_path, query_object)?;
+
+                                                let tables_info = query_object.tables_info.clone();
+                                                let table_to_csv = query_object.table_to_csv.clone();
+
+                                                // Execute the in subquery
+                                                let (in_result, in_result_type, in_fields) = subquery_csv(
+                                                    processed_in_subquery,
+                                                    output_path,
+                                                    tables_info.clone(),
+                                                    table_to_csv.clone(),
+                                                    true,
+                                                );
+
+                                                let temp_fields = query_object.get_mut_fields();
+                                                temp_fields.fill(in_fields.structs.clone(), in_fields.streams.clone());
+
+                                                // Execute the subquery
+                                                let (result, result_type, fields) = subquery_csv(
+                                                    processed_subquery,
+                                                    output_path,
+                                                    tables_info,
+                                                    table_to_csv,
+                                                    false,
+                                                );
+
+                                                let temp_fields = query_object.get_mut_fields();
+                                                temp_fields.fill(fields.structs.clone(), fields.streams.clone());
+
+                                                Ok(GroupClause::Base(GroupBaseCondition::In(
+                                                    InCondition::InVecComplex {
+                                                        field_name: in_result,
+                                                        field_type: in_result_type,
+                                                        vector_name: result,
+                                                        vector_type: result_type,
+                                                        negated: *negated,
+                                                    },
+                                                )))
+                                            }
+                        InCondition::InVecComplex {
+                                                field_name,
+                                                field_type,
+                                                vector_name,
+                                                vector_type,
+                                                negated,
+                                            } => todo!(),
+                        InCondition::InComplex { field, values, negated } => todo!(),
                     }
                 }
             }
@@ -473,9 +592,8 @@ fn manage_nested_join(
     query_object: &mut QueryObject,
 ) -> Arc<IrPlan> {
     // process all the subqueries in the nested joins
-    let processed_input =
-        manage_subqueries(input, &query_object.output_path.clone(), query_object)
-            .expect("Failed to process nested join subqueries");
+    let processed_input = manage_subqueries(input, &query_object.output_path.clone(), query_object)
+        .expect("Failed to process nested join subqueries");
 
     let mut object = query_object.clone().populate(&processed_input);
     let _ = ir_ast_to_renoir(&mut object);

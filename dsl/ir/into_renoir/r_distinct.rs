@@ -1,6 +1,8 @@
-use crate::dsl::ir::QueryObject;
+use core::panic;
 
-pub fn process_distinct(query_object: &mut QueryObject) {
+use crate::dsl::{ir::QueryObject, struct_object::support_structs::StreamInfo};
+
+pub fn process_distinct_old(query_object: &mut QueryObject) {
     let csv_path = query_object.output_path.replace("\\", "/");
 
     // Generate code to remove duplicates from the CSV
@@ -41,4 +43,23 @@ pub fn process_distinct(query_object: &mut QueryObject) {
     );
 
     query_object.distinct_string = distinct_code;
+}
+
+pub fn process_distinct(stream_info: &StreamInfo, is_subquery: bool) -> String {
+    let stream_name = &stream_info.id;
+
+    if is_subquery {
+            format!(
+            r#"
+            let mut seen = indexmap::IndexSet::new();
+            {}_result.into_iter().for_each(|item| {{ seen.insert(item); }});
+            let {}_result = seen.into_iter().collect::<Vec<_>>();
+            "#,
+            stream_name, stream_name
+        )
+    } else {
+        panic!("Distinct is not supported for non-subqueries yet.");
+    }
+
+    
 }

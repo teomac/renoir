@@ -1,5 +1,5 @@
 use indexmap::IndexMap;
-use crate::dsl::struct_object::support_structs::StreamInfo;
+use crate::dsl::{ir::r_distinct::process_distinct, struct_object::support_structs::StreamInfo};
 use std::fmt::Write;
 
 
@@ -218,12 +218,19 @@ impl Fields {
 
         {}
 
+        {}
+
         let ctx = StreamContext::new(config.clone());  
             "#,
             stream_name,
             new_result,
             stream.final_struct.first().unwrap().0,
             new_result,
+            if stream.distinct {
+                process_distinct(stream, true)
+            } else {
+                String::new()
+            },
             if is_single_result {len_check} else {String::new()}
         ));
         

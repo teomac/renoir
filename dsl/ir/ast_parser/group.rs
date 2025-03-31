@@ -182,20 +182,31 @@ impl GroupParser {
             Rule::in_expr => {
                 let mut inner = first.into_inner();
 
+                let mut in_subquery = None;
+                let mut col_ref = None;
+
                 // Parse column reference first
                 let column = inner.next().ok_or_else(|| {
                     IrParseError::InvalidInput("Missing column in IN expression".to_string())
                 })?;
 
-                let col_ref = match column.as_rule() {
-                    Rule::qualified_column | Rule::identifier => Self::parse_column_ref(column)?,
-
-                    _ => {
-                        return Err(Box::new(IrParseError::InvalidInput(
-                            "Invalid column reference in IN expression".to_string(),
-                        )))
-                    }
-                };
+                if column.as_rule() == Rule::subquery {
+                    // If the first token is a subquery, we need to parse it as a subquery
+                    in_subquery = Some(IrParser::parse_subquery(column)?);
+                } else if column.as_rule() == Rule::qualified_column {
+                    // If it's a qualified column, parse it
+                    col_ref = Some(Self::parse_column_ref(column)?);
+                } else if column.as_rule() == Rule::identifier {
+                    // If it's just an identifier, create a ColumnRef
+                    col_ref = Some(ColumnRef {
+                        table: None,
+                        column: column.as_str().to_string(),
+                    });
+                } else {
+                    return Err(Box::new(IrParseError::InvalidInput(
+                        "Invalid field in IN expression".to_string(),
+                    )));
+                }
 
                 // Check for NOT (it's optional)
                 let is_negated = if let Some(token) = inner.next() {
@@ -217,13 +228,24 @@ impl GroupParser {
                 })?;
                 let subquery_plan = IrParser::parse_subquery(subquery)?;
 
-                Ok(GroupClause::Base(GroupBaseCondition::In(
-                    InCondition::InSubquery {
-                        field: col_ref,
-                        subquery: subquery_plan,
-                        negated: is_negated,
-                    },
-                )))
+                if in_subquery.is_some() {
+                    Ok(GroupClause::Base(GroupBaseCondition::In(
+                        InCondition::InSubqueryComplex {
+                            in_subquery: in_subquery.unwrap(),
+                            subquery: subquery_plan,
+                            negated: is_negated,
+                        },
+                    )))
+
+                } else {
+                    Ok(GroupClause::Base(GroupBaseCondition::In(
+                        InCondition::InSubquery {
+                            field: col_ref.unwrap(),
+                            subquery: subquery_plan,
+                            negated: is_negated,
+                        },
+                    )))
+                }
             }
             Rule::exists_keyword => {
                 // Check if this is "not exists" or just "exists"

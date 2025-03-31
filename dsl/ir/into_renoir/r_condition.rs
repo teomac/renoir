@@ -239,99 +239,126 @@ fn process_condition(condition: &FilterConditionType, query_object: &QueryObject
         FilterConditionType::NullCheck(null_check) => {
             process_null_check_condition(null_check, query_object)
         }
-        FilterConditionType::In(in_condition) => match in_condition {
-            InCondition::In {
-                field,
-                values,
-                negated,
-            } => {
-                // Get the values
-                let values_str = values
-                    .iter()
-                    .map(|value| match value {
-                        IrLiteral::Integer(i) => i.to_string(),
-                        IrLiteral::Float(f) => format!("{:.2}", f),
-                        IrLiteral::String(s) => format!("\"{}\"", s),
-                        IrLiteral::Boolean(b) => b.to_string(),
-                        IrLiteral::ColumnRef(_) => {
-                            panic!("Invalid InCondition - column reference not expected here")
+        FilterConditionType::In(in_condition) => {
+            match in_condition {
+                InCondition::In {
+                    field,
+                    values,
+                    negated,
+                } => {
+                    // Get the values
+                    let values_str = values
+                        .iter()
+                        .map(|value| match value {
+                            IrLiteral::Integer(i) => i.to_string(),
+                            IrLiteral::Float(f) => format!("{:.2}", f),
+                            IrLiteral::String(s) => format!("\"{}\"", s),
+                            IrLiteral::Boolean(b) => b.to_string(),
+                            IrLiteral::ColumnRef(_) => {
+                                panic!("Invalid InCondition - column reference not expected here")
+                            }
+                        })
+                        .collect::<Vec<String>>()
+                        .join(", ");
+
+                    // Check if the field is a column reference
+                    let stream_name = if field.table.is_some() {
+                        query_object
+                            .get_stream_from_alias(field.table.as_ref().unwrap())
+                            .unwrap()
+                    } else {
+                        let all_streams = &query_object.streams;
+                        if all_streams.len() > 1 {
+                            panic!("Invalid column reference - missing table name");
                         }
-                    })
-                    .collect::<Vec<String>>()
-                    .join(", ");
+                        all_streams.first().unwrap().0
+                    };
 
-                // Check if the field is a column reference
-                let stream_name = if field.table.is_some() {
-                    query_object
-                        .get_stream_from_alias(field.table.as_ref().unwrap())
-                        .unwrap()
-                } else {
-                    let all_streams = &query_object.streams;
-                    if all_streams.len() > 1 {
-                        panic!("Invalid column reference - missing table name");
-                    }
-                    all_streams.first().unwrap().0
-                };
+                    // Validate column
+                    check_column_validity(field, stream_name, query_object);
 
-                // Validate column
-                check_column_validity(field, stream_name, query_object);
+                    let stream = query_object.get_stream(stream_name);
+                    let c_type = query_object.get_type(field);
 
-                let stream = query_object.get_stream(stream_name);
-                let c_type = query_object.get_type(field);
+                    // Generate the condition
+                    let condition_str = format!(
+                        "x{}.{}.as_ref().unwrap(){}",
+                        stream.get_access().get_base_path(),
+                        field.column,
+                        if c_type == "String" { ".as_str()" } else { "" }
+                    );
 
-                // Generate the condition
-                let condition_str = format!(
-                    "x{}.{}.as_ref().unwrap(){}",
-                    stream.get_access().get_base_path(),
-                    field.column,
-                    if c_type == "String" { ".as_str()" } else { "" }
-                );
+                    // Generate the final string
+                    format!(
+                        "if x{}.{}.as_ref().is_some() {{{}vec![{}].contains(&{})}} else {{false}}",
+                        stream.get_access().get_base_path(),
+                        field.column,
+                        if *negated { "!" } else { "" },
+                        values_str,
+                        condition_str
+                    )
+                }
+                InCondition::InSubquery { .. } => panic!("We should not have InSubquery here"),
+                InCondition::InVec {
+                    field,
+                    vector_name,
+                    vector_type,
+                    negated,
+                } => {
+                    // Check if the field is a column reference
+                    let stream_name = if field.table.is_some() {
+                        query_object
+                            .get_stream_from_alias(field.table.as_ref().unwrap())
+                            .unwrap()
+                    } else {
+                        let all_streams = &query_object.streams;
+                        if all_streams.len() > 1 {
+                            panic!("Invalid column reference - missing table name");
+                        }
+                        all_streams.first().unwrap().0
+                    };
 
-                // Generate the final string
-                format!(
-                    "if x{}.{}.as_ref().is_some() {{{}vec![{}].contains(&{})}} else {{false}}",
-                    stream.get_access().get_base_path(),
-                    field.column,
-                    if *negated { "!" } else { "" },
-                    values_str,
-                    condition_str
-                )
-            }
-            InCondition::InSubquery { .. } => panic!("We should not have InSubquery here"),
-            InCondition::InVec { field, vector_name, vector_type, negated } => {
-                // Check if the field is a column reference
-                let stream_name = if field.table.is_some() {
-                    query_object
-                        .get_stream_from_alias(field.table.as_ref().unwrap())
-                        .unwrap()
-                } else {
-                    let all_streams = &query_object.streams;
-                    if all_streams.len() > 1 {
-                        panic!("Invalid column reference - missing table name");
-                    }
-                    all_streams.first().unwrap().0
-                };
+                    // Validate column
+                    check_column_validity(field, stream_name, query_object);
 
-                // Validate column
-                check_column_validity(field, stream_name, query_object);
+                    let stream = query_object.get_stream(stream_name);
+                    let c_type = query_object.get_type(field);
 
-                let stream = query_object.get_stream(stream_name);
-                let c_type = query_object.get_type(field);
-
-                //compare column type with vector type
-                if c_type != *vector_type {
-                    //check if they are both numbers
-                    if (c_type == "f64" || c_type == "i64")
-                        && (*vector_type == "f64" || *vector_type == "i64")
-                    {
-                        //needs to cast the c_type to the actual vector type
-                        let cast_type = if c_type == "f64" { "i64" } else { "f64" };
+                    //compare column type with vector type
+                    if c_type != *vector_type {
+                        //check if they are both numbers
+                        if (c_type == "f64" || c_type == "i64")
+                            && (*vector_type == "f64" || *vector_type == "i64")
+                        {
+                            //needs to cast the c_type to the actual vector type
+                            let cast_type = if c_type == "f64" { "i64" } else { "f64" };
+                            let condition_str = format!(
+                                "x{}.{}.as_ref().unwrap() as {}",
+                                stream.get_access().get_base_path(),
+                                field.column,
+                                cast_type
+                            );
+                            format!(
+                                            "if x{}.{}.as_ref().is_some() {{{}{}.contains(&{})}} else {{false}}",
+                                            stream.get_access().get_base_path(),
+                                            field.column,
+                                            if *negated { "!" } else { "" },
+                                            vector_name,
+                                            condition_str
+                                        )
+                        } else {
+                            panic!("Invalid InCondition - column type {} does not match vector type {}", c_type, vector_type);
+                        }
+                    } else {
+                        //standard case
+                        // Generate the condition
                         let condition_str = format!(
-                            "x{}.{}.as_ref().unwrap() as {}",
+                            "x{}.{}.as_ref().unwrap()",
                             stream.get_access().get_base_path(),
                             field.column,
-                            cast_type
                         );
+
+                        // Generate the final string
                         format!(
                             "if x{}.{}.as_ref().is_some() {{{}{}.contains(&{})}} else {{false}}",
                             stream.get_access().get_base_path(),
@@ -340,36 +367,63 @@ fn process_condition(condition: &FilterConditionType, query_object: &QueryObject
                             vector_name,
                             condition_str
                         )
-                    } else {
-                        panic!("Invalid InCondition - column type {} does not match vector type {}", c_type, vector_type);
                     }
-                } else{
-                    //standard case
-                     // Generate the condition
-                let condition_str = format!(
-                    "x{}.{}.as_ref().unwrap()",
-                    stream.get_access().get_base_path(),
-                    field.column,
-                );
-
-                // Generate the final string
-                format!(
-                    "if x{}.{}.as_ref().is_some() {{{}{}.contains(&{})}} else {{false}}",
-                    stream.get_access().get_base_path(),
-                    field.column,
-                    if *negated { "!" } else { "" },
-                    vector_name,
-                    condition_str
-                )
                 }
-            },
-        },
+                InCondition::InSubqueryComplex {
+                    in_subquery,
+                    subquery,
+                    negated,
+                } => todo!(),
+                InCondition::InVecComplex {
+                    field_name,
+                    field_type,
+                    vector_name,
+                    vector_type,
+                    negated,
+                } => {
+
+                    //compare field type with vector type
+                    if *field_type != *vector_type {
+                        //check if they are both numbers
+                        if (field_type == "f64" || field_type == "i64")
+                            && (*vector_type == "f64" || *vector_type == "i64")
+                        {
+                            //needs to cast the field_type to the actual vector type
+                            let cast_type = if field_type == "f64" { "i64" } else { "f64" };
+
+                            format!(
+                                            "{}{}.contains(&{}.first().unwrap() as {})",
+                                            if *negated { "!" } else { "" },
+                                            vector_name,
+                                            field_name,
+                                            cast_type,
+                                        )
+                        } else {
+                            panic!("Invalid InCondition - column type {} does not match vector type {}", field_type, vector_type);
+                        }
+                    } else {
+                        //standard case
+
+                        // Generate the final string
+                        format!(
+                            "{}{}.contains(&{}.first().unwrap())",
+                            if *negated { "!" } else { "" },
+                            vector_name,
+                            field_name,
+                        )
+                    }
+                },
+                InCondition::InComplex {
+                    field,
+                    values,
+                    negated,
+                } => todo!(),
+            }
+        }
         FilterConditionType::Exists(_, _) => panic!("Exists condition should be already parsed"),
         FilterConditionType::Boolean(boolean) => boolean.to_string(),
-        FilterConditionType::ExistsVec(vec, bool ) => { 
-            format!(" {}{}.is_empty()", 
-            if *bool { "" } else { "!" },
-             vec)
+        FilterConditionType::ExistsVec(vec, bool) => {
+            format!(" {}{}.is_empty()", if *bool { "" } else { "!" }, vec)
         }
     }
 }

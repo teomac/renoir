@@ -226,15 +226,28 @@ impl SqlToIr {
                         format!("exists({})", subquery_str)
                     }
                 }
-                WhereBaseCondition::In(column, subquery, negated) => {
-                    let column_str = column.to_string();
-                    let subquery_str = Self::convert(subquery, index, nested_index + 1);
-                    if *negated {
-                        format!("{} not in ({})", column_str, subquery_str)
-                    } else {
-                        format!("{} in ({})", column_str, subquery_str)
+                WhereBaseCondition::In(condition) => match condition {
+                    InCondition::InSimple(column, subquery, negated) => {
+                        let column_str = column.to_string();
+                        let subquery_str = Self::convert(subquery, index, nested_index + 1);
+                        if *negated {
+                            format!("{} not in ({})", column_str, subquery_str)
+                        } else {
+                            format!("{} in ({})", column_str, subquery_str)
+                        }
                     }
-                }
+
+                    InCondition::InSubquery(column, subquery, negated) => {
+                        let subquery_in = Self::convert(column, index, nested_index + 1);
+                        let subquery_str = Self::convert(subquery, index, nested_index + 1);
+                        if *negated {
+                            format!("({}) not in ({})", subquery_in, subquery_str)
+                        } else {
+                            format!("({}) in ({})", subquery_in, subquery_str)
+                        }
+                    }
+                },
+
                 WhereBaseCondition::Boolean(boolean) => boolean.to_string(),
             },
             WhereClause::Expression { left, op, right } => {
@@ -283,11 +296,7 @@ impl SqlToIr {
     }
 
     /// Converts a WhereField to its string representation in IR format.
-    fn convert_where_field(
-        field: &WhereField,
-        index: &mut usize,
-        nested_index: usize,
-    ) -> String {
+    fn convert_where_field(field: &WhereField, index: &mut usize, nested_index: usize) -> String {
         if let Some(ref arithmetic) = field.arithmetic {
             match arithmetic {
                 ArithmeticExpr::BinaryOp(_left, _op, _right) => {
@@ -480,15 +489,27 @@ impl SqlToIr {
                         format!("exists({})", subquery_str)
                     }
                 }
-                HavingBaseCondition::In(column, subquery, negated) => {
-                    let column_str = column.to_string();
-                    let subquery_str = Self::convert(subquery, index, nested_index + 1);
-                    if *negated {
-                        format!("{} not in ({})", column_str, subquery_str)
-                    } else {
-                        format!("{} in ({})", column_str, subquery_str)
+                HavingBaseCondition::In(condition) => match condition {
+                    InCondition::InSimple(column, subquery, negated) => {
+                        let column_str = column.to_string();
+                        let subquery_str = Self::convert(subquery, index, nested_index + 1);
+                        if *negated {
+                            format!("{} not in ({})", column_str, subquery_str)
+                        } else {
+                            format!("{} in ({})", column_str, subquery_str)
+                        }
                     }
-                }
+
+                    InCondition::InSubquery(in_subquery, subquery, negated) => {
+                        let in_subquery_str = Self::convert(in_subquery, index, nested_index + 1);
+                        let subquery_str = Self::convert(subquery, index, nested_index + 1);
+                        if *negated {
+                            format!("({}) not in ({})", in_subquery_str, subquery_str)
+                        } else {
+                            format!("({}) in ({})", in_subquery_str, subquery_str)
+                        }
+                    }
+                },
                 HavingBaseCondition::Boolean(boolean) => boolean.to_string(),
             },
             HavingClause::Expression { left, op, right } => {

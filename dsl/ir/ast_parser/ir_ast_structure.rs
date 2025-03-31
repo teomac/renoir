@@ -187,6 +187,16 @@ pub enum InCondition {
         values: Vec<IrLiteral>,
         negated: bool,
     },
+    InComplex {
+        field: IrLiteral,
+        values: Vec<IrLiteral>,
+        negated: bool,
+    },
+    InSubqueryComplex {
+        in_subquery: Arc<IrPlan>,
+        subquery: Arc<IrPlan>,
+        negated: bool,
+    },
     InSubquery {
         field: ColumnRef,
         subquery: Arc<IrPlan>,
@@ -198,6 +208,13 @@ pub enum InCondition {
         vector_type: String,
         negated: bool,
     },
+    InVecComplex {
+        field_name: String,
+        field_type: String,
+        vector_name: String,
+        vector_type: String,
+        negated: bool,
+    }
 }
 
 #[derive(Debug, PartialEq, Clone)]

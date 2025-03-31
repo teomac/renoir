@@ -107,7 +107,7 @@ pub enum WhereBaseCondition {
     Comparison(WhereCondition),
     NullCheck(WhereNullCondition),
     Exists(Box<SqlAST>, bool),        // Subquery, negated
-    In(ColumnRef, Box<SqlAST>, bool), // Column, subquery, negated
+    In(InCondition), // Column, subquery, negated
     Boolean(bool),
 }
 
@@ -132,7 +132,7 @@ pub enum HavingBaseCondition {
     Comparison(HavingCondition),
     NullCheck(HavingNullCondition),
     Exists(Box<SqlAST>, bool),        // Subquery, negated
-    In(ColumnRef, Box<SqlAST>, bool), // Column, subquery, negated
+    In(InCondition), // Column, subquery, negated
     Boolean(bool),
 }
 
@@ -160,6 +160,12 @@ pub struct WhereNullCondition {
 pub struct HavingNullCondition {
     pub field: HavingField,
     pub operator: NullOp,
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum InCondition {
+    InSimple(ColumnRef, Box<SqlAST>, bool), // Column, subquery, negated
+    InSubquery(Box<SqlAST>, Box<SqlAST>, bool), // subquery, Subquery, negated
 }
 
 #[derive(Debug, PartialEq, Clone)]

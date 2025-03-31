@@ -116,7 +116,7 @@ fn process_filter_condition(
                         format!("{} {} {}", left_expr, operator, right_expr)
                     } else {
                         // Same types
-                        if left_type == "i64" && right_type == "i64"{
+                        if left_type == "i64" && right_type == "i64" {
                             format!(
                                 "if {} {{({} as f64) {} ({} as f64)}} else {{ false }}",
                                 check_list.join(" && "),
@@ -124,16 +124,15 @@ fn process_filter_condition(
                                 operator,
                                 right_expr
                             )
-
+                        } else {
+                            format!(
+                                "if {} {{({}) {} ({})}} else {{ false }}",
+                                check_list.join(" && "),
+                                left_expr,
+                                operator,
+                                right_expr
+                            )
                         }
-                        else{format!(
-                            "if {} {{({}) {} ({})}} else {{ false }}",
-                            check_list.join(" && "),
-                            left_expr,
-                            operator,
-                            right_expr
-                        )}
-                        
                     }
                 }
                 GroupBaseCondition::NullCheck(null_check) => {
@@ -272,16 +271,21 @@ fn process_filter_condition(
 
                         // Generate the final string with proper null checks
                         format!(
-                                "if {}.is_some() {{{}vec![{}].contains(&{}.unwrap(){})}} else {{false}}",
-                                access_str,
-                                if *negated { "!" } else { "" },
-                                values_str,
-                                access_str,
-                                if c_type == "String" { ".as_str()" } else { "" }
-                            )
+                                                                "if {}.is_some() {{{}vec![{}].contains(&{}.unwrap(){})}} else {{false}}",
+                                                                access_str,
+                                                                if *negated { "!" } else { "" },
+                                                                values_str,
+                                                                access_str,
+                                                                if c_type == "String" { ".as_str()" } else { "" }
+                                                            )
                     }
                     InCondition::InSubquery { .. } => panic!("We should not have InSubquery here"),
-                    InCondition::InVec { field, vector_name, vector_type, negated} => {
+                    InCondition::InVec {
+                        field,
+                        vector_name,
+                        vector_type,
+                        negated,
+                    } => {
                         {
                             // Check if the field is a column reference
                             let stream_name = if field.table.is_some() {
@@ -295,10 +299,10 @@ fn process_filter_condition(
                                 }
                                 all_streams.first().unwrap().0
                             };
-            
+
                             // Validate column
                             check_column_validity(field, stream_name, query_object);
-            
+
                             let c_type = query_object.get_type(field);
 
                             //we need also to check if the column is a key or not
@@ -313,12 +317,9 @@ fn process_filter_condition(
                             let access_str = if keys.len() == 1 {
                                 "x.0".to_string()
                             } else {
-                                format!(
-                                    "x.0.{}",
-                                    key_position,
-                                )
+                                format!("x.0.{}", key_position,)
                             };
-            
+
                             //compare column type with vector type
                             if c_type != *vector_type {
                                 //check if they are both numbers
@@ -329,51 +330,92 @@ fn process_filter_condition(
                                     let cast_type = if c_type == "f64" { "i64" } else { "f64" };
                                     let condition_str = format!(
                                         "{}.{}.as_ref().unwrap() as {}",
-                                        access_str,
-                                        field.column,
-                                        cast_type
+                                        access_str, field.column, cast_type
                                     );
                                     format!(
-                                        "if {}.{}.as_ref().is_some() {{{}{}.contains(&{})}} else {{false}}",
-                                        access_str,
-                                        field.column,
-                                        if *negated { "!" } else { "" },
-                                        vector_name,
-                                        condition_str
-                                    )
+                                                                        "if {}.{}.as_ref().is_some() {{{}{}.contains(&{})}} else {{false}}",
+                                                                        access_str,
+                                                                        field.column,
+                                                                        if *negated { "!" } else { "" },
+                                                                        vector_name,
+                                                                        condition_str
+                                                                    )
                                 } else {
                                     panic!("Invalid InCondition - column type {} does not match vector type {}", c_type, vector_type);
                                 }
-                            } else{
+                            } else {
                                 //standard case
-                                 // Generate the condition
-                            let condition_str = format!(
-                                "{}.{}.as_ref().unwrap()",
-                                access_str,
-                                field.column,
-                            );
-            
-                            // Generate the final string
-                            format!(
-                                "if {}.{}.as_ref().is_some() {{{}{}.contains(&{})}} else {{false}}",
-                                access_str,
-                                field.column,
-                                if *negated { "!" } else { "" },
-                                vector_name,
-                                condition_str
-                            )
+                                // Generate the condition
+                                let condition_str =
+                                    format!("{}.{}.as_ref().unwrap()", access_str, field.column,);
+
+                                // Generate the final string
+                                format!(
+                                                                "if {}.{}.as_ref().is_some() {{{}{}.contains(&{})}} else {{false}}",
+                                                                access_str,
+                                                                field.column,
+                                                                if *negated { "!" } else { "" },
+                                                                vector_name,
+                                                                condition_str
+                                                            )
                             }
                         }
-                    },
+                    }
+                    InCondition::InSubqueryComplex {
+                        in_subquery,
+                        subquery,
+                        negated,
+                    } => todo!(),
+                    InCondition::InVecComplex {
+                        field_name,
+                        field_type,
+                        vector_name,
+                        vector_type,
+                        negated,
+                    } => {
+                        //compare field type with vector type
+                        if *field_type != *vector_type {
+                            //check if they are both numbers
+                            if (field_type == "f64" || field_type == "i64")
+                                && (*vector_type == "f64" || *vector_type == "i64")
+                            {
+                                //needs to cast the field_type to the actual vector type
+                                let cast_type = if field_type == "f64" { "i64" } else { "f64" };
+
+                                format!(
+                                    "{}{}.contains(&{}.first().unwrap() as {})",
+                                    if *negated { "!" } else { "" },
+                                    vector_name,
+                                    field_name,
+                                    cast_type,
+                                )
+                            } else {
+                                panic!("Invalid InCondition - column type {} does not match vector type {}", field_type, vector_type);
+                            }
+                        } else {
+                            //standard case
+
+                            // Generate the final string
+                            format!(
+                                "{}{}.contains(&{}.first().unwrap())",
+                                if *negated { "!" } else { "" },
+                                vector_name,
+                                field_name,
+                            )
+                        }
+                    }
+                    InCondition::InComplex {
+                        field,
+                        values,
+                        negated,
+                    } => todo!(),
                 },
                 GroupBaseCondition::Exists(_, _) => {
                     panic!("Exists condition should be already parsed")
                 }
                 GroupBaseCondition::Boolean(boolean) => boolean.to_string(),
-                GroupBaseCondition::ExistsVec(vec, negated ) => {
-                    format!(" {}{}.is_empty()", 
-                    if *negated { "" } else { "!" },
-                     vec)
+                GroupBaseCondition::ExistsVec(vec, negated) => {
+                    format!(" {}{}.is_empty()", if *negated { "" } else { "!" }, vec)
                 }
             }
         }

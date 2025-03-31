@@ -240,20 +240,28 @@ impl GroupByParser {
                     )
                 })?;
 
-                // Parse the column reference
-                let column = match column_ref.as_rule() {
-                    Rule::variable => ColumnRef {
-                        table: None,
-                        column: column_ref.as_str().to_string(),
-                    },
-                    Rule::table_column => Self::parse_column_ref(column_ref)?,
-                    _ => {
-                        return Err(Box::new(SqlParseError::InvalidInput(format!(
-                            "Expected column reference in IN expression, got {:?}",
-                            column_ref.as_rule()
-                        ))))
-                    }
-                };
+                let mut in_subquery = None;
+                let mut col = None;
+
+                if column_ref.as_rule() == Rule::subquery_expr {
+                    // If the first part is a subquery, we need to parse it
+                    in_subquery = Some(SqlParser::parse_subquery(column_ref)?);
+                } else {
+                    // Parse the column reference
+                    col = match column_ref.as_rule() {
+                        Rule::variable => Some(ColumnRef {
+                            table: None,
+                            column: column_ref.as_str().to_string(),
+                        }),
+                        Rule::table_column => Some(Self::parse_column_ref(column_ref)?),
+                        _ => {
+                            return Err(Box::new(SqlParseError::InvalidInput(format!(
+                                "Expected column reference in IN expression, got {:?}",
+                                column_ref.as_rule()
+                            ))))
+                        }
+                    };
+                }
 
                 // Next part is the IN keyword
                 let in_keyword = in_inner
@@ -271,11 +279,19 @@ impl GroupByParser {
                 // Parse the inner SQL directly
                 let subquery = SqlParser::parse_subquery(subquery_expr)?;
 
-                return Ok(HavingClause::Base(HavingBaseCondition::In(
-                    column,
-                    Box::new(subquery),
-                    is_negated,
-                )));
+                if in_subquery.is_some() {
+                    return Ok(HavingClause::Base(HavingBaseCondition::In(
+                        InCondition::InSubquery(
+                            Box::new(in_subquery.unwrap()),
+                            Box::new(subquery),
+                            is_negated,
+                        ),
+                    )));
+                } else {
+                    return Ok(HavingClause::Base(HavingBaseCondition::In(
+                        InCondition::InSimple(col.unwrap(), Box::new(subquery), is_negated),
+                    )));
+                }
             }
         }
 

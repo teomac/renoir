@@ -160,25 +160,33 @@ impl ConditionParser {
 
                 // First part is the column reference (variable or table_column)
                 let column_ref = in_inner.next().ok_or_else(|| {
-                    SqlParseError::InvalidInput(
-                        "Missing column reference in IN expression".to_string(),
-                    )
+                    SqlParseError::InvalidInput("Missing operand in IN expression".to_string())
                 })?;
 
-                // Parse the column reference
-                let column = match column_ref.as_rule() {
-                    Rule::variable => ColumnRef {
-                        table: None,
-                        column: column_ref.as_str().to_string(),
-                    },
-                    Rule::table_column => Self::parse_column_ref(column_ref)?,
-                    _ => {
-                        return Err(Box::new(SqlParseError::InvalidInput(format!(
-                            "Expected column reference in IN expression, got {:?}",
-                            column_ref.as_rule()
-                        ))))
-                    }
-                };
+                // check if we have a subquery before the IN
+
+                let mut in_subquery = None;
+                let mut column = None;
+
+                if column_ref.as_rule() == Rule::subquery_expr {
+                    // If the first part is a subquery, we need to parse it
+                    in_subquery = Some(SqlParser::parse_subquery(column_ref)?);
+                } else {
+                    // Parse the column reference
+                    column = match column_ref.as_rule() {
+                        Rule::variable => Some(ColumnRef {
+                            table: None,
+                            column: column_ref.as_str().to_string(),
+                        }),
+                        Rule::table_column => Some(Self::parse_column_ref(column_ref)?),
+                        _ => {
+                            return Err(Box::new(SqlParseError::InvalidInput(format!(
+                                "Expected column reference in IN expression, got {:?}",
+                                column_ref.as_rule()
+                            ))))
+                        }
+                    };
+                }
 
                 // Next part is the IN keyword
                 let in_keyword = in_inner
@@ -196,11 +204,19 @@ impl ConditionParser {
                 // Parse the inner SQL directly
                 let subquery = SqlParser::parse_subquery(subquery_expr)?;
 
-                return Ok(WhereClause::Base(WhereBaseCondition::In(
-                    column,
-                    Box::new(subquery),
-                    is_negated,
-                )));
+                if in_subquery.is_some() {
+                    return Ok(WhereClause::Base(WhereBaseCondition::In(
+                        InCondition::InSubquery(
+                            Box::new(in_subquery.unwrap()),
+                            Box::new(subquery),
+                            is_negated,
+                        ),
+                    )));
+                } else {
+                    return Ok(WhereClause::Base(WhereBaseCondition::In(
+                        InCondition::InSimple(column.unwrap(), Box::new(subquery), is_negated),
+                    )));
+                }
             }
         }
 

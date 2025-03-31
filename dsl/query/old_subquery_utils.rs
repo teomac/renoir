@@ -47,7 +47,11 @@ pub fn old_manage_subqueries(
                             );
                             // Convert result to StringLiteral with the same alias
                             // Clean up result, remove square brackets
-                            result = result.trim().trim_start_matches('[').trim_end_matches(']').to_string();
+                            result = result
+                                .trim()
+                                .trim_start_matches('[')
+                                .trim_end_matches(']')
+                                .to_string();
 
                             // Clean up the result string - remove quotes and whitespace/newlines
                             result = result.trim().trim_matches('"').to_string();
@@ -320,60 +324,155 @@ fn process_filter_condition(
                 FilterConditionType::Boolean(boolean) => {
                     Ok(FilterClause::Base(FilterConditionType::Boolean(*boolean)))
                 }
-                FilterConditionType::ExistsVec(vec, negated ) =>{
-                    Ok(FilterClause::Base(FilterConditionType::ExistsVec(vec.clone(), *negated)))
-                }
+                FilterConditionType::ExistsVec(vec, negated) => Ok(FilterClause::Base(
+                    FilterConditionType::ExistsVec(vec.clone(), *negated),
+                )),
                 FilterConditionType::In(in_condition) => {
                     match in_condition {
                         InCondition::InSubquery {
-                            field,
-                            subquery,
-                            negated,
-                        } => {
-                            // Process the subquery
-                            let processed_subquery =
-                                old_manage_subqueries(subquery, output_path, query_object)?;
+                                                field,
+                                                subquery,
+                                                negated,
+                                            } => {
+                                                // Process the subquery
+                                                let processed_subquery =
+                                                    old_manage_subqueries(subquery, output_path, query_object)?;
 
-                            // Execute the subquery
-                            let result = old_subquery_csv(
-                                processed_subquery,
-                                output_path,
-                                query_object.tables_info.clone(),
-                                query_object.table_to_csv.clone(),
-                            );
+                                                // Execute the subquery
+                                                let result = old_subquery_csv(
+                                                    processed_subquery,
+                                                    output_path,
+                                                    query_object.tables_info.clone(),
+                                                    query_object.table_to_csv.clone(),
+                                                );
 
-                            let has_results = !result.trim().is_empty();
-                            let mut ir_literals = Vec::new();
-                            if has_results {
-                                // convert the result to a vector of irLiterals
-                                let mut values: Vec<&str> = result
-                                    .trim()
-                                    .trim_start_matches('[')
-                                    .trim_end_matches(']')
-                                    .split(',')
-                                    .map(|s| s.trim().trim_matches('"'))
-                                    .collect();
-                                values.sort();
-                                values.dedup();
+                                                let has_results = !result.trim().is_empty();
+                                                let mut ir_literals = Vec::new();
+                                                if has_results {
+                                                    // convert the result to a vector of irLiterals
+                                                    let mut values: Vec<&str> = result
+                                                        .trim()
+                                                        .trim_start_matches('[')
+                                                        .trim_end_matches(']')
+                                                        .split(',')
+                                                        .map(|s| s.trim().trim_matches('"'))
+                                                        .collect();
+                                                    values.sort();
+                                                    values.dedup();
 
-                                for value in values {
-                                    let literal = LiteralParser::parse(value).map_err(|e| {
-                                        io::Error::new(io::ErrorKind::Other, e.to_string())
-                                    })?;
-                                    ir_literals.push(literal);
-                                }
-                            }
+                                                    for value in values {
+                                                        let literal = LiteralParser::parse(value).map_err(|e| {
+                                                            io::Error::new(io::ErrorKind::Other, e.to_string())
+                                                        })?;
+                                                        ir_literals.push(literal);
+                                                    }
+                                                }
 
-                            Ok(FilterClause::Base(FilterConditionType::In(
-                                InCondition::In {
-                                    field: field.clone(),
-                                    values: ir_literals,
-                                    negated: *negated,
-                                },
-                            )))
-                        }
+                                                Ok(FilterClause::Base(FilterConditionType::In(
+                                                    InCondition::In {
+                                                        field: field.clone(),
+                                                        values: ir_literals,
+                                                        negated: *negated,
+                                                    },
+                                                )))
+                                            }
                         InCondition::In { .. } => panic!("We should not get here"),
                         InCondition::InVec { .. } => panic!("We should not get here"),
+                        InCondition::InSubqueryComplex {
+                                                in_subquery,
+                                                subquery,
+                                                negated,
+                                            } => {
+                                                // Process the complex subquery
+                                                let processed_complex_subquery =
+                                                    old_manage_subqueries(in_subquery, output_path, query_object)?;
+
+                                                // Process the subquery
+                                                let processed_subquery =
+                                                    old_manage_subqueries(subquery, output_path, query_object)?;
+
+                                                // Execute the complex subquery
+                                                let result_complex = old_subquery_csv(
+                                                    processed_complex_subquery,
+                                                    output_path,
+                                                    query_object.tables_info.clone(),
+                                                    query_object.table_to_csv.clone(),
+                                                );
+
+                                                // Execute the subquery
+                                                let result = old_subquery_csv(
+                                                    processed_subquery,
+                                                    output_path,
+                                                    query_object.tables_info.clone(),
+                                                    query_object.table_to_csv.clone(),
+                                                );
+
+                                                let has_complex_results = !result_complex.trim().is_empty();
+                                                let mut ir_complex_literals = Vec::new();
+                                                if has_complex_results {
+                                                    // convert the result to a vector of irLiterals
+                                                    let mut values: Vec<&str> = result_complex
+                                                        .trim()
+                                                        .trim_start_matches('[')
+                                                        .trim_end_matches(']')
+                                                        .split(',')
+                                                        .map(|s| s.trim().trim_matches('"'))
+                                                        .collect();
+                                                    values.sort();
+                                                    values.dedup();
+
+                                                    for value in values {
+                                                        let literal = LiteralParser::parse(value).map_err(|e| {
+                                                            io::Error::new(io::ErrorKind::Other, e.to_string())
+                                                        })?;
+                                                        ir_complex_literals.push(literal);
+                                                    }
+                                                }
+
+                                                if ir_complex_literals.len() > 1 {
+                                                    panic!(
+                                                        "Subquery must return exactly one value when used in SELECT clause",
+                                                    );
+                                                }
+
+                                                let has_results = !result.trim().is_empty();
+                                                let mut ir_literals = Vec::new();
+                                                if has_results {
+                                                    // convert the result to a vector of irLiterals
+                                                    let mut values: Vec<&str> = result
+                                                        .trim()
+                                                        .trim_start_matches('[')
+                                                        .trim_end_matches(']')
+                                                        .split(',')
+                                                        .map(|s| s.trim().trim_matches('"'))
+                                                        .collect();
+                                                    values.sort();
+                                                    values.dedup();
+
+                                                    for value in values {
+                                                        let literal = LiteralParser::parse(value).map_err(|e| {
+                                                            io::Error::new(io::ErrorKind::Other, e.to_string())
+                                                        })?;
+                                                        ir_literals.push(literal);
+                                                    }
+                                                }
+
+                                                Ok(FilterClause::Base(FilterConditionType::In(
+                                                    InCondition::InComplex {
+                                                        field: ir_complex_literals[0].clone(),
+                                                        values: ir_literals,
+                                                        negated: *negated,
+                                                    },
+                                                )))
+                                            }
+                        InCondition::InVecComplex {
+                                                field_name,
+                                                field_type,
+                                                vector_name,
+                                                vector_type,
+                                                negated,
+                                            } => todo!(),
+                        InCondition::InComplex { field, values, negated } => todo!(),
                     }
                 }
             }
@@ -433,7 +532,8 @@ fn process_group_condition(
                 }
                 GroupBaseCondition::Exists(ir_plan, is_negated) => {
                     // Process the subquery
-                    let processed_subquery = old_manage_subqueries(ir_plan, output_path, query_object)?;
+                    let processed_subquery =
+                        old_manage_subqueries(ir_plan, output_path, query_object)?;
 
                     // Execute the subquery
                     let result = old_subquery_csv(
@@ -456,9 +556,9 @@ fn process_group_condition(
                 GroupBaseCondition::Boolean(boolean) => {
                     Ok(GroupClause::Base(GroupBaseCondition::Boolean(*boolean)))
                 }
-                GroupBaseCondition::ExistsVec(vec, negated) => {
-                    Ok(GroupClause::Base(GroupBaseCondition::ExistsVec(vec.clone(), *negated)))
-                }
+                GroupBaseCondition::ExistsVec(vec, negated) => Ok(GroupClause::Base(
+                    GroupBaseCondition::ExistsVec(vec.clone(), *negated),
+                )),
                 GroupBaseCondition::In(in_condition) => {
                     match in_condition {
                         InCondition::InSubquery {
@@ -508,6 +608,105 @@ fn process_group_condition(
                         }
                         InCondition::In { .. } => panic!("We should not get here"),
                         InCondition::InVec { .. } => panic!("We should not get here"),
+                        InCondition::InComplex {
+                            field,
+                            values,
+                            negated,
+                        } => todo!(),
+                        InCondition::InSubqueryComplex {
+                            in_subquery,
+                            subquery,
+                            negated,
+                        } => {
+                            // Process the complex subquery
+                            let processed_complex_subquery =
+                                old_manage_subqueries(in_subquery, output_path, query_object)?;
+
+                            // Process the subquery
+                            let processed_subquery =
+                                old_manage_subqueries(subquery, output_path, query_object)?;
+
+                            // Execute the complex subquery
+                            let result_complex = old_subquery_csv(
+                                processed_complex_subquery,
+                                output_path,
+                                query_object.tables_info.clone(),
+                                query_object.table_to_csv.clone(),
+                            );
+
+                            // Execute the subquery
+                            let result = old_subquery_csv(
+                                processed_subquery,
+                                output_path,
+                                query_object.tables_info.clone(),
+                                query_object.table_to_csv.clone(),
+                            );
+
+                            let has_complex_results = !result_complex.trim().is_empty();
+                            let mut ir_complex_literals = Vec::new();
+                            if has_complex_results {
+                                // convert the result to a vector of irLiterals
+                                let mut values: Vec<&str> = result_complex
+                                    .trim()
+                                    .trim_start_matches('[')
+                                    .trim_end_matches(']')
+                                    .split(',')
+                                    .map(|s| s.trim().trim_matches('"'))
+                                    .collect();
+                                values.sort();
+                                values.dedup();
+
+                                for value in values {
+                                    let literal = LiteralParser::parse(value).map_err(|e| {
+                                        io::Error::new(io::ErrorKind::Other, e.to_string())
+                                    })?;
+                                    ir_complex_literals.push(literal);
+                                }
+                            }
+
+                            if ir_complex_literals.len() > 1 {
+                                panic!(
+                                    "Subquery must return exactly one value when used in SELECT clause",
+                                );
+                            }
+
+                            let has_results = !result.trim().is_empty();
+                            let mut ir_literals = Vec::new();
+                            if has_results {
+                                // convert the result to a vector of irLiterals
+                                let mut values: Vec<&str> = result
+                                    .trim()
+                                    .trim_start_matches('[')
+                                    .trim_end_matches(']')
+                                    .split(',')
+                                    .map(|s| s.trim().trim_matches('"'))
+                                    .collect();
+                                values.sort();
+                                values.dedup();
+
+                                for value in values {
+                                    let literal = LiteralParser::parse(value).map_err(|e| {
+                                        io::Error::new(io::ErrorKind::Other, e.to_string())
+                                    })?;
+                                    ir_literals.push(literal);
+                                }
+                            }
+
+                            Ok(GroupClause::Base(GroupBaseCondition::In(
+                                InCondition::InComplex {
+                                    field: ir_complex_literals[0].clone(),
+                                    values: ir_literals,
+                                    negated: *negated,
+                                },
+                            )))
+                        }
+                        InCondition::InVecComplex {
+                            field_name,
+                            field_type,
+                            vector_name,
+                            vector_type,
+                            negated,
+                        } => todo!(),
                     }
                 }
             }
@@ -533,8 +732,9 @@ fn manage_nested_join(
     query_object: &mut QueryObject,
 ) -> Arc<IrPlan> {
     // process all the subqueries in the nested joins
-    let processed_input = old_manage_subqueries(input, &query_object.output_path.clone(), query_object)
-        .expect("Failed to process nested join subqueries");
+    let processed_input =
+        old_manage_subqueries(input, &query_object.output_path.clone(), query_object)
+            .expect("Failed to process nested join subqueries");
 
     let mut object = query_object.clone().populate(&processed_input);
     let _ = ir_ast_to_renoir(&mut object);
@@ -545,9 +745,10 @@ fn manage_nested_join(
         .streams
         .insert(stream_name.clone(), stream.clone());
 
-    query_object
-        .table_to_struct_name
-        .insert(alias.clone().unwrap(), stream.final_struct_name.last().unwrap().to_string());
+    query_object.table_to_struct_name.insert(
+        alias.clone().unwrap(),
+        stream.final_struct_name.last().unwrap().to_string(),
+    );
     query_object
         .alias_to_stream
         .insert(alias.clone().unwrap(), stream_name.to_string());

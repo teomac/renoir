@@ -121,7 +121,7 @@ fn validate_no_aggregates_in_where(clause: &Option<WhereClause>) -> Result<(), B
                     check_where_field_for_aggregates(&null_cond.field)?;
                 }
                 WhereBaseCondition::Exists(_, _) => { /*TODO */ }
-                WhereBaseCondition::In(_, _, _) => { /*TODO */ }
+                WhereBaseCondition::In(_) => { /*TODO */ }
                 WhereBaseCondition::Boolean(_) => { /*TODO */ }
             },
             WhereClause::Expression { left, op: _, right } => {
