@@ -119,10 +119,16 @@ pub fn query_csv(
 
     let structs = query_object.structs.clone();
     let streams = query_object.streams.clone();
+    let limit = query_object.limit_string.clone();
+    let order_by = query_object.order_by_string.clone();
+    let distinct = query_object.distinct_string.clone();
 
     //step 4.5: update fields
     let fields = query_object.get_mut_fields();
     fields.output_path = output_path.clone();
+    fields.limit = limit.clone();
+    fields.order_by = order_by.clone();
+    fields.distinct = distinct.clone();
     fields.fill(structs, streams);
     fields.fill_main();
 
