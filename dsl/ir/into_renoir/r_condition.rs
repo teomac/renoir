@@ -370,9 +370,7 @@ fn process_condition(condition: &FilterConditionType, query_object: &QueryObject
                     }
                 }
                 InCondition::InSubqueryComplex {
-                    in_subquery,
-                    subquery,
-                    negated,
+                    ..
                 } => todo!(),
                 InCondition::InVecComplex {
                     field_name,
@@ -414,9 +412,7 @@ fn process_condition(condition: &FilterConditionType, query_object: &QueryObject
                     }
                 },
                 InCondition::InComplex {
-                    field,
-                    values,
-                    negated,
+                    ..
                 } => todo!(),
             }
         }

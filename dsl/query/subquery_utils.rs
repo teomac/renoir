@@ -330,9 +330,7 @@ fn process_filter_condition(
                         InCondition::In { .. } => panic!("We should not get here"),
                         InCondition::InVec { .. } => panic!("We should not get here"),
                         InCondition::InComplex {
-                            field,
-                            values,
-                            negated,
+                            ..
                         } => todo!(),
                         InCondition::InSubqueryComplex {
                             in_subquery,
@@ -385,11 +383,7 @@ fn process_filter_condition(
                             )))
                         }
                         InCondition::InVecComplex {
-                            field_name,
-                            field_type,
-                            vector_name,
-                            vector_type,
-                            negated,
+                            ..
                         } => todo!(),
                     }
                 }
@@ -560,13 +554,9 @@ fn process_group_condition(
                                                 )))
                                             }
                         InCondition::InVecComplex {
-                                                field_name,
-                                                field_type,
-                                                vector_name,
-                                                vector_type,
-                                                negated,
+                                                ..
                                             } => todo!(),
-                        InCondition::InComplex { field, values, negated } => todo!(),
+                        InCondition::InComplex { .. } => todo!(),
                     }
                 }
             }

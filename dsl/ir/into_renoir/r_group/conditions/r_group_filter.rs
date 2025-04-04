@@ -362,9 +362,7 @@ fn process_filter_condition(
                         }
                     }
                     InCondition::InSubqueryComplex {
-                        in_subquery,
-                        subquery,
-                        negated,
+                        ..
                     } => todo!(),
                     InCondition::InVecComplex {
                         field_name,
@@ -405,9 +403,7 @@ fn process_filter_condition(
                         }
                     }
                     InCondition::InComplex {
-                        field,
-                        values,
-                        negated,
+                        ..
                     } => todo!(),
                 },
                 GroupBaseCondition::Exists(_, _) => {
