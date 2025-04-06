@@ -7,6 +7,7 @@ use super::binary_generation::fields::Fields;
 use crate::dsl::binary_generation::execution::*;
 use crate::dsl::csv_utils::csv_parsers::*;
 use crate::dsl::ir::*;
+use crate::dsl::languages::dataframe::dataframe_to_ir;
 use crate::dsl::languages::sql::sql_parser::sql_to_ir;
 use crate::dsl::struct_object::object::*;
 use core::panic;
@@ -50,11 +51,41 @@ pub mod subquery_utils;
 /// 4. Convert the Ir AST to a valid Renoir query.
 /// 5. Generate the main.rs file and update it in the Rust project.
 /// 6. Compile the binary and save it to the specified output path.
-pub fn query_csv(
+
+
+pub fn query(
     query_str: &str,
     output_path: &String,
     input_tables: &IndexMap<String, (String, String)>, // key: table name, value: (csv_path, user_defined_types)
 ) -> io::Result<String> {
+    // Determine query type based on syntax
+    let is_sql_query = query_str.to_uppercase().contains("SELECT") && 
+                      query_str.to_uppercase().contains("FROM");
+    
+    let ir_ast = if !is_sql_query && query_str.contains('.') {
+        // Parse as DataFrame query
+        println!("Detected DataFrame query syntax");
+        match dataframe_to_ir(query_str) {
+            Ok(ast) => ast,
+            Err(e) => return Err(io::Error::new(io::ErrorKind::Other, format!("Error parsing DataFrame query: {}", e))),
+        }
+    } else {
+        // Parse as SQL query
+        println!("Detected SQL query syntax");
+        let ir_query = sql_to_ir(query_str);
+        query_ir_to_ast(&ir_query)
+    };
+    
+    // Common processing logic for both query types
+    process_query(ir_ast, output_path, input_tables)
+}
+
+pub fn process_query(
+    ir_ast: Arc<IrPlan>,
+    output_path: &String,
+    input_tables: &IndexMap<String, (String, String)>, // key: table name, value: (csv_path, user_defined_types)
+) -> io::Result<String> {
+
     // step 0: safety checks
     if input_tables.is_empty() {
         panic!("No input tables provided");
@@ -97,12 +128,10 @@ pub fn query_csv(
     query_object.set_tables_info(tables_info);
     query_object.set_table_to_csv(tables_csv);
 
-    // step 3: parse the query
-    let ir_query = sql_to_ir(query_str);
-    let mut ir_ast = query_ir_to_ast(&ir_query);
-    // step 3.5: manage subqueries
+
+    // step 3: manage subqueries
     //ir_ast = manage_subqueries(&ir_ast, &output_path.to_string(), &mut query_object).unwrap();
-    ir_ast = manage_subqueries(&ir_ast, &output_path.to_string(), &mut query_object).unwrap();
+    let ir_ast = manage_subqueries(&ir_ast, &output_path.to_string(), &mut query_object).unwrap();
 
     query_object = query_object.populate(&ir_ast);
     //println!("Ir AST: {:?}", query_object.ir_ast);

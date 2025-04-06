@@ -13,8 +13,8 @@ string = @{ "'" ~ ('a'..'z' | 'A'..'Z'| "_")* ~ "'" }
 value = { boolean_keyword | number | string }
 
 as_keyword = { "as" }
-in_keyword = { "in" }
-exists_keyword = @{ ^"not"? ~ ^"exists" }
+in_keyword = @{ ^"not in" | ^"in" }
+exists_keyword = @{ ^"not exists" | ^"exists" }
 join = { "join" }
 join_type = {"inner" | "left" | "outer"}
 on = { "on" }

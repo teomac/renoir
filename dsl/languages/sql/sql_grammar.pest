@@ -14,8 +14,8 @@ order_by_keyword = { "ORDER BY" }
 limit_keyword = { "LIMIT" }
 offset_keyword = { "OFFSET" }
 
-in_keyword = @{ ^"NOT"? ~ ^"IN" }
-exists_keyword = @{ ^"NOT"? ~ ^"EXISTS" }
+in_keyword = @{ ^"NOT IN" | ^"IN" }
+exists_keyword = @{ ^"NOT EXISTS" | ^"EXISTS" }
 
 l_paren = @{ "(" }
 r_paren = @{ ")" }

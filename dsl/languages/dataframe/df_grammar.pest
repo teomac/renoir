@@ -1,0 +1,46 @@
+WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
+COMMENT = _{ "//" ~ (!"\n" ~ ANY)* }
+
+// Basic tokens
+identifier = @{ ('a'..'z' | 'A'..'Z' | "_") ~ ('a'..'z' | 'A'..'Z' | '0'..'9' | "_")* }
+number = @{ ("-")? ~ ('0'..'9')+ ~ ("." ~ ('0'..'9')+)? }
+string_literal = @{ "'" ~ (!"'" ~ ANY)* ~ "'" }
+boolean = { "true" | "false" }
+
+// Operators
+comparison_op = { ">=" | "<=" | "!=" | "==" | ">" | "<" }
+logic_op = { "&&" | "||" }
+
+// Table/DataFrame reference
+table_ref = { identifier }
+
+// Column references and expressions
+column_ref = @{ identifier }
+column_with_alias = { column_ref ~ ("as" ~ identifier)? }
+column_list = { column_with_alias ~ ("," ~ column_with_alias)* }
+
+// Aggregation functions
+agg_function = { "sum" | "avg" | "min" | "max" | "count" }
+agg_expr = { agg_function ~ "(" ~ column_ref ~ ")" ~ ("as" ~ identifier)? }
+agg_list = { agg_expr ~ ("," ~ agg_expr)* }
+
+// Filter conditions
+condition_value = { string_literal | number | boolean | column_ref }
+condition_expr = { condition_value ~ comparison_op ~ condition_value }
+condition_term = { condition_expr | "(" ~ filter_condition ~ ")" }
+filter_condition = { condition_term ~ (logic_op ~ condition_term)* }
+
+// Method calls
+select_method = { ".select(" ~ column_list ~ ")" }
+filter_method = { ".filter(" ~ string_literal ~ ")" }
+groupby_method = { ".groupby(" ~ column_list ~ ")" }
+agg_method = { ".agg(" ~ agg_list ~ ")" }
+
+// DataFrame query
+method_chain = { 
+    table_ref ~ 
+    (select_method | filter_method | groupby_method | agg_method)+
+}
+
+// Entry point
+query = { SOI ~ method_chain ~ EOI }
