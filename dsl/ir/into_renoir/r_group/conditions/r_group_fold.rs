@@ -93,7 +93,12 @@ pub fn create_fold_operation(
                                         }
                                     ));
                                     global_update_code.push_str(&format!(
-                                        "    {} += local_acc{};\n",
+                                        "    {}{} += local_acc{};\n",
+                                        if !single_agg {
+                                            String::from("")
+                                        } else {
+                                            String::from("*")
+                                        },
                                         acc_access,
                                         if single_agg {
                                             "".to_string()
@@ -131,7 +136,12 @@ pub fn create_fold_operation(
                                         }
                                     ));
                                     global_update_code.push_str(&format!(
-                                        "    {} += local_acc{};\n",
+                                        "   {}{} += local_acc{};\n",
+                                        if !single_agg {
+                                            String::from("")
+                                        } else {
+                                            String::from("*")
+                                        },
                                         acc_access,
                                         if single_agg {
                                             "".to_string()
@@ -157,7 +167,7 @@ pub fn create_fold_operation(
                             }
                             AggregateType::Sum => {
                                 update_code.push_str(&format!(
-                                    "if let Some(val) = {} {{ {}acc{} = Some({}acc{}.unwrap_or(0{}) + val); }}\n",
+                                    "if let Some(val) = {} {{ {}acc{} = Some(acc{}.unwrap_or(0{}) + val); }}\n",
                                     col_access,
                                     if !single_agg {
                                         String::from("")
@@ -169,11 +179,7 @@ pub fn create_fold_operation(
                                     } else {
                                         format!(".{}", pos)
                                     },
-                                    if !single_agg {
-                                        String::from("")
-                                    } else {
-                                        String::from("*")
-                                    },
+                                    
                                     if single_agg {
                                         String::from("")
                                     } else {
@@ -186,7 +192,12 @@ pub fn create_fold_operation(
                                     }
                                 ));
                                 global_update_code.push_str(&format!(
-                                    "    {} = Some({}.unwrap_or(0{}) + local_acc{}.unwrap_or(0{}));\n",
+                                    "    {}{} = Some({}.unwrap_or(0{}) + local_acc{}.unwrap_or(0{}));\n",
+                                    if !single_agg {
+                                        String::from("")
+                                    } else {
+                                        String::from("*")
+                                    },
                                     acc_access,
                                     acc_access,
                                     if col_type == "f64" { ".0" } else { "" },
@@ -249,8 +260,13 @@ pub fn create_fold_operation(
                                     }
                                 ));
                                 global_update_code.push_str(&format!(
-                                    "    if let Some(val) = local_acc{} {{ {} = Some({}.unwrap_or(val).max(val)); }}\n",
+                                    "    if let Some(val) = local_acc{} {{ {}{} = Some({}.unwrap_or(val).max(val)); }}\n",
                                     if single_agg { "".to_string() } else { format!(".{}", pos) },
+                                    if !single_agg {
+                                        String::from("")
+                                    } else {
+                                        String::from("*")
+                                    },
                                     acc_access,
                                     acc_access
                                 ));
@@ -311,8 +327,13 @@ pub fn create_fold_operation(
                                 ));
 
                                 global_update_code.push_str(&format!(
-                                    "    if let Some(val) = local_acc{} {{ {} = Some({}.unwrap_or(val).min(val)); }}\n",
+                                    "    if let Some(val) = local_acc{} {{ {}{} = Some({}.unwrap_or(val).min(val)); }}\n",
                                     if single_agg { "".to_string() } else { format!(".{}", pos) },
+                                    if !single_agg {
+                                        String::from("")
+                                    } else {
+                                        String::from("*")
+                                    },
                                     acc_access,
                                     acc_access
                                 ));

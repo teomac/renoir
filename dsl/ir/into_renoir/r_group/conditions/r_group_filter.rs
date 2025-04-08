@@ -522,11 +522,151 @@ fn process_filter_condition(
                             }
                             //fourth - aggregate case
                             else if field.aggregate.is_some() {
-                                todo!("Aggregate case not implemented yet")
+                                // Implement the aggregate case for IN conditions
+                                let agg = field.aggregate.as_ref().unwrap();
+                                let agg_pos = acc_info.get_agg_position(agg);
+
+                                // Aggregates are always in x.1
+                                let col_access = if acc_info.agg_positions.len() == 1 {
+                                    "x.1".to_string()
+                                } else {
+                                    format!("x.1.{}", agg_pos)
+                                };
+
+                                // Generate safety checks if needed
+                                if agg.function != AggregateType::Count {
+                                    check_list.push(format!("{}.is_some()", col_access));
+                                }
+
+                                // Generate the appropriate access based on aggregate type
+                                let agg_value = match agg.function {
+                                    AggregateType::Count => col_access.to_string(),
+                                    AggregateType::Max
+                                    | AggregateType::Min
+                                    | AggregateType::Sum => {
+                                        format!("{}.unwrap()", col_access)
+                                    }
+                                    AggregateType::Avg => {
+                                        // Get the sum and count positions
+                                        let count_pos =
+                                            acc_info.get_agg_position(&AggregateFunction {
+                                                function: AggregateType::Count,
+                                                column: agg.column.clone(),
+                                            });
+                                        format!(
+                                            "{}.unwrap() / x.1.{} as f64",
+                                            col_access, count_pos
+                                        )
+                                    }
+                                };
+
+                                // Check if the aggregate type matches the vector type
+                                if vector_type != "f64" && vector_type != "i64" {
+                                    panic!(
+                                        "Invalid InCondition - aggregate type {} does not match vector type {}",
+                                        agg.function, vector_type
+                                    );
+                                }
+                                // Retireve aggregate type
+                                let agg_type = if agg.function == AggregateType::Count {
+                                    "usize".to_string()
+                                } else {
+                                    query_object.get_type(&agg.column)
+                                };
+
+                                println!("Aggregate type: {}", agg_type);
+
+                                let cast_type = if agg_type != *vector_type {
+                                    format!(" as {}", vector_type)
+                                } else {
+                                    String::new()
+                                };
+
+                                // Compare the aggregate value with vector values
+                                // Need to handle type conversions appropriately
+                                let comparison_str = if vector_type == "f64" {
+                                    format!("&OrderedFloat({}{})", agg_value, cast_type)
+                                } else {
+                                    format!("&({}{})", agg_value, cast_type)
+                                };
+
+                                // Generate the final IN condition check
+                                if !check_list.is_empty() {
+                                    format!(
+                                        "if {} {{ {}{}.contains({}) }} else {{ false }}",
+                                        check_list.join(" && "),
+                                        if *negated { "!" } else { "" },
+                                        vector_name,
+                                        comparison_str
+                                    )
+                                } else {
+                                    format!(
+                                        "{}{}.contains({})",
+                                        if *negated { "!" } else { "" },
+                                        vector_name,
+                                        comparison_str
+                                    )
+                                }
                             }
                             //fifth - arithmetic expr case
                             else if field.nested_expr.is_some() {
-                                todo!("Nested expr case not implemented yet")
+                                // Process the nested arithmetic expression
+                                let expr_result = process_filter_field(
+                                    field,
+                                    keys,
+                                    query_object,
+                                    acc_info,
+                                    &mut check_list,
+                                );
+
+                                // Get the type of the arithmetic expression
+                                let expr_type = query_object.get_complex_field_type(field);
+
+                                // Compare the expression type with vector type for appropriate conversion
+                                if expr_type != *vector_type {
+                                    // Type mismatch - check if we can convert between numeric types
+                                    if (expr_type == "f64" || expr_type == "i64")
+                                        && (*vector_type == "f64" || *vector_type == "i64")
+                                    {
+                                        // Numeric types can be converted
+                                        let cast_expr = if *vector_type == "f64" {
+                                            format!("&OrderedFloat({})", expr_result)
+                                        } else {
+                                            format!("&({} as {})", expr_result, vector_type)
+                                        };
+
+                                        // Generate the final check with type conversion
+                                        format!(
+                                            "if {} {{ {}{}.contains({}) }} else {{ false }}",
+                                            check_list.join(" && "),
+                                            if *negated { "!" } else { "" },
+                                            vector_name,
+                                            cast_expr
+                                        )
+                                    } else {
+                                        // Types are incompatible
+                                        panic!(
+                                            "Invalid IN condition - expression type {} does not match vector type {}",
+                                             expr_type, vector_type
+                                        );
+                                    }
+                                } else {
+                                    // Types match - generate the appropriate comparison
+                                    let comparison_str = if *vector_type == "f64" {
+                                        format!("&OrderedFloat({})", expr_result)
+                                    } else {
+                                        format!("&({})", expr_result)
+                                    };
+
+                                    // Generate the final IN condition check
+                                    format!(
+                                        "if {} {{ {}{}.contains({}) }} else {{ false }}",
+                                        check_list.join(" && "),
+                                        if *negated { "!" } else { "" },
+                                        vector_name,
+                                        comparison_str
+                                    )
+                                }
                             } else {
                                 panic!("Invalid Incondition in group clause")
                             }

@@ -2,7 +2,7 @@ use crate::dsl::ir::ir_ast_structure::{
     AggregateType, ComplexField, GroupBaseCondition, GroupClause,
 };
 use crate::dsl::ir::r_group::r_group_keys::{GroupAccumulatorInfo, GroupAccumulatorValue};
-use crate::dsl::ir::{ColumnRef, QueryObject};
+use crate::dsl::ir::{ColumnRef, InCondition, QueryObject};
 
 // Function to parse group conditions and collect necessary information
 pub fn parse_group_conditions(
@@ -40,7 +40,22 @@ pub fn parse_group_conditions(
                 GroupBaseCondition::NullCheck(null_check) => {
                     collect_field_aggregates(&null_check.field, acc_info, query_object, keys);
                 }
-                GroupBaseCondition::In(..) => (),
+                GroupBaseCondition::In(in_cond) => {
+                    match in_cond {
+                        InCondition::InOldVersion { field, values: _, negated: _ } => {
+                            // Process the field for aggregates
+                            collect_field_aggregates(field, acc_info, query_object, keys);
+                        },
+                        InCondition::InSubquery { field, subquery: _, negated: _ } => {
+                            // Process the field for aggregates
+                            collect_field_aggregates(field, acc_info, query_object, keys);
+                        },
+                        InCondition::InVec { field, vector_name: _, vector_type: _, negated: _ } => {
+                            // Process the field for aggregates
+                            collect_field_aggregates(field, acc_info, query_object, keys);
+                        }
+                    }
+                },
                 GroupBaseCondition::Exists(_, _) => (),
                 GroupBaseCondition::Boolean(_) => (),
                 GroupBaseCondition::ExistsVec(_, _) => (),
