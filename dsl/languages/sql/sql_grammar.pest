@@ -67,15 +67,15 @@ arithmetic_factor = {
 }
 
 exists_expr = { exists_keyword ~ subquery_expr }
-in_expr = { (table_column | variable | subquery_expr) ~ in_keyword ~ subquery_expr }
+in_expr = { (arithmetic_expr | subquery_expr) ~ in_keyword ~ subquery_expr }
 
 
 condition = {
-    boolean |
     exists_expr |
     in_expr |
     arithmetic_expr ~ operator ~ arithmetic_expr | 
-    (table_column | subquery_expr | variable | number ) ~ null_operator
+    (table_column | subquery_expr | variable | number ) ~ null_operator |
+    boolean
 }
 
 where_conditions = { where_term ~ (binary_op ~ where_term)* }

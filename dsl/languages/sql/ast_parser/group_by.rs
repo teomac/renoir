@@ -233,36 +233,33 @@ impl GroupByParser {
                 // Get the inner parts of IN expression
                 let mut in_inner = first.into_inner();
 
-                // First part is the column reference (variable or table_column)
-                let column_ref = in_inner.next().ok_or_else(|| {
+                // First part is the having field or subquery
+                let left_expr = in_inner.next().ok_or_else(|| {
                     SqlParseError::InvalidInput(
                         "Missing column reference in IN expression".to_string(),
                     )
                 })?;
 
                 let mut in_subquery = None;
-                let mut col = None;
+                let mut having_field = None;
 
-                if column_ref.as_rule() == Rule::subquery_expr {
-                    // If the first part is a subquery, we need to parse it
-                    in_subquery = Some(SqlParser::parse_subquery(column_ref)?);
+                if left_expr.as_rule() == Rule::subquery_expr {
+                    in_subquery = Some(SqlParser::parse_subquery(left_expr)?);
+                } else if left_expr.as_rule() == Rule::arithmetic_expr {
+                    // Parse the arithmetic expression into a HavingField
+                    having_field = Some(HavingField {
+                        column: None,
+                        value: None,
+                        aggregate: None,
+                        arithmetic: Some(Self::parse_arithmetic_expr(left_expr)?),
+                        subquery: None,
+                    });
                 } else {
-                    // Parse the column reference
-                    col = match column_ref.as_rule() {
-                        Rule::variable => Some(ColumnRef {
-                            table: None,
-                            column: column_ref.as_str().to_string(),
-                        }),
-                        Rule::table_column => Some(Self::parse_column_ref(column_ref)?),
-                        _ => {
-                            return Err(Box::new(SqlParseError::InvalidInput(format!(
-                                "Expected column reference in IN expression, got {:?}",
-                                column_ref.as_rule()
-                            ))))
-                        }
-                    };
+                    return Err(Box::new(SqlParseError::InvalidInput(format!(
+                        "Expected arithmetic expression or subquery in HAVING IN expression, got {:?}",
+                        left_expr.as_rule()
+                    ))));
                 }
-
                 // Next part is the IN keyword
                 let in_keyword = in_inner
                     .next()
@@ -289,8 +286,12 @@ impl GroupByParser {
                     )));
                 } else {
                     return Ok(HavingClause::Base(HavingBaseCondition::In(
-                        InCondition::InSimple(col.unwrap(), Box::new(subquery), is_negated),
-                    )));
+                        InCondition::InHaving(
+                            having_field.unwrap(),
+                            Box::new(subquery),
+                            is_negated,
+                        ),
+                    )))
                 }
             }
         }

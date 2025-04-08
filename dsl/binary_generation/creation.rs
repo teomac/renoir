@@ -39,6 +39,7 @@ impl RustProject {
                 serde_json = "1.0.133"
                 serde = "1.0.217"
                 csv = "1.2.2"
+                indexmap = "2.6.0"
                 ordered-float = {{version = "5.0.0", features = ["serde"]}}
                 "#,
                 renoir_path

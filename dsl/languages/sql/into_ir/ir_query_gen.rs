@@ -227,13 +227,13 @@ impl SqlToIr {
                     }
                 }
                 WhereBaseCondition::In(condition) => match condition {
-                    InCondition::InSimple(column, subquery, negated) => {
-                        let column_str = column.to_string();
+                    InCondition::InWhere(field, subquery, negated) => {
+                        let field_str = Self::convert_where_field(field, index, nested_index);
                         let subquery_str = Self::convert(subquery, index, nested_index + 1);
                         if *negated {
-                            format!("{} not in ({})", column_str, subquery_str)
+                            format!("{} not in ({})", field_str, subquery_str)
                         } else {
-                            format!("{} in ({})", column_str, subquery_str)
+                            format!("{} in ({})", field_str, subquery_str)
                         }
                     }
 
@@ -245,6 +245,10 @@ impl SqlToIr {
                         } else {
                             format!("({}) in ({})", subquery_in, subquery_str)
                         }
+                    }
+                    InCondition::InHaving( .. ) => {
+                        // Handle InHaving condition if needed
+                        panic!("We cannot have InHaving condition in the WHERE clause")
                     }
                 },
 
@@ -490,15 +494,7 @@ impl SqlToIr {
                     }
                 }
                 HavingBaseCondition::In(condition) => match condition {
-                    InCondition::InSimple(column, subquery, negated) => {
-                        let column_str = column.to_string();
-                        let subquery_str = Self::convert(subquery, index, nested_index + 1);
-                        if *negated {
-                            format!("{} not in ({})", column_str, subquery_str)
-                        } else {
-                            format!("{} in ({})", column_str, subquery_str)
-                        }
-                    }
+                    
 
                     InCondition::InSubquery(in_subquery, subquery, negated) => {
                         let in_subquery_str = Self::convert(in_subquery, index, nested_index + 1);
@@ -508,6 +504,40 @@ impl SqlToIr {
                         } else {
                             format!("({}) in ({})", in_subquery_str, subquery_str)
                         }
+                    },
+                    InCondition::InHaving(field, subquery, negated) => {
+                        let field_str = if let Some(ref arithmetic) = field.arithmetic {
+                            Self::arithmetic_expr_to_string(arithmetic, index, nested_index)
+                        } else if let Some(ref column) = field.column {
+                            column.to_string()
+                        } else if let Some(ref aggregate) = field.aggregate {
+                            let agg_func = match aggregate.0 {
+                                AggregateFunction::Max => "max",
+                                AggregateFunction::Min => "min",
+                                AggregateFunction::Sum => "sum",
+                                AggregateFunction::Avg => "avg",
+                                AggregateFunction::Count => "count",
+                            };
+                            format!("{}({})", agg_func, aggregate.1)
+                        } else {
+                            match &field.value {
+                                Some(SqlLiteral::Float(val)) => format!("{:.2}", val),
+                                Some(SqlLiteral::Integer(val)) => val.to_string(),
+                                Some(SqlLiteral::String(val)) => format!("'{}'", val),
+                                Some(SqlLiteral::Boolean(val)) => val.to_string(),
+                                None => String::new(),
+                            }
+                        };
+                
+                        let subquery_str = Self::convert(subquery, index, nested_index + 1);
+                        if *negated {
+                            format!("{} not in ({})", field_str, subquery_str)
+                        } else {
+                            format!("{} in ({})", field_str, subquery_str)
+                        }
+                    },
+                    InCondition::InWhere(..) => {
+                        panic!("We cannot have InWhere condition in the HAVING clause")
                     }
                 },
                 HavingBaseCondition::Boolean(boolean) => boolean.to_string(),

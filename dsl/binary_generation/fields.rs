@@ -34,6 +34,7 @@ impl Fields {
         use serde_json;
         use std::fs;
         use csv;
+        use indexmap::IndexSet;
         use ordered_float::OrderedFloat;"#.to_string()},
             structs: IndexMap::new(),
             streams: IndexMap::new(),
@@ -211,25 +212,36 @@ impl Fields {
         let stream_name = self.streams.first().unwrap().0.clone();
         let new_result = format!("{}_result", stream_name);
         let stream = self.streams.get_mut(&stream_name).unwrap();
+        let result_type = stream.final_struct.first().unwrap().1.clone();
+
 
         let len_check = format!(r#"if {}.len() != 1 {{
             panic!("Subquery did not return a single value");
         }}"#, new_result);
+
+        let needs_ordered_float = result_type == "f64";
+
+        // Collection code using IndexSet instead of Vec
+    let collection_code = 
+        format!(r#"
+            let mut {} = indexmap::IndexSet::new();
+            if let Some(values) = result {{
+                let values: Vec<_> = values
+                    .iter()
+                    .filter_map(|record| record.{}{})
+                    .collect();
+
+                values.into_iter().for_each(|item| {{ {}.insert(item); }});
+            }}
+        "#, new_result, stream.final_struct.first().unwrap().0, if needs_ordered_float {".map(OrderedFloat)"} else {".clone()"},new_result);
 
         stream.op_chain.push(format!(
             r#"
                 .collect_vec();
         ctx.execute_blocking();
         let result = {}.get();
-        let mut {} = vec![];
-        if let Some(values) = result {{
-            let values: Vec<_> = values
-                .iter()
-                .filter_map(|record| record.{}.clone())
-                .collect();
-
-            {} = values;
-        }}
+        
+        {}
 
         {}
 
@@ -238,9 +250,7 @@ impl Fields {
         let ctx = StreamContext::new(config.clone());  
             "#,
             stream_name,
-            new_result,
-            stream.final_struct.first().unwrap().0,
-            new_result,
+            collection_code,
             if stream.distinct {
                 process_distinct(stream, true)
             } else {

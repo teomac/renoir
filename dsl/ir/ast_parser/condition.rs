@@ -162,69 +162,57 @@ impl ConditionParser {
             Rule::in_expr => {
                 let mut inner = first.into_inner();
 
-                let mut in_subquery = None;
-                let mut col_ref = None;
-
-                // Parse column reference first
-                let column = inner.next().ok_or_else(|| {
-                    IrParseError::InvalidInput("Missing column in IN expression".to_string())
+                // Parse first expression - could be arithmetic_expr or subquery
+                let first_expr = inner.next().ok_or_else(|| {
+                    IrParseError::InvalidInput("Missing expression in IN condition".to_string())
                 })?;
-
-                if column.as_rule() == Rule::subquery {
-                    // If the first token is a subquery, we need to parse it as a subquery
-                    in_subquery = Some(IrParser::parse_subquery(column)?);
-                } else if column.as_rule() == Rule::qualified_column {
-                    // If it's a qualified column, parse it
-                    col_ref = Some(Self::parse_qualified_column(column)?);
-                } else if column.as_rule() == Rule::identifier {
-                    // If it's just an identifier, create a ColumnRef
-                    col_ref = Some(ColumnRef {
-                        table: None,
-                        column: column.as_str().to_string(),
-                    });
+            
+                let field = if first_expr.as_rule() == Rule::subquery {
+                    // If it's a subquery, create ComplexField with subquery
+                    ComplexField {
+                        subquery: Some(IrParser::parse_subquery(first_expr)?),
+                        column_ref: None,
+                        literal: None,
+                        aggregate: None,
+                        nested_expr: None,
+                        subquery_vec: None,
+                    }
+                } else if first_expr.as_rule() == Rule::arithmetic_expr {
+                    // Parse arithmetic expression
+                    Self::parse_arithmetic_expr(first_expr)?
                 } else {
                     return Err(Box::new(IrParseError::InvalidInput(
-                        "Invalid field in IN expression".to_string(),
+                        "Invalid expression in IN condition".to_string(),
                     )));
-                }
-
+                };
+            
                 // Check for NOT (it's optional)
                 let is_negated = if let Some(token) = inner.next() {
                     token.as_str().to_lowercase() == "not"
                 } else {
                     false
                 };
-
+            
                 // If we found NOT, we need to skip past it to get to IN
                 if is_negated {
                     inner.next(); // Skip the IN keyword
                 } else {
                     // The token we got wasn't NOT, it was IN, so we don't need to skip again
                 }
-
+            
                 // Parse the subquery
                 let subquery = inner.next().ok_or_else(|| {
                     IrParseError::InvalidInput("Missing subquery in IN expression".to_string())
                 })?;
                 let subquery_plan = IrParser::parse_subquery(subquery)?;
-
-                if in_subquery.is_some() {
-                    Ok(FilterClause::Base(FilterConditionType::In(
-                        InCondition::InSubqueryComplex {
-                            in_subquery: in_subquery.unwrap(),
-                            subquery: subquery_plan,
-                            negated: is_negated,
-                        },
-                    )))
-                } else {
-                    Ok(FilterClause::Base(FilterConditionType::In(
-                        InCondition::InSubquery {
-                            field: col_ref.unwrap(),
-                            subquery: subquery_plan,
-                            negated: is_negated,
-                        },
-                    )))
-                }
+            
+                Ok(FilterClause::Base(FilterConditionType::In(
+                    InCondition::InSubquery {
+                        field,
+                        subquery: subquery_plan,
+                        negated: is_negated,
+                    },
+                )))
             }
             Rule::exists_keyword => {
                 // Check if this is "not exists" or just "exists"
