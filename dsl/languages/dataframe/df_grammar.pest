@@ -35,11 +35,13 @@ select_method = { ".select(" ~ column_list ~ ")" }
 filter_method = { ".filter(" ~ string_literal ~ ")" }
 groupby_method = { ".groupby(" ~ column_list ~ ")" }
 agg_method = { ".agg(" ~ agg_list ~ ")" }
+join_type = { "inner" | "left" | "outer" }
+join_method = { ".join(" ~ table_ref ~ "," ~ column_list ~ "," ~ column_list ~ ("," ~ join_type)? ~ ")" }
 
 // DataFrame query
 method_chain = { 
     table_ref ~ 
-    (select_method | filter_method | groupby_method | agg_method)+
+    (select_method | filter_method | groupby_method | agg_method | join_method)+
 }
 
 // Entry point

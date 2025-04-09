@@ -92,6 +92,9 @@ impl DataFrameASTBuilder {
                     // Process filter right away
                     base_plan = Self::process_filter_method(method, base_plan)?;
                 }
+                Rule::join_method => {
+                    base_plan = Self::process_join_method(method, base_plan)?;
+                }
                 _ => {
                     return Err(Box::new(IrParseError::InvalidInput(format!(
                         "Unexpected method: {:?}",
@@ -153,15 +156,15 @@ impl DataFrameASTBuilder {
         let column_list = pair.into_inner().next().ok_or_else(|| {
             IrParseError::InvalidInput("Missing column list in select()".to_string())
         })?;
-
+    
         if column_list.as_rule() != Rule::column_list {
             return Err(Box::new(IrParseError::InvalidInput(
                 "Expected column list in select()".to_string(),
             )));
         }
-
+    
         let mut projection_columns = Vec::new();
-
+    
         for col in column_list.into_inner() {
             if col.as_rule() == Rule::column_with_alias {
                 let mut parts = col.into_inner();
@@ -169,19 +172,32 @@ impl DataFrameASTBuilder {
                     .next()
                     .ok_or_else(|| IrParseError::InvalidInput("Missing column name".to_string()))?
                     .as_str();
-
+    
                 let alias = parts.next().map(|p| p.as_str().to_string());
-
+    
+                // Determine the table name for the column
+                let table_name = match &*input {
+                    IrPlan::Join { left, .. } => {
+                        // For join queries, set the table name based on the input table or alias
+                        match &**left {
+                            IrPlan::Scan { alias, .. } => alias.clone().unwrap_or_else(|| "".to_string()),
+                            _ => "".to_string(),
+                        }
+                    },
+                    IrPlan::Scan { alias, .. } => alias.clone().unwrap_or_else(|| "".to_string()),
+                    _ => "".to_string(),
+                };
+    
                 projection_columns.push(ProjectionColumn::Column(
                     ColumnRef {
-                        table: None,
+                        table: if table_name.is_empty() { None } else { Some(table_name) },
                         column: column_name.to_string(),
                     },
                     alias,
                 ));
             }
         }
-
+    
         Ok(Arc::new(IrPlan::Project {
             input,
             columns: projection_columns,
@@ -198,31 +214,31 @@ impl DataFrameASTBuilder {
             .into_inner()
             .next()
             .ok_or_else(|| IrParseError::InvalidInput("Missing filter condition".to_string()))?;
-
+    
         if filter_string.as_rule() != Rule::string_literal {
             return Err(Box::new(IrParseError::InvalidInput(
                 "Filter condition must be a string literal".to_string(),
             )));
         }
-
+    
         // Strip quotes from string literal
         let condition_text = filter_string.as_str();
         let stripped = &condition_text[1..condition_text.len() - 1];
-
+    
         // Parse the filter condition
-        let predicate = Self::parse_filter_condition(stripped)?;
-
+        let predicate = Self::parse_filter_condition(stripped, &input)?;
+    
         Ok(Arc::new(IrPlan::Filter { input, predicate }))
     }
-
-    fn parse_filter_condition(condition: &str) -> Result<FilterClause, Box<IrParseError>> {
-
+    
+    // Updated parse_filter_condition to accept the input plan for table reference determination
+    fn parse_filter_condition(condition: &str, input: &Arc<IrPlan>) -> Result<FilterClause, Box<IrParseError>> {
         // Check for AND/OR logic
         if condition.contains("&&") {
             let parts: Vec<&str> = condition.split("&&").collect();
-            let left = Self::parse_filter_condition(parts[0].trim())?;
-            let right = Self::parse_filter_condition(parts[1].trim())?;
-
+            let left = Self::parse_filter_condition(parts[0].trim(), input)?;
+            let right = Self::parse_filter_condition(parts[1].trim(), input)?;
+    
             return Ok(FilterClause::Expression {
                 left: Box::new(left),
                 binary_op: BinaryOp::And,
@@ -230,20 +246,20 @@ impl DataFrameASTBuilder {
             });
         } else if condition.contains("||") {
             let parts: Vec<&str> = condition.split("||").collect();
-            let left = Self::parse_filter_condition(parts[0].trim())?;
-            let right = Self::parse_filter_condition(parts[1].trim())?;
-
+            let left = Self::parse_filter_condition(parts[0].trim(), input)?;
+            let right = Self::parse_filter_condition(parts[1].trim(), input)?;
+    
             return Ok(FilterClause::Expression {
                 left: Box::new(left),
                 binary_op: BinaryOp::Or,
                 right: Box::new(right),
             });
         }
-
+    
         // Parse individual comparison
         let mut operator = "";
         let mut parts = Vec::new();
-
+    
         for op in &[">=", "<=", "!=", "==", ">", "<"] {
             if condition.contains(op) {
                 operator = op;
@@ -251,17 +267,30 @@ impl DataFrameASTBuilder {
                 break;
             }
         }
-
+    
         if parts.len() != 2 {
             return Err(Box::new(IrParseError::InvalidInput(format!(
                 "Invalid filter condition: {}",
                 condition
             ))));
         }
-
+    
+        // Determine the table name for the column - clone it immediately to avoid ownership issues
+        let table_name_opt = match &**input {
+            IrPlan::Join { left, .. } => {
+                // For join queries, set the table name based on the input table or alias
+                match &**left {
+                    IrPlan::Scan { alias, .. } => alias.clone(),
+                    _ => None,
+                }
+            },
+            IrPlan::Scan { alias, .. } => alias.clone(),
+            _ => None,
+        };
+    
         let left_field = ComplexField {
             column_ref: Some(ColumnRef {
-                table: None,
+                table: table_name_opt.clone(),
                 column: parts[0].to_string(),
             }),
             literal: None,
@@ -270,7 +299,7 @@ impl DataFrameASTBuilder {
             subquery: None,
             subquery_vec: None,
         };
-
+    
         // Try to parse the right side as a literal or column reference
         let right_field = if parts[1].starts_with('\'') && parts[1].ends_with('\'') {
             // String literal
@@ -315,10 +344,19 @@ impl DataFrameASTBuilder {
                 subquery_vec: None,
             }
         } else {
+            // Determine if this is a column from the joined table
+            let (table, column) = if parts[1].contains('.') {
+                let table_col: Vec<&str> = parts[1].split('.').collect();
+                (Some(table_col[0].to_string()), table_col[1].to_string())
+            } else {
+                // For non-qualified columns, use the default table
+                (table_name_opt.clone(), parts[1].to_string())
+            };
+    
             ComplexField {
                 column_ref: Some(ColumnRef {
-                    table: None,
-                    column: parts[1].to_string(),
+                    table,
+                    column,
                 }),
                 literal: None,
                 aggregate: None,
@@ -327,7 +365,7 @@ impl DataFrameASTBuilder {
                 subquery_vec: None,
             }
         };
-
+    
         let op = match operator {
             ">" => ComparisonOp::GreaterThan,
             "<" => ComparisonOp::LessThan,
@@ -342,7 +380,7 @@ impl DataFrameASTBuilder {
                 ))))
             }
         };
-
+    
         Ok(FilterClause::Base(FilterConditionType::Comparison(
             Condition {
                 left_field,
@@ -466,6 +504,113 @@ impl DataFrameASTBuilder {
             input,
             columns: projection_columns,
             distinct: false,
+        }))
+    }
+
+    fn process_join_method(
+        pair: Pair<Rule>,
+        input: Arc<IrPlan>,
+    ) -> Result<Arc<IrPlan>, Box<IrParseError>> {
+        let mut parts = pair.into_inner();
+        
+        // Get the right table reference
+        let right_table = parts.next().ok_or_else(|| {
+            IrParseError::InvalidInput("Missing right table in join()".to_string())
+        })?;
+        let right_table_name = right_table.as_str().to_string();
+    
+        // Get left keys (columns from the left table)
+        let left_keys_list = parts.next().ok_or_else(|| {
+            IrParseError::InvalidInput("Missing left keys in join()".to_string())
+        })?;
+        
+        // Get right keys (columns from the right table)
+        let right_keys_list = parts.next().ok_or_else(|| {
+            IrParseError::InvalidInput("Missing right keys in join()".to_string())
+        })?;
+        
+        // Parse left join keys
+        let mut left_keys = Vec::new();
+        for col in left_keys_list.into_inner() {
+            if col.as_rule() == Rule::column_with_alias {
+                let column_name = col
+                    .into_inner()
+                    .next()
+                    .ok_or_else(|| IrParseError::InvalidInput("Missing column name".to_string()))?
+                    .as_str();
+                
+                left_keys.push(ColumnRef {
+                    table: None, // Will be filled in later
+                    column: column_name.to_string(),
+                });
+            }
+        }
+        
+        // Parse right join keys
+        let mut right_keys = Vec::new();
+        for col in right_keys_list.into_inner() {
+            if col.as_rule() == Rule::column_with_alias {
+                let column_name = col
+                    .into_inner()
+                    .next()
+                    .ok_or_else(|| IrParseError::InvalidInput("Missing column name".to_string()))?
+                    .as_str();
+                
+                right_keys.push(ColumnRef {
+                    table: Some(right_table_name.clone()), // Explicitly set the table
+                    column: column_name.to_string(),
+                });
+            }
+        }
+        
+        // Check if the number of left and right keys match
+        if left_keys.len() != right_keys.len() {
+            return Err(Box::new(IrParseError::InvalidInput(
+                "Number of columns in left and right keys must match".to_string(),
+            )));
+        }
+        
+        // Optional join type (default to inner join)
+        let join_type = if let Some(type_token) = parts.next() {
+            match type_token.as_str() {
+                "inner" => JoinType::Inner,
+                "left" => JoinType::Left,
+                "outer" => JoinType::Outer,
+                _ => {
+                    return Err(Box::new(IrParseError::InvalidInput(format!(
+                        "Unsupported join type: {}",
+                        type_token.as_str()
+                    ))))
+                }
+            }
+        } else {
+            JoinType::Inner // Default to inner join
+        };
+        
+        // Create join conditions from the key pairs
+        let mut conditions = Vec::new();
+        for (left, right) in left_keys.iter().zip(right_keys.iter()) {
+            conditions.push(JoinCondition {
+                left_col: left.clone(),
+                right_col: right.clone(),
+            });
+        }
+        
+        // Create the right side plan
+        let right_plan = Arc::new(IrPlan::Scan {
+            stream_name: format!("stream{}", 1), // Use index 1 for right stream
+            alias: Some(right_table_name.clone()),
+            input: Arc::new(IrPlan::Table { 
+                table_name: right_table_name 
+            }),
+        });
+        
+        // Create the join plan
+        Ok(Arc::new(IrPlan::Join {
+            left: input,
+            right: right_plan,
+            condition: conditions,
+            join_type,
         }))
     }
 }
