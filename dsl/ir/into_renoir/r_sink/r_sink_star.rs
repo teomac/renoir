@@ -80,12 +80,13 @@ pub fn create_star_map(stream_name: &String, query_object: &QueryObject) -> Stri
                         ));
                     } else {
                         result.push_str(&format!(
-                            "{}: x.0{},",
+                            "{}: {}x.0{},",
                             query_object
                                 .result_column_types
                                 .get_index(offset)
                                 .unwrap()
                                 .0,
+                            if col_type == "bool" {"*"} else {""},
                             if col_type == "String" { ".clone()" } else { "" }
                         ));
                     }
@@ -102,12 +103,13 @@ pub fn create_star_map(stream_name: &String, query_object: &QueryObject) -> Stri
                     ));
                 } else {
                     result.push_str(&format!(
-                        "{}: x.0.{}{},",
+                        "{}: {}x.0.{}{},",
                         query_object
                             .result_column_types
                             .get_index(offset)
                             .unwrap()
                             .0,
+                        if col_type == "bool" {"*"} else {""},
                         index,
                         if col_type == "String" { ".clone()" } else { "" }
                     ));

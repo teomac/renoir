@@ -81,8 +81,9 @@ pub fn create_simple_map(
 
                             } else {
                                 value = format!(
-                                    "x.0{}",
-                                    if col_type == "String" { ".clone()" } else { "" }
+                                    "{}x.0{}",
+                                    if col_type == "bool" {"*"} else {""}
+                                    ,if col_type == "String" { ".clone()" } else { "" }
                                 );
 
                             }
@@ -96,7 +97,9 @@ pub fn create_simple_map(
                                     key_pos
                                 );
                             } else {
-                                value = format!("x.0.{}{}", key_pos, if col_type == "String" { ".clone()" } else { "" });
+                                value = format!("{}x.0.{}{}",
+                                if col_type == "bool" {"*"} else {""},
+                                key_pos, if col_type == "String" { ".clone()" } else { "" });
 
                             }
                             format!("{}: {}", field_name, value)

@@ -480,7 +480,7 @@ pub fn create_map(
                     if col_type == "f64" {
                         "if x.0.is_some() { x.0.unwrap().into_inner() } else { None }".to_string()
                     } else {
-                        format!("x.0{}", if col_type == "String" { ".clone()" } else { "" })
+                        format!("{}x.0{}", if col_type == "bool" {"*"} else{""},if col_type == "String" { ".clone()" } else { "" })
                     }
                 } else if col_type == "f64" {
                     format!(
@@ -489,7 +489,8 @@ pub fn create_map(
                     )
                 } else {
                     format!(
-                        "x.0.{}{}",
+                        "{}x.0.{}{}",
+                        if col_type == "bool" {"*"} else{""},
                         key_position,
                         if col_type == "String" { ".clone()" } else { "" }
                     )

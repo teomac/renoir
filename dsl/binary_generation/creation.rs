@@ -190,8 +190,6 @@ pub fn generate_struct_declarations(query_object: &QueryObject) -> String {
         .map(|(struct_name, fields)| {
             // Generate struct definition
 
-            println!("Field types: {:?}", fields);
-
             //if fields contains OrderedFloat or does not contain <f64>, add Eq and Hash to the struct definition
             let mut struct_def = String::new();
             if fields.values().any(|field_type| field_type.contains("Option<OrderedFloat<f64>>") || !field_type.contains("Option<f64>")) {
