@@ -189,10 +189,21 @@ pub fn generate_struct_declarations(query_object: &QueryObject) -> String {
         .iter()
         .map(|(struct_name, fields)| {
             // Generate struct definition
+
+            println!("Field types: {:?}", fields);
+
+            //if fields contains OrderedFloat or does not contain <f64>, add Eq and Hash to the struct definition
             let mut struct_def = String::new();
-            struct_def.push_str(
-                "#[derive(Clone, Debug, Serialize, Deserialize, PartialOrd, PartialEq, Default)]\n",
-            );
+            if fields.values().any(|field_type| field_type.contains("Option<OrderedFloat<f64>>") || !field_type.contains("Option<f64>")) {
+                struct_def.push_str(
+                    "#[derive(Clone, Debug, Serialize, Deserialize, PartialOrd, PartialEq, Default, Eq, Hash)]\n",
+                );
+            } else {
+                struct_def.push_str(
+                    "#[derive(Clone, Debug, Serialize, Deserialize, PartialOrd, PartialEq, Default)]\n",
+                );
+            }
+            
             struct_def.push_str(&format!("struct {} {{\n", struct_name));
 
             // Generate field definitions directly from table to struct mapping
@@ -219,9 +230,16 @@ pub fn generate_struct_declarations(query_object: &QueryObject) -> String {
         if stream.final_struct.is_empty() {
             continue;
         } else {
-            result.push_str(
-                "#[derive(Clone, Debug, Serialize, Deserialize, PartialOrd, PartialEq, Default)]\n",
-            );
+            //if fields contains OrderedFloat or does not contain <f64>, add Eq and Hash to the struct definition
+            if stream.final_struct.values().any(|field_type| field_type.contains("Option<OrderedFloat<f64>>") || !field_type.contains("Option<f64>")) {
+                result.push_str(
+                    "#[derive(Clone, Debug, Serialize, Deserialize, PartialOrd, PartialEq, Default, Eq, Hash)]\n",
+                );
+            } else {
+                result.push_str(
+                    "#[derive(Clone, Debug, Serialize, Deserialize, PartialOrd, PartialEq, Default)]\n",
+                );
+            }
             result.push_str(&format!("struct {} {{\n", stream.final_struct_name.last().unwrap()));
 
             // Add fields from stream

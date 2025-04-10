@@ -45,11 +45,90 @@ pub fn process_distinct_old(query_object: &mut QueryObject) {
     query_object.distinct_string = distinct_code;
 }
 
+pub fn process_distinct_new(stream_name: &String, query_object: &mut QueryObject) {
+    let stream = query_object.streams.get(stream_name).unwrap();
+    let final_struct = stream.final_struct.clone();
+    //map the output struct to an ordered float struct
+    let final_struct_of_name = format!("{}_of", stream.final_struct_name.clone().last().unwrap());
+    let mut final_struct_of = final_struct.clone();
+
+    let mut needs_mapping = false;
+    //replace all the float types with ordered float types in the final_struct_of
+    for (_, value) in final_struct_of.iter_mut() {
+        if value == "f64" {
+            *value = "OrderedFloat<f64>".to_string();
+            needs_mapping = true;
+        }
+    }
+
+    if needs_mapping {
+        //insert the final_struct_of into the query_object
+        query_object
+            .structs
+            .insert(final_struct_of_name.clone(), final_struct_of.clone());
+
+        // Create map operation to convert from original struct to OrderedFloat struct
+        let mut forward_map_fields = String::new();
+        for (field_name, field_type) in &final_struct {
+            if field_type == "f64" {
+                forward_map_fields.push_str(&format!(
+               "                {}: if x.{}.is_some() {{ Some(OrderedFloat(x.{}.unwrap())) }} else {{ None }},\n",
+               field_name, field_name, field_name
+           ));
+            } else {
+                forward_map_fields.push_str(&format!(
+                    "                {}: x.{},\n",
+                    field_name, field_name
+                ));
+            }
+        }
+
+        // Create map operation to convert back from OrderedFloat struct to original struct
+        let mut backward_map_fields = String::new();
+        for (field_name, field_type) in &final_struct {
+            if field_type == "f64" {
+                backward_map_fields.push_str(&format!(
+               "                {}: if x.{}.is_some() {{ Some(x.{}.unwrap().into_inner()) }} else {{ None }},\n",
+               field_name, field_name, field_name
+           ));
+            } else {
+                backward_map_fields.push_str(&format!(
+                    "                {}: x.{},\n",
+                    field_name, field_name
+                ));
+            }
+        }
+
+        // Create the complete distinct operation chain
+        let forward_map = format!(
+            ".map(move |x| {} {{\n{}\n            }})",
+            final_struct_of_name.clone(),
+            forward_map_fields
+        );
+
+        let unique_op = ".unique_assoc()".to_string();
+
+        let backward_map = format!(
+            ".map(move |x| {} {{\n{}\n            }})",
+            stream.final_struct_name.last().unwrap(),
+            backward_map_fields
+        );
+
+        let stream_mut = query_object.get_mut_stream(stream_name);
+        stream_mut.op_chain.push(forward_map);
+        stream_mut.op_chain.push(unique_op);
+        stream_mut.op_chain.push(backward_map);
+    } else {
+        let stream_mut = query_object.get_mut_stream(stream_name);
+        stream_mut.op_chain.push(".unique_assoc()".to_string());
+    }
+}
+
 pub fn process_distinct(stream_info: &StreamInfo, is_subquery: bool) -> String {
     let stream_name = &stream_info.id;
 
     if is_subquery {
-            format!(
+        format!(
             r#"
             let mut seen = indexmap::IndexSet::new();
             {}_result.into_iter().for_each(|item| {{ seen.insert(item); }});
@@ -58,8 +137,6 @@ pub fn process_distinct(stream_info: &StreamInfo, is_subquery: bool) -> String {
             stream_name, stream_name
         )
     } else {
-        panic!("Distinct is not supported for non-subqueries yet.");
+        panic!("Distinct processing for non-subquery is not implemented yet.")
     }
-
-    
 }
