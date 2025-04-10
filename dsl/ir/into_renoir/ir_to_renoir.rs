@@ -10,7 +10,7 @@ use crate::dsl::{
 };
 use std::sync::Arc;
 
-use super::r_distinct::process_distinct_old;
+use super::r_distinct::process_distinct_new;
 
 pub struct IrToRenoir;
 
@@ -43,7 +43,7 @@ impl IrToRenoir {
 
                 process_projections(columns, &stream_name, query_object)?;
                 if *distinct {
-                    process_distinct_old(query_object);
+                    process_distinct_new(&stream_name, query_object);
                 }
                 Ok(stream_name)
             }

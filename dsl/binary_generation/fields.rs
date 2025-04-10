@@ -118,10 +118,18 @@ impl Fields {
             .iter()
             .map(|(struct_name, fields)| {
                 // Generate struct definition
-                let mut struct_def = String::new();
+                //if fields contains OrderedFloat or does not contain <f64>, add Eq and Hash to the struct definition
+            let mut struct_def = String::new();
+            if fields.values().any(|field_type| field_type == "OrderedFloat<f64>")  || !fields.values().any(|field_type| field_type.contains("f64")) {
+                struct_def.push_str(
+                    "#[derive(Clone, Debug, Serialize, Deserialize, PartialOrd, PartialEq, Default, Eq, Hash)]\n",
+                );
+            } 
+            else {
                 struct_def.push_str(
                     "#[derive(Clone, Debug, Serialize, Deserialize, PartialOrd, PartialEq, Default)]\n",
                 );
+            }
                 struct_def.push_str(&format!("struct {} {{\n", struct_name));
     
                 // Generate field definitions directly from table to struct mapping
@@ -207,7 +215,7 @@ impl Fields {
 
     pub fn collect_subquery_result(
         &mut self,
-        is_single_result: bool,
+        is_single_result: bool
     ) -> (String, String) {
         let stream_name = self.streams.first().unwrap().0.clone();
         let new_result = format!("{}_result", stream_name);
@@ -222,18 +230,11 @@ impl Fields {
         let needs_ordered_float = result_type == "f64";
 
         // Collection code using IndexSet instead of Vec
-    let collection_code = 
-        format!(r#"
-            let mut {} = indexmap::IndexSet::new();
-            if let Some(values) = result {{
-                let values: Vec<_> = values
-                    .iter()
-                    .filter_map(|record| record.{}{})
-                    .collect();
-
-                values.into_iter().for_each(|item| {{ {}.insert(item); }});
-            }}
-        "#, new_result, stream.final_struct.first().unwrap().0, if needs_ordered_float {".map(OrderedFloat)"} else {".clone()"},new_result);
+        let collection_code  = format!(r#"
+        let mut {} = indexmap::IndexSet::new();
+        if let Some(values) = result {{
+            values.iter().filter_map(|record| record.{}{}).for_each(|item| {{ {}.insert(item); }});
+        }}"#, new_result, stream.final_struct.first().unwrap().0, if needs_ordered_float {".map(OrderedFloat)"} else {".clone()"},new_result);
 
         stream.op_chain.push(format!(
             r#"
