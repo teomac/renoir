@@ -39,12 +39,18 @@ groupby_method = { ".groupby(" ~ column_list ~ ")" }
 agg_method = { ".agg(" ~ agg_list ~ ")" }
 join_type = { "inner" | "left" | "outer" }
 
-// Updated join_method to use qualified columns for both sides
-join_method = { ".join(" ~ table_ref ~ "," ~ qualified_column ~ "," ~ qualified_column ~ ("," ~ join_type)? ~ ")" }
+// New alias method
+alias_method = { ".alias(" ~ identifier ~ ")" }
 
-// DataFrame query
+// Updated join_method to use qualified columns for both sides
+join_method = { ".join(" ~ table_expr ~ "," ~ qualified_column ~ "," ~ qualified_column ~ ("," ~ join_type)? ~ ")" }
+
+// Table expression (table reference potentially with alias method)
+table_expr = { table_ref ~ alias_method? }
+
+// DataFrame query chain
 method_chain = { 
-    table_ref ~ 
+    table_expr ~ 
     (select_method | filter_method | groupby_method | agg_method | join_method)+
 }
 

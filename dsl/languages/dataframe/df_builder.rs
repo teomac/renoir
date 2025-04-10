@@ -37,27 +37,40 @@ impl DataFrameASTBuilder {
     fn process_method_chain(pair: Pair<Rule>) -> Result<Arc<IrPlan>, Box<IrParseError>> {
         let mut inner = pair.into_inner();
 
-        // First item should be the table reference
-        let table_ref = inner
+        // First item should be the table expression
+        let table_expr = inner
             .next()
-            .ok_or_else(|| IrParseError::InvalidInput("Missing table reference".to_string()))?;
+            .ok_or_else(|| IrParseError::InvalidInput("Missing table expression".to_string()))?;
 
-        if table_ref.as_rule() != Rule::table_ref {
+        if table_expr.as_rule() != Rule::table_expr {
             return Err(Box::new(IrParseError::InvalidInput(format!(
-                "Expected table reference, got {:?}",
-                table_ref.as_rule()
+                "Expected table expression, got {:?}",
+                table_expr.as_rule()
             ))));
         }
 
-        // The table name is used directly as the source
-        let table_name = table_ref.as_str().to_string();
+        // Process the table expression (table with optional alias)
+        let (table_name, alias) = Self::process_table_expr(table_expr)?;
 
+        // Clone table_name before moving it into the Table struct
+        let table_name_clone = table_name.clone();
+        
         // Create initial scan plan
         let mut base_plan = Arc::new(IrPlan::Scan {
             stream_name: format!("stream{}", 0),
-            alias: Some(table_name.clone()), // Always set an explicit alias
-            input: Arc::new(IrPlan::Table { table_name }),
+            alias: alias.clone(), // Use the alias if provided
+            input: Arc::new(IrPlan::Table { table_name: table_name_clone }),
         });
+
+        // Map to track table aliases for validation
+        let mut table_aliases = std::collections::HashMap::new();
+        // Add the first table's alias
+        if let Some(alias_val) = &alias {
+            table_aliases.insert(alias_val.clone(), table_name);
+        } else {
+            // If no alias, use the table name itself
+            table_aliases.insert(table_name.clone(), table_name);
+        }
 
         // Collect all method calls
         let mut methods = Vec::new();
@@ -93,11 +106,17 @@ impl DataFrameASTBuilder {
                 }
                 Rule::filter_method => {
                     // Process filter right away
-                    base_plan = Self::process_filter_method(method, base_plan, has_join)?;
+                    base_plan = Self::process_filter_method(method, base_plan, has_join, &table_aliases)?;
                 }
                 Rule::join_method => {
                     has_join = true;
-                    base_plan = Self::process_join_method(method, base_plan)?;
+                    let (updated_plan, new_alias) = Self::process_join_method(method, base_plan, &table_aliases)?;
+                    base_plan = updated_plan;
+                    
+                    // Add the new table's alias to our map
+                    if let Some((join_table, join_alias)) = new_alias {
+                        table_aliases.insert(join_alias, join_table);
+                    }
                 }
                 _ => {
                     return Err(Box::new(IrParseError::InvalidInput(format!(
@@ -110,7 +129,7 @@ impl DataFrameASTBuilder {
 
         // Process groupby if present
         if let Some(group_method) = groupby_method {
-            base_plan = Self::process_groupby_method(group_method, base_plan, has_join)?;
+            base_plan = Self::process_groupby_method(group_method, base_plan, has_join, &table_aliases)?;
         }
 
         // Process agg or select as the final operation - agg takes precedence as it requires groupby
@@ -122,7 +141,7 @@ impl DataFrameASTBuilder {
                     group_condition: _,
                 } = &*base_plan
                 {
-                    base_plan = Self::process_agg_method(agg, input.clone(), keys.clone(), has_join)?;
+                    base_plan = Self::process_agg_method(agg, input.clone(), keys.clone(), has_join, &table_aliases)?;
                 } else {
                     return Err(Box::new(IrParseError::InvalidInput(
                         "agg() method must follow groupby()".to_string(),
@@ -131,7 +150,7 @@ impl DataFrameASTBuilder {
             }
         } else if has_select {
             if let Some(select) = select_method {
-                base_plan = Self::process_select_method(select, base_plan, has_join)?;
+                base_plan = Self::process_select_method(select, base_plan, has_join, &table_aliases)?;
             }
         } else {
             // If no projection operation was specified, add a default 'SELECT *' equivalent
@@ -153,10 +172,44 @@ impl DataFrameASTBuilder {
         Ok(base_plan)
     }
 
+    // New function to process table expression with optional alias
+    fn process_table_expr(pair: Pair<Rule>) -> Result<(String, Option<String>), Box<IrParseError>> {
+        let mut inner = pair.into_inner();
+        
+        // First get the table reference
+        let table_ref = inner.next()
+            .ok_or_else(|| IrParseError::InvalidInput("Missing table reference".to_string()))?;
+        
+        if table_ref.as_rule() != Rule::table_ref {
+            return Err(Box::new(IrParseError::InvalidInput(format!(
+                "Expected table reference, got {:?}",
+                table_ref.as_rule()
+            ))));
+        }
+        
+        let table_name = table_ref.as_str().to_string();
+        let mut alias = None;
+        
+        // Check for optional alias method
+        if let Some(alias_method) = inner.next() {
+            if alias_method.as_rule() == Rule::alias_method {
+                // Extract the alias identifier from the alias method
+                let alias_id = alias_method.into_inner().next()
+                    .ok_or_else(|| IrParseError::InvalidInput("Missing identifier in alias()".to_string()))?;
+                
+                alias = Some(alias_id.as_str().to_string());
+            }
+        }
+        
+        Ok((table_name, alias))
+    }
+
+    // Updated to handle table aliases with alias map
     fn process_select_method(
         pair: Pair<Rule>,
         input: Arc<IrPlan>,
         has_join: bool,
+        table_aliases: &std::collections::HashMap<String, String>,
     ) -> Result<Arc<IrPlan>, Box<IrParseError>> {
         let column_list = pair.into_inner().next().ok_or_else(|| {
             IrParseError::InvalidInput("Missing column list in select()".to_string())
@@ -187,6 +240,7 @@ impl DataFrameASTBuilder {
             _ => {}
         }
     
+        // Fixed column processing logic
         for col_item in column_list.into_inner() {
             if col_item.as_rule() == Rule::column_with_alias {
                 let mut parts = col_item.into_inner();
@@ -199,7 +253,6 @@ impl DataFrameASTBuilder {
                 // Check if there's an alias
                 let alias = parts.next().and_then(|p| {
                     if p.as_rule() == Rule::column_alias {
-                        // Extract the identifier after "as"
                         let alias_ident = p.into_inner().next()?;
                         Some(alias_ident.as_str().to_string())
                     } else {
@@ -208,26 +261,96 @@ impl DataFrameASTBuilder {
                 });
     
                 // Parse the column reference based on its type
-                let column_ref = if column_ref_pair.as_rule() == Rule::qualified_column {
-                    // Handle qualified column (table.column)
-                    let mut qual_parts = column_ref_pair.into_inner();
-                    let table = qual_parts.next()
-                        .ok_or_else(|| IrParseError::InvalidInput("Missing table in qualified column".to_string()))?
-                        .as_str().to_string();
-                    let column = qual_parts.next()
-                        .ok_or_else(|| IrParseError::InvalidInput("Missing column in qualified column".to_string()))?
-                        .as_str().to_string();
+                let column_ref = if column_ref_pair.as_rule() == Rule::column_ref {
+                    // Get the inner qualifier
+                    let inner_col = column_ref_pair
+                        .into_inner()
+                        .next()
+                        .ok_or_else(|| IrParseError::InvalidInput("Empty column reference".to_string()))?;
                     
-                    // Validate table exists
-                    if has_join && !available_tables.contains(&table) {
+                    if inner_col.as_rule() == Rule::qualified_column {
+                        // Handle table.column format
+                        let mut qual_parts = inner_col.into_inner();
+                        let table = qual_parts
+                            .next()
+                            .ok_or_else(|| IrParseError::InvalidInput("Missing table in qualified column".to_string()))?
+                            .as_str()
+                            .to_string();
+                        let column = qual_parts
+                            .next()
+                            .ok_or_else(|| IrParseError::InvalidInput("Missing column in qualified column".to_string()))?
+                            .as_str()
+                            .to_string();
+                        
+                        // Validate table alias exists
+                        if has_join && !available_tables.contains(&table) && !table_aliases.contains_key(&table) {
+                            return Err(Box::new(IrParseError::InvalidInput(format!(
+                                "Unknown table reference '{}'. Available tables/aliases: {:?}",
+                                table, available_tables
+                            ))));
+                        }
+                        
+                        // If it's an alias, resolve to the actual table name
+                        let real_table = if let Some(real) = table_aliases.get(&table) {
+                            table.clone() // Keep the alias as the reference
+                        } else {
+                            table.clone()
+                        };
+                        
+                        ColumnRef {
+                            table: Some(real_table),
+                            column,
+                        }
+                    } else if inner_col.as_rule() == Rule::identifier {
+                        // Simple column name
+                        if has_join {
+                            return Err(Box::new(IrParseError::InvalidInput(format!(
+                                "Column '{}' must be qualified with a table name when using joins",
+                                inner_col.as_str()
+                            ))));
+                        }
+                        
+                        ColumnRef {
+                            table: if available_tables.len() == 1 { Some(available_tables[0].clone()) } else { None },
+                            column: inner_col.as_str().to_string(),
+                        }
+                    } else {
                         return Err(Box::new(IrParseError::InvalidInput(format!(
-                            "Unknown table reference '{}' in column. Available tables: {:?}",
+                            "Unexpected column format: {:?}",
+                            inner_col.as_rule()
+                        ))));
+                    }
+                } else if column_ref_pair.as_rule() == Rule::qualified_column {
+                    // Direct qualified column (table.column)
+                    let mut qual_parts = column_ref_pair.into_inner();
+                    let table = qual_parts
+                        .next()
+                        .ok_or_else(|| IrParseError::InvalidInput("Missing table in qualified column".to_string()))?
+                        .as_str()
+                        .to_string();
+                    let column = qual_parts
+                        .next()
+                        .ok_or_else(|| IrParseError::InvalidInput("Missing column in qualified column".to_string()))?
+                        .as_str()
+                        .to_string();
+                    
+                    // Validate table alias exists
+                    if has_join && !available_tables.contains(&table) && !table_aliases.contains_key(&table) {
+                        return Err(Box::new(IrParseError::InvalidInput(format!(
+                            "Unknown table reference '{}'. Available tables/aliases: {:?}",
                             table, available_tables
                         ))));
                     }
                     
+                    // If it's an alias, resolve to the actual table name
+                    let real_table = if let Some(real) = table_aliases.get(&table) {
+                        table.clone() // Keep the alias as the reference
+                    } else {
+                        table.clone()
+                    };
+                    
                     ColumnRef {
-                        table: Some(table),
+                        table: Some(real_table),
                         column,
                     }
                 } else if column_ref_pair.as_rule() == Rule::identifier {
@@ -270,10 +393,12 @@ impl DataFrameASTBuilder {
         }))
     }
 
+    // Updated to handle table aliases
     fn process_filter_method(
         pair: Pair<Rule>,
         input: Arc<IrPlan>,
         has_join: bool,
+        table_aliases: &std::collections::HashMap<String, String>,
     ) -> Result<Arc<IrPlan>, Box<IrParseError>> {
         // Extract filter condition from the string literal
         let filter_string = pair
@@ -292,22 +417,23 @@ impl DataFrameASTBuilder {
         let stripped = &condition_text[1..condition_text.len() - 1];
     
         // Parse the filter condition with join context
-        let predicate = Self::parse_filter_condition(stripped, &input, has_join)?;
+        let predicate = Self::parse_filter_condition(stripped, &input, has_join, table_aliases)?;
     
         Ok(Arc::new(IrPlan::Filter { input, predicate }))
     }
     
-    // Updated to require qualified columns in join context
+    // Updated to handle table aliases
     fn parse_filter_condition(
         condition: &str, 
         input: &Arc<IrPlan>, 
-        has_join: bool
+        has_join: bool,
+        table_aliases: &std::collections::HashMap<String, String>,
     ) -> Result<FilterClause, Box<IrParseError>> {
         // Check for AND/OR logic
         if condition.contains("&&") {
             let parts: Vec<&str> = condition.split("&&").collect();
-            let left = Self::parse_filter_condition(parts[0].trim(), input, has_join)?;
-            let right = Self::parse_filter_condition(parts[1].trim(), input, has_join)?;
+            let left = Self::parse_filter_condition(parts[0].trim(), input, has_join, table_aliases)?;
+            let right = Self::parse_filter_condition(parts[1].trim(), input, has_join, table_aliases)?;
     
             return Ok(FilterClause::Expression {
                 left: Box::new(left),
@@ -316,8 +442,8 @@ impl DataFrameASTBuilder {
             });
         } else if condition.contains("||") {
             let parts: Vec<&str> = condition.split("||").collect();
-            let left = Self::parse_filter_condition(parts[0].trim(), input, has_join)?;
-            let right = Self::parse_filter_condition(parts[1].trim(), input, has_join)?;
+            let left = Self::parse_filter_condition(parts[0].trim(), input, has_join, table_aliases)?;
+            let right = Self::parse_filter_condition(parts[1].trim(), input, has_join, table_aliases)?;
     
             return Ok(FilterClause::Expression {
                 left: Box::new(left),
@@ -375,10 +501,11 @@ impl DataFrameASTBuilder {
             let table = column_parts[0].to_string();
             let column = column_parts[1].to_string();
             
-            // Validate table exists
-            if !available_tables.contains(&table) {
+            // Validate table alias exists
+            if !available_tables.contains(&table) && !table_aliases.contains_key(&table) {
                 return Err(Box::new(IrParseError::InvalidInput(format!(
-                    "Unknown table reference '{}' in filter condition", table
+                    "Unknown table reference '{}' in filter condition. Available tables/aliases: {:?}",
+                    table, table_aliases.keys().collect::<Vec<_>>()
                 ))));
             }
             
@@ -469,16 +596,17 @@ impl DataFrameASTBuilder {
             let table = column_parts[0].to_string();
             let column = column_parts[1].to_string();
             
-            // Validate table exists
-            if !available_tables.contains(&table) {
+            // Validate table alias exists
+            if !available_tables.contains(&table) && !table_aliases.contains_key(&table) {
                 return Err(Box::new(IrParseError::InvalidInput(format!(
-                    "Unknown table reference '{}' in filter condition", table
+                    "Unknown table reference '{}' in filter condition",
+                    table
                 ))));
             }
             
             ComplexField {
                 column_ref: Some(ColumnRef {
-                    table: Some(table),
+                    table: Some(table), 
                     column,
                 }),
                 literal: None,
@@ -535,14 +663,30 @@ impl DataFrameASTBuilder {
     fn process_join_method(
         pair: Pair<Rule>,
         input: Arc<IrPlan>,
-    ) -> Result<Arc<IrPlan>, Box<IrParseError>> {
+        table_aliases: &std::collections::HashMap<String, String>,
+    ) -> Result<(Arc<IrPlan>, Option<(String, String)>), Box<IrParseError>> {
         let mut parts = pair.into_inner();
         
-        // Get the right table reference
-        let right_table = parts.next().ok_or_else(|| {
+        // Get the right table expression
+        let right_table_expr = parts.next().ok_or_else(|| {
             IrParseError::InvalidInput("Missing right table in join()".to_string())
         })?;
-        let right_table_name = right_table.as_str().to_string();
+        
+        // Process the right table expression
+        let (right_table_name, right_alias) = if right_table_expr.as_rule() == Rule::table_expr {
+            Self::process_table_expr(right_table_expr)?
+        } else if right_table_expr.as_rule() == Rule::table_ref {
+            // Simple table reference without alias
+            (right_table_expr.as_str().to_string(), None)
+        } else {
+            return Err(Box::new(IrParseError::InvalidInput(format!(
+                "Expected table expression, got {:?}",
+                right_table_expr.as_rule()
+            ))))
+        };
+        
+        // The effective alias is either the provided alias or the table name itself
+        let effective_right_alias = right_alias.clone().unwrap_or_else(|| right_table_name.clone());
     
         // Get the left qualified column
         let left_col_pair = parts.next().ok_or_else(|| {
@@ -564,16 +708,12 @@ impl DataFrameASTBuilder {
                 .ok_or_else(|| IrParseError::InvalidInput("Missing column in left join column".to_string()))?
                 .as_str().to_string();
             
-            // Validate the table refers to the input table
-            let input_table = match &*input {
-                IrPlan::Scan { alias: Some(alias), .. } => alias.clone(),
-                _ => "".to_string()
-            };
-            
-            if table != input_table {
+            // Validate the table alias exists
+            if !table_aliases.contains_key(&table) {
+                let available_tables = table_aliases.keys().cloned().collect::<Vec<_>>();
                 return Err(Box::new(IrParseError::InvalidInput(format!(
-                    "Left join column table '{}' does not match input table '{}'",
-                    table, input_table
+                    "Unknown table alias '{}' in left join column. Available aliases: {:?}",
+                    table, available_tables
                 ))));
             }
             
@@ -597,11 +737,11 @@ impl DataFrameASTBuilder {
                 .ok_or_else(|| IrParseError::InvalidInput("Missing column in right join column".to_string()))?
                 .as_str().to_string();
             
-            // Validate the table refers to the right table
-            if table != right_table_name {
+            // Validate the table refers to the right table alias
+            if table != effective_right_alias {
                 return Err(Box::new(IrParseError::InvalidInput(format!(
-                    "Right join column table '{}' does not match right table '{}'",
-                    table, right_table_name
+                    "Right join column table '{}' does not match right table alias '{}'",
+                    table, effective_right_alias
                 ))));
             }
             
@@ -641,25 +781,29 @@ impl DataFrameASTBuilder {
         // Create the right side plan - ensure alias is set
         let right_plan = Arc::new(IrPlan::Scan {
             stream_name: format!("stream{}", 1), // Use index 1 for right stream
-            alias: Some(right_table_name.clone()),
+            alias: Some(effective_right_alias.clone()),
             input: Arc::new(IrPlan::Table { 
-                table_name: right_table_name 
+                table_name: right_table_name.clone() 
             }),
         });
         
         // Create the join plan
-        Ok(Arc::new(IrPlan::Join {
+        let join_plan = Arc::new(IrPlan::Join {
             left: input,
             right: right_plan,
             condition: vec![condition],
             join_type,
-        }))
+        });
+        
+        // Return the updated plan and the new table alias info
+        Ok((join_plan, Some((right_table_name, effective_right_alias))))
     }
 
     fn process_groupby_method(
         pair: Pair<Rule>,
         input: Arc<IrPlan>,
         has_join: bool,
+        table_aliases: &std::collections::HashMap<String, String>,
     ) -> Result<Arc<IrPlan>, Box<IrParseError>> {
         let column_list = pair.into_inner().next().ok_or_else(|| {
             IrParseError::InvalidInput("Missing column list in groupby()".to_string())
@@ -713,8 +857,8 @@ impl DataFrameASTBuilder {
                             .ok_or_else(|| IrParseError::InvalidInput("Missing column in qualified column".to_string()))?
                             .as_str().to_string();
                         
-                        // Validate table exists
-                        if has_join && !available_tables.contains(&table) {
+                        // Validate table alias exists
+                        if has_join && !available_tables.contains(&table) && !table_aliases.contains_key(&table) {
                             return Err(Box::new(IrParseError::InvalidInput(format!(
                                 "Unknown table reference '{}' in groupby. Available tables: {:?}",
                                 table, available_tables
@@ -725,7 +869,7 @@ impl DataFrameASTBuilder {
                             table: Some(table),
                             column,
                         });
-                    } else {
+                    } else if inner_col.as_rule() == Rule::identifier {
                         // Simple column name
                         if has_join {
                             return Err(Box::new(IrParseError::InvalidInput(format!(
@@ -738,9 +882,36 @@ impl DataFrameASTBuilder {
                             table: if available_tables.len() == 1 { Some(available_tables[0].clone()) } else { None },
                             column: inner_col.as_str().to_string(),
                         });
+                    } else {
+                        return Err(Box::new(IrParseError::InvalidInput(format!(
+                            "Unexpected column format in groupby: {:?}",
+                            inner_col.as_rule()
+                        ))));
                     }
-                } else {
-                    // Direct column identifier
+                } else if column_ref_pair.as_rule() == Rule::qualified_column {
+                    // Direct qualified column (table.column)
+                    let mut qual_parts = column_ref_pair.into_inner();
+                    let table = qual_parts.next()
+                        .ok_or_else(|| IrParseError::InvalidInput("Missing table in qualified column".to_string()))?
+                        .as_str().to_string();
+                    let column = qual_parts.next()
+                        .ok_or_else(|| IrParseError::InvalidInput("Missing column in qualified column".to_string()))?
+                        .as_str().to_string();
+                    
+                    // Validate table alias exists
+                    if has_join && !available_tables.contains(&table) && !table_aliases.contains_key(&table) {
+                        return Err(Box::new(IrParseError::InvalidInput(format!(
+                            "Unknown table reference '{}' in groupby. Available tables: {:?}",
+                            table, available_tables
+                        ))));
+                    }
+                    
+                    group_keys.push(ColumnRef {
+                        table: Some(table),
+                        column,
+                    });
+                } else if column_ref_pair.as_rule() == Rule::identifier {
+                    // Simple column name
                     if has_join {
                         return Err(Box::new(IrParseError::InvalidInput(format!(
                             "Column '{}' must be qualified with a table name when using joins",
@@ -752,8 +923,19 @@ impl DataFrameASTBuilder {
                         table: if available_tables.len() == 1 { Some(available_tables[0].clone()) } else { None },
                         column: column_ref_pair.as_str().to_string(),
                     });
+                } else {
+                    return Err(Box::new(IrParseError::InvalidInput(format!(
+                        "Unexpected column reference type in groupby: {:?}",
+                        column_ref_pair.as_rule()
+                    ))));
                 }
             }
+        }
+
+        if group_keys.is_empty() {
+            return Err(Box::new(IrParseError::InvalidInput(
+                "No columns specified in groupby()".to_string(),
+            )));
         }
 
         Ok(Arc::new(IrPlan::GroupBy {
@@ -768,6 +950,7 @@ impl DataFrameASTBuilder {
         input: Arc<IrPlan>,
         keys: Vec<ColumnRef>,
         has_join: bool,
+        table_aliases: &std::collections::HashMap<String, String>,
     ) -> Result<Arc<IrPlan>, Box<IrParseError>> {
         let agg_list = pair.into_inner().next().ok_or_else(|| {
             IrParseError::InvalidInput("Missing aggregation list in agg()".to_string())
@@ -825,7 +1008,15 @@ impl DataFrameASTBuilder {
                         )
                     })?;
 
-                let alias = parts.next().map(|p| p.as_str().to_string());
+                let alias = parts.next().and_then(|p| {
+                    if p.as_rule() == Rule::column_alias {
+                        // Extract the identifier after "as"
+                        let alias_ident = p.into_inner().next()?;
+                        Some(alias_ident.as_str().to_string())
+                    } else {
+                        None
+                    }
+                });
 
                 let agg_type = match func_name {
                     "sum" => AggregateType::Sum,
@@ -857,8 +1048,8 @@ impl DataFrameASTBuilder {
                             .ok_or_else(|| IrParseError::InvalidInput("Missing column in qualified column".to_string()))?
                             .as_str().to_string();
                         
-                        // Validate table exists
-                        if has_join && !available_tables.contains(&table) {
+                        // Validate table alias exists
+                        if has_join && !available_tables.contains(&table) && !table_aliases.contains_key(&table) {
                             return Err(Box::new(IrParseError::InvalidInput(format!(
                                 "Unknown table reference '{}' in aggregation. Available tables: {:?}",
                                 table, available_tables
@@ -869,7 +1060,7 @@ impl DataFrameASTBuilder {
                             table: Some(table),
                             column,
                         }
-                    } else {
+                    } else if inner_col.as_rule() == Rule::identifier {
                         // Simple column name
                         if has_join {
                             return Err(Box::new(IrParseError::InvalidInput(format!(
@@ -882,20 +1073,80 @@ impl DataFrameASTBuilder {
                             table: if available_tables.len() == 1 { Some(available_tables[0].clone()) } else { None },
                             column: inner_col.as_str().to_string(),
                         }
-                    }
-                } else {
-                    // Direct reference to column
-                    if has_join {
+                    } else {
                         return Err(Box::new(IrParseError::InvalidInput(format!(
-                            "Column '{}' must be qualified with a table name when using joins",
-                            column_ref_pair.as_str()
+                            "Unexpected column format in aggregation: {:?}",
+                            inner_col.as_rule()
                         ))));
                     }
+                } else if column_ref_pair.as_rule() == Rule::qualified_column {
+                    // Direct qualified column (table.column)
+                    let mut qual_parts = column_ref_pair.into_inner();
+                    let table = qual_parts.next()
+                        .ok_or_else(|| IrParseError::InvalidInput("Missing table in qualified column".to_string()))?
+                        .as_str().to_string();
+                    let column = qual_parts.next()
+                        .ok_or_else(|| IrParseError::InvalidInput("Missing column in qualified column".to_string()))?
+                        .as_str().to_string();
                     
-                    ColumnRef {
-                        table: if available_tables.len() == 1 { Some(available_tables[0].clone()) } else { None },
-                        column: column_ref_pair.as_str().to_string(),
+                    // Special case for count(*) or handling asterisk
+                    if column == "*" && agg_type == AggregateType::Count {
+                        ColumnRef {
+                            table: Some(table),
+                            column: "*".to_string(),
+                        }
+                    } else {
+                        // Validate table alias exists
+                        if has_join && !available_tables.contains(&table) && !table_aliases.contains_key(&table) {
+                            return Err(Box::new(IrParseError::InvalidInput(format!(
+                                "Unknown table reference '{}' in aggregation. Available tables: {:?}",
+                                table, available_tables
+                            ))));
+                        }
+                        
+                        ColumnRef {
+                            table: Some(table),
+                            column,
+                        }
                     }
+                } else if column_ref_pair.as_rule() == Rule::identifier {
+                    // Simple column name
+                    let column = column_ref_pair.as_str();
+                    
+                    // Special case for count(*) or handling asterisk
+                    if column == "*" && agg_type == AggregateType::Count {
+                        ColumnRef {
+                            table: None,
+                            column: "*".to_string(),
+                        }
+                    } else if has_join {
+                        return Err(Box::new(IrParseError::InvalidInput(format!(
+                            "Column '{}' must be qualified with a table name when using joins",
+                            column
+                        ))));
+                    } else {
+                        ColumnRef {
+                            table: if available_tables.len() == 1 { Some(available_tables[0].clone()) } else { None },
+                            column: column.to_string(),
+                        }
+                    }
+                } else {
+                    return Err(Box::new(IrParseError::InvalidInput(format!(
+                        "Unexpected column reference type in aggregation: {:?}",
+                        column_ref_pair.as_rule()
+                    ))));
+                };
+
+                // Create default alias if none provided
+                let effective_alias = if alias.is_none() {
+                    // Format as func_column or just func for count(*)
+                    if column_ref.column == "*" {
+                        Some(format!("{}_all", func_name))
+                    } else {
+                        Some(format!("{}_{}", func_name, column_ref.column))
+                    }
+                } else {
+                    alias
                 };
 
                 projection_columns.push(ProjectionColumn::Aggregate(
@@ -903,7 +1154,7 @@ impl DataFrameASTBuilder {
                         function: agg_type,
                         column: column_ref,
                     },
-                    alias,
+                    effective_alias,
                 ));
             }
         }
