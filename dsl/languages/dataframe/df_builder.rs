@@ -36,22 +36,22 @@ impl DataFrameASTBuilder {
 
     fn process_method_chain(pair: Pair<Rule>) -> Result<Arc<IrPlan>, Box<IrParseError>> {
         let mut inner = pair.into_inner();
-
+    
         // First item should be the table expression
         let table_expr = inner
             .next()
             .ok_or_else(|| IrParseError::InvalidInput("Missing table expression".to_string()))?;
-
+    
         if table_expr.as_rule() != Rule::table_expr {
             return Err(Box::new(IrParseError::InvalidInput(format!(
                 "Expected table expression, got {:?}",
                 table_expr.as_rule()
             ))));
         }
-
+    
         // Process the table expression (table with optional alias)
         let (table_name, alias) = Self::process_table_expr(table_expr)?;
-
+    
         // Clone table_name before moving it into the Table struct
         let table_name_clone = table_name.clone();
         
@@ -61,7 +61,7 @@ impl DataFrameASTBuilder {
             alias: alias.clone(), // Use the alias if provided
             input: Arc::new(IrPlan::Table { table_name: table_name_clone }),
         });
-
+    
         // Map to track table aliases for validation
         let mut table_aliases = std::collections::HashMap::new();
         // Add the first table's alias
@@ -71,26 +71,24 @@ impl DataFrameASTBuilder {
             // If no alias, use the table name itself
             table_aliases.insert(table_name.clone(), table_name);
         }
-
+    
         // Collect all method calls
         let mut methods = Vec::new();
         for method in inner {
             methods.push(method);
         }
-
+    
         // Store if we have a join query to enforce qualified columns
         let mut has_join = false;
-
-        // Reorder methods to ensure Project is last
-        // First process non-project operations (filter, groupby)
-        // Then process project operations (select, agg)
+    
+        // Variables to track different types of methods
         let mut has_select = false;
         let mut has_agg = false;
         let mut select_method = None;
         let mut agg_method = None;
         let mut groupby_method = None;
-
-        // First pass - categorize methods
+    
+        // First pass - categorize and process non-projection methods
         for method in methods {
             match method.as_rule() {
                 Rule::select_method => {
@@ -126,27 +124,36 @@ impl DataFrameASTBuilder {
                 }
             }
         }
-
-        // Process groupby if present
-        if let Some(group_method) = groupby_method {
-            base_plan = Self::process_groupby_method(group_method, base_plan, has_join, &table_aliases)?;
-        }
-
-        // Process agg or select as the final operation - agg takes precedence as it requires groupby
+    
+        // Handle projections and aggregations
         if has_agg {
             if let Some(agg) = agg_method {
-                if let IrPlan::GroupBy {
-                    input,
-                    keys,
-                    group_condition: _,
-                } = &*base_plan
-                {
-                    base_plan = Self::process_agg_method(agg, input.clone(), keys.clone(), has_join, &table_aliases)?;
+                // First ensure we have the groupby keys
+                let group_keys = if let Some(group_method) = groupby_method {
+                    // Process groupby to get the keys
+                    let groupby_plan = Self::process_groupby_method(group_method, base_plan.clone(), has_join, &table_aliases)?;
+                    if let IrPlan::GroupBy { keys, .. } = &*groupby_plan {
+                        keys.clone()
+                    } else {
+                        return Err(Box::new(IrParseError::InvalidInput(
+                            "Failed to process groupby keys".to_string(),
+                        )));
+                    }
                 } else {
                     return Err(Box::new(IrParseError::InvalidInput(
                         "agg() method must follow groupby()".to_string(),
                     )));
-                }
+                };
+    
+                // Create the GroupBy node
+                let group_plan = Arc::new(IrPlan::GroupBy {
+                    input: base_plan,
+                    keys: group_keys.clone(),
+                    group_condition: None,
+                });
+    
+                // Process the aggregation with the GroupBy node
+                base_plan = Self::process_agg_method(agg, group_plan, group_keys, has_join, &table_aliases)?;
             }
         } else if has_select {
             if let Some(select) = select_method {
@@ -161,14 +168,14 @@ impl DataFrameASTBuilder {
                 },
                 None,
             );
-
+    
             base_plan = Arc::new(IrPlan::Project {
                 input: base_plan,
                 columns: vec![star_projection],
                 distinct: false,
             });
         }
-
+    
         Ok(base_plan)
     }
 
