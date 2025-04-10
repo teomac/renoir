@@ -15,13 +15,15 @@ logic_op = { "&&" | "||" }
 table_ref = { identifier }
 
 // Column references and expressions
-column_ref = @{ identifier }
-column_with_alias = { column_ref ~ ("as" ~ identifier)? }
+qualified_column = { identifier ~ "." ~ identifier }
+column_ref = { qualified_column | identifier }
+column_alias = { "as" ~ identifier }
+column_with_alias = { column_ref ~ column_alias? }
 column_list = { column_with_alias ~ ("," ~ column_with_alias)* }
 
 // Aggregation functions
 agg_function = { "sum" | "avg" | "min" | "max" | "count" }
-agg_expr = { agg_function ~ "(" ~ column_ref ~ ")" ~ ("as" ~ identifier)? }
+agg_expr = { agg_function ~ "(" ~ column_ref ~ ")" ~ column_alias? }
 agg_list = { agg_expr ~ ("," ~ agg_expr)* }
 
 // Filter conditions
@@ -36,7 +38,9 @@ filter_method = { ".filter(" ~ string_literal ~ ")" }
 groupby_method = { ".groupby(" ~ column_list ~ ")" }
 agg_method = { ".agg(" ~ agg_list ~ ")" }
 join_type = { "inner" | "left" | "outer" }
-join_method = { ".join(" ~ table_ref ~ "," ~ column_list ~ "," ~ column_list ~ ("," ~ join_type)? ~ ")" }
+
+// Updated join_method to use qualified columns for both sides
+join_method = { ".join(" ~ table_ref ~ "," ~ qualified_column ~ "," ~ qualified_column ~ ("," ~ join_type)? ~ ")" }
 
 // DataFrame query
 method_chain = { 

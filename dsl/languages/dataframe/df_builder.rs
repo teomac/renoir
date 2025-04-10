@@ -55,7 +55,7 @@ impl DataFrameASTBuilder {
         // Create initial scan plan
         let mut base_plan = Arc::new(IrPlan::Scan {
             stream_name: format!("stream{}", 0),
-            alias: None,
+            alias: Some(table_name.clone()), // Always set an explicit alias
             input: Arc::new(IrPlan::Table { table_name }),
         });
 
@@ -64,6 +64,9 @@ impl DataFrameASTBuilder {
         for method in inner {
             methods.push(method);
         }
+
+        // Store if we have a join query to enforce qualified columns
+        let mut has_join = false;
 
         // Reorder methods to ensure Project is last
         // First process non-project operations (filter, groupby)
@@ -90,9 +93,10 @@ impl DataFrameASTBuilder {
                 }
                 Rule::filter_method => {
                     // Process filter right away
-                    base_plan = Self::process_filter_method(method, base_plan)?;
+                    base_plan = Self::process_filter_method(method, base_plan, has_join)?;
                 }
                 Rule::join_method => {
+                    has_join = true;
                     base_plan = Self::process_join_method(method, base_plan)?;
                 }
                 _ => {
@@ -106,7 +110,7 @@ impl DataFrameASTBuilder {
 
         // Process groupby if present
         if let Some(group_method) = groupby_method {
-            base_plan = Self::process_groupby_method(group_method, base_plan)?;
+            base_plan = Self::process_groupby_method(group_method, base_plan, has_join)?;
         }
 
         // Process agg or select as the final operation - agg takes precedence as it requires groupby
@@ -118,7 +122,7 @@ impl DataFrameASTBuilder {
                     group_condition: _,
                 } = &*base_plan
                 {
-                    base_plan = Self::process_agg_method(agg, input.clone(), keys.clone())?;
+                    base_plan = Self::process_agg_method(agg, input.clone(), keys.clone(), has_join)?;
                 } else {
                     return Err(Box::new(IrParseError::InvalidInput(
                         "agg() method must follow groupby()".to_string(),
@@ -127,7 +131,7 @@ impl DataFrameASTBuilder {
             }
         } else if has_select {
             if let Some(select) = select_method {
-                base_plan = Self::process_select_method(select, base_plan)?;
+                base_plan = Self::process_select_method(select, base_plan, has_join)?;
             }
         } else {
             // If no projection operation was specified, add a default 'SELECT *' equivalent
@@ -152,6 +156,7 @@ impl DataFrameASTBuilder {
     fn process_select_method(
         pair: Pair<Rule>,
         input: Arc<IrPlan>,
+        has_join: bool,
     ) -> Result<Arc<IrPlan>, Box<IrParseError>> {
         let column_list = pair.into_inner().next().ok_or_else(|| {
             IrParseError::InvalidInput("Missing column list in select()".to_string())
@@ -165,36 +170,96 @@ impl DataFrameASTBuilder {
     
         let mut projection_columns = Vec::new();
     
-        for col in column_list.into_inner() {
-            if col.as_rule() == Rule::column_with_alias {
-                let mut parts = col.into_inner();
-                let column_name = parts
+        // Get all available table references for validation
+        let mut available_tables = Vec::new();
+        match &*input {
+            IrPlan::Join { left, right, .. } => {
+                if let IrPlan::Scan { alias: Some(left_alias), .. } = &**left {
+                    available_tables.push(left_alias.clone());
+                }
+                if let IrPlan::Scan { alias: Some(right_alias), .. } = &**right {
+                    available_tables.push(right_alias.clone());
+                }
+            },
+            IrPlan::Scan { alias: Some(alias), .. } => {
+                available_tables.push(alias.clone());
+            },
+            _ => {}
+        }
+    
+        for col_item in column_list.into_inner() {
+            if col_item.as_rule() == Rule::column_with_alias {
+                let mut parts = col_item.into_inner();
+                
+                // First part should be the column reference
+                let column_ref_pair = parts
                     .next()
-                    .ok_or_else(|| IrParseError::InvalidInput("Missing column name".to_string()))?
-                    .as_str();
+                    .ok_or_else(|| IrParseError::InvalidInput("Missing column reference".to_string()))?;
     
-                let alias = parts.next().map(|p| p.as_str().to_string());
+                // Check if there's an alias
+                let alias = parts.next().and_then(|p| {
+                    if p.as_rule() == Rule::column_alias {
+                        // Extract the identifier after "as"
+                        let alias_ident = p.into_inner().next()?;
+                        Some(alias_ident.as_str().to_string())
+                    } else {
+                        None
+                    }
+                });
     
-                // Determine the table name for the column
-                let table_name = match &*input {
-                    IrPlan::Join { left, .. } => {
-                        // For join queries, set the table name based on the input table or alias
-                        match &**left {
-                            IrPlan::Scan { alias, .. } => alias.clone().unwrap_or_else(|| "".to_string()),
-                            _ => "".to_string(),
-                        }
-                    },
-                    IrPlan::Scan { alias, .. } => alias.clone().unwrap_or_else(|| "".to_string()),
-                    _ => "".to_string(),
+                // Parse the column reference based on its type
+                let column_ref = if column_ref_pair.as_rule() == Rule::qualified_column {
+                    // Handle qualified column (table.column)
+                    let mut qual_parts = column_ref_pair.into_inner();
+                    let table = qual_parts.next()
+                        .ok_or_else(|| IrParseError::InvalidInput("Missing table in qualified column".to_string()))?
+                        .as_str().to_string();
+                    let column = qual_parts.next()
+                        .ok_or_else(|| IrParseError::InvalidInput("Missing column in qualified column".to_string()))?
+                        .as_str().to_string();
+                    
+                    // Validate table exists
+                    if has_join && !available_tables.contains(&table) {
+                        return Err(Box::new(IrParseError::InvalidInput(format!(
+                            "Unknown table reference '{}' in column. Available tables: {:?}",
+                            table, available_tables
+                        ))));
+                    }
+                    
+                    ColumnRef {
+                        table: Some(table),
+                        column,
+                    }
+                } else if column_ref_pair.as_rule() == Rule::identifier {
+                    // Simple column name
+                    if has_join {
+                        return Err(Box::new(IrParseError::InvalidInput(format!(
+                            "Column '{}' must be qualified with a table name when using joins",
+                            column_ref_pair.as_str()
+                        ))));
+                    }
+                    
+                    ColumnRef {
+                        table: if available_tables.len() == 1 { Some(available_tables[0].clone()) } else { None },
+                        column: column_ref_pair.as_str().to_string(),
+                    }
+                } else {
+                    return Err(Box::new(IrParseError::InvalidInput(format!(
+                        "Unexpected column reference type: {:?}",
+                        column_ref_pair.as_rule()
+                    ))));
                 };
     
-                projection_columns.push(ProjectionColumn::Column(
-                    ColumnRef {
-                        table: if table_name.is_empty() { None } else { Some(table_name) },
-                        column: column_name.to_string(),
-                    },
-                    alias,
-                ));
+                // If no explicit alias is provided and this is a qualified column,
+                // create a default alias based on the column name
+                let effective_alias = if alias.is_none() && has_join {
+                    // Use just the column part as the alias
+                    Some(column_ref.column.clone())
+                } else {
+                    alias
+                };
+    
+                projection_columns.push(ProjectionColumn::Column(column_ref, effective_alias));
             }
         }
     
@@ -208,6 +273,7 @@ impl DataFrameASTBuilder {
     fn process_filter_method(
         pair: Pair<Rule>,
         input: Arc<IrPlan>,
+        has_join: bool,
     ) -> Result<Arc<IrPlan>, Box<IrParseError>> {
         // Extract filter condition from the string literal
         let filter_string = pair
@@ -225,19 +291,23 @@ impl DataFrameASTBuilder {
         let condition_text = filter_string.as_str();
         let stripped = &condition_text[1..condition_text.len() - 1];
     
-        // Parse the filter condition
-        let predicate = Self::parse_filter_condition(stripped, &input)?;
+        // Parse the filter condition with join context
+        let predicate = Self::parse_filter_condition(stripped, &input, has_join)?;
     
         Ok(Arc::new(IrPlan::Filter { input, predicate }))
     }
     
-    // Updated parse_filter_condition to accept the input plan for table reference determination
-    fn parse_filter_condition(condition: &str, input: &Arc<IrPlan>) -> Result<FilterClause, Box<IrParseError>> {
+    // Updated to require qualified columns in join context
+    fn parse_filter_condition(
+        condition: &str, 
+        input: &Arc<IrPlan>, 
+        has_join: bool
+    ) -> Result<FilterClause, Box<IrParseError>> {
         // Check for AND/OR logic
         if condition.contains("&&") {
             let parts: Vec<&str> = condition.split("&&").collect();
-            let left = Self::parse_filter_condition(parts[0].trim(), input)?;
-            let right = Self::parse_filter_condition(parts[1].trim(), input)?;
+            let left = Self::parse_filter_condition(parts[0].trim(), input, has_join)?;
+            let right = Self::parse_filter_condition(parts[1].trim(), input, has_join)?;
     
             return Ok(FilterClause::Expression {
                 left: Box::new(left),
@@ -246,8 +316,8 @@ impl DataFrameASTBuilder {
             });
         } else if condition.contains("||") {
             let parts: Vec<&str> = condition.split("||").collect();
-            let left = Self::parse_filter_condition(parts[0].trim(), input)?;
-            let right = Self::parse_filter_condition(parts[1].trim(), input)?;
+            let left = Self::parse_filter_condition(parts[0].trim(), input, has_join)?;
+            let right = Self::parse_filter_condition(parts[1].trim(), input, has_join)?;
     
             return Ok(FilterClause::Expression {
                 left: Box::new(left),
@@ -275,32 +345,76 @@ impl DataFrameASTBuilder {
             ))));
         }
     
-        // Determine the table name for the column - clone it immediately to avoid ownership issues
-        let table_name_opt = match &**input {
-            IrPlan::Join { left, .. } => {
-                // For join queries, set the table name based on the input table or alias
-                match &**left {
-                    IrPlan::Scan { alias, .. } => alias.clone(),
-                    _ => None,
+        // Get available tables for validation
+        let mut available_tables = Vec::new();
+        match &**input {
+            IrPlan::Join { left, right, .. } => {
+                if let IrPlan::Scan { alias: Some(left_alias), .. } = &**left {
+                    available_tables.push(left_alias.clone());
+                }
+                if let IrPlan::Scan { alias: Some(right_alias), .. } = &**right {
+                    available_tables.push(right_alias.clone());
                 }
             },
-            IrPlan::Scan { alias, .. } => alias.clone(),
-            _ => None,
+            IrPlan::Scan { alias: Some(alias), .. } => {
+                available_tables.push(alias.clone());
+            },
+            _ => {}
+        }
+    
+        // Parse left side
+        let left_field = if parts[0].contains('.') && has_join {
+            // Qualified column reference
+            let column_parts: Vec<&str> = parts[0].split('.').collect();
+            if column_parts.len() != 2 {
+                return Err(Box::new(IrParseError::InvalidInput(format!(
+                    "Invalid qualified column format: {}", parts[0]
+                ))));
+            }
+            
+            let table = column_parts[0].to_string();
+            let column = column_parts[1].to_string();
+            
+            // Validate table exists
+            if !available_tables.contains(&table) {
+                return Err(Box::new(IrParseError::InvalidInput(format!(
+                    "Unknown table reference '{}' in filter condition", table
+                ))));
+            }
+            
+            ComplexField {
+                column_ref: Some(ColumnRef {
+                    table: Some(table),
+                    column,
+                }),
+                literal: None,
+                aggregate: None,
+                nested_expr: None,
+                subquery: None,
+                subquery_vec: None,
+            }
+        } else if !parts[0].contains('.') && has_join {
+            // Unqualified column in join context - error
+            return Err(Box::new(IrParseError::InvalidInput(format!(
+                "Column '{}' must be qualified with a table name when using joins",
+                parts[0]
+            ))));
+        } else {
+            // Simple column or non-join context
+            ComplexField {
+                column_ref: Some(ColumnRef {
+                    table: if available_tables.len() == 1 { Some(available_tables[0].clone()) } else { None },
+                    column: parts[0].to_string(),
+                }),
+                literal: None,
+                aggregate: None,
+                nested_expr: None,
+                subquery: None,
+                subquery_vec: None,
+            }
         };
     
-        let left_field = ComplexField {
-            column_ref: Some(ColumnRef {
-                table: table_name_opt.clone(),
-                column: parts[0].to_string(),
-            }),
-            literal: None,
-            aggregate: None,
-            nested_expr: None,
-            subquery: None,
-            subquery_vec: None,
-        };
-    
-        // Try to parse the right side as a literal or column reference
+        // Parse right side - either literal or column
         let right_field = if parts[1].starts_with('\'') && parts[1].ends_with('\'') {
             // String literal
             ComplexField {
@@ -343,20 +457,48 @@ impl DataFrameASTBuilder {
                 subquery: None,
                 subquery_vec: None,
             }
-        } else {
-            // Determine if this is a column from the joined table
-            let (table, column) = if parts[1].contains('.') {
-                let table_col: Vec<&str> = parts[1].split('.').collect();
-                (Some(table_col[0].to_string()), table_col[1].to_string())
-            } else {
-                // For non-qualified columns, use the default table
-                (table_name_opt.clone(), parts[1].to_string())
-            };
-    
+        } else if parts[1].contains('.') && has_join {
+            // Qualified column reference
+            let column_parts: Vec<&str> = parts[1].split('.').collect();
+            if column_parts.len() != 2 {
+                return Err(Box::new(IrParseError::InvalidInput(format!(
+                    "Invalid qualified column format: {}", parts[1]
+                ))));
+            }
+            
+            let table = column_parts[0].to_string();
+            let column = column_parts[1].to_string();
+            
+            // Validate table exists
+            if !available_tables.contains(&table) {
+                return Err(Box::new(IrParseError::InvalidInput(format!(
+                    "Unknown table reference '{}' in filter condition", table
+                ))));
+            }
+            
             ComplexField {
                 column_ref: Some(ColumnRef {
-                    table,
+                    table: Some(table),
                     column,
+                }),
+                literal: None,
+                aggregate: None,
+                nested_expr: None,
+                subquery: None,
+                subquery_vec: None,
+            }
+        } else if !parts[1].contains('.') && has_join {
+            // Unqualified column in join context - error
+            return Err(Box::new(IrParseError::InvalidInput(format!(
+                "Column '{}' must be qualified with a table name when using joins",
+                parts[1]
+            ))));
+        } else {
+            // Simple column reference in non-join context
+            ComplexField {
+                column_ref: Some(ColumnRef {
+                    table: if available_tables.len() == 1 { Some(available_tables[0].clone()) } else { None },
+                    column: parts[1].to_string(),
                 }),
                 literal: None,
                 aggregate: None,
@@ -390,123 +532,6 @@ impl DataFrameASTBuilder {
         )))
     }
 
-    fn process_groupby_method(
-        pair: Pair<Rule>,
-        input: Arc<IrPlan>,
-    ) -> Result<Arc<IrPlan>, Box<IrParseError>> {
-        let column_list = pair.into_inner().next().ok_or_else(|| {
-            IrParseError::InvalidInput("Missing column list in groupby()".to_string())
-        })?;
-
-        if column_list.as_rule() != Rule::column_list {
-            return Err(Box::new(IrParseError::InvalidInput(
-                "Expected column list in groupby()".to_string(),
-            )));
-        }
-
-        let mut group_keys = Vec::new();
-
-        for col in column_list.into_inner() {
-            if col.as_rule() == Rule::column_with_alias {
-                let column_name = col
-                    .into_inner()
-                    .next()
-                    .ok_or_else(|| IrParseError::InvalidInput("Missing column name".to_string()))?
-                    .as_str();
-
-                group_keys.push(ColumnRef {
-                    table: None,
-                    column: column_name.to_string(),
-                });
-            }
-        }
-
-        Ok(Arc::new(IrPlan::GroupBy {
-            input,
-            keys: group_keys,
-            group_condition: None,
-        }))
-    }
-
-    fn process_agg_method(
-        pair: Pair<Rule>,
-        input: Arc<IrPlan>,
-        keys: Vec<ColumnRef>,
-    ) -> Result<Arc<IrPlan>, Box<IrParseError>> {
-        let agg_list = pair.into_inner().next().ok_or_else(|| {
-            IrParseError::InvalidInput("Missing aggregation list in agg()".to_string())
-        })?;
-
-        if agg_list.as_rule() != Rule::agg_list {
-            return Err(Box::new(IrParseError::InvalidInput(
-                "Expected aggregation list in agg()".to_string(),
-            )));
-        }
-
-        let mut projection_columns = Vec::new();
-
-        // First add group by keys to projections
-        for key in &keys {
-            projection_columns.push(ProjectionColumn::Column(key.clone(), None));
-        }
-
-        // Then process aggregation expressions
-        for agg_expr in agg_list.into_inner() {
-            if agg_expr.as_rule() == Rule::agg_expr {
-                let mut parts = agg_expr.into_inner();
-
-                let func_name = parts
-                    .next()
-                    .ok_or_else(|| {
-                        IrParseError::InvalidInput("Missing aggregation function".to_string())
-                    })?
-                    .as_str();
-
-                let column_name = parts
-                    .next()
-                    .ok_or_else(|| {
-                        IrParseError::InvalidInput(
-                            "Missing column in aggregation function".to_string(),
-                        )
-                    })?
-                    .as_str();
-
-                let alias = parts.next().map(|p| p.as_str().to_string());
-
-                let agg_type = match func_name {
-                    "sum" => AggregateType::Sum,
-                    "avg" => AggregateType::Avg,
-                    "min" => AggregateType::Min,
-                    "max" => AggregateType::Max,
-                    "count" => AggregateType::Count,
-                    _ => {
-                        return Err(Box::new(IrParseError::InvalidInput(format!(
-                            "Unsupported aggregation function: {}",
-                            func_name
-                        ))))
-                    }
-                };
-
-                projection_columns.push(ProjectionColumn::Aggregate(
-                    AggregateFunction {
-                        function: agg_type,
-                        column: ColumnRef {
-                            table: None,
-                            column: column_name.to_string(),
-                        },
-                    },
-                    alias,
-                ));
-            }
-        }
-
-        Ok(Arc::new(IrPlan::Project {
-            input,
-            columns: projection_columns,
-            distinct: false,
-        }))
-    }
-
     fn process_join_method(
         pair: Pair<Rule>,
         input: Arc<IrPlan>,
@@ -519,56 +544,76 @@ impl DataFrameASTBuilder {
         })?;
         let right_table_name = right_table.as_str().to_string();
     
-        // Get left keys (columns from the left table)
-        let left_keys_list = parts.next().ok_or_else(|| {
-            IrParseError::InvalidInput("Missing left keys in join()".to_string())
+        // Get the left qualified column
+        let left_col_pair = parts.next().ok_or_else(|| {
+            IrParseError::InvalidInput("Missing left column in join()".to_string())
         })?;
         
-        // Get right keys (columns from the right table)
-        let right_keys_list = parts.next().ok_or_else(|| {
-            IrParseError::InvalidInput("Missing right keys in join()".to_string())
+        // Get the right qualified column
+        let right_col_pair = parts.next().ok_or_else(|| {
+            IrParseError::InvalidInput("Missing right column in join()".to_string())
         })?;
         
-        // Parse left join keys
-        let mut left_keys = Vec::new();
-        for col in left_keys_list.into_inner() {
-            if col.as_rule() == Rule::column_with_alias {
-                let column_name = col
-                    .into_inner()
-                    .next()
-                    .ok_or_else(|| IrParseError::InvalidInput("Missing column name".to_string()))?
-                    .as_str();
-                
-                left_keys.push(ColumnRef {
-                    table: None, // Will be filled in later
-                    column: column_name.to_string(),
-                });
+        // Process left qualified column (should be table.column format)
+        let left_col = if left_col_pair.as_rule() == Rule::qualified_column {
+            let mut qual_parts = left_col_pair.into_inner();
+            let table = qual_parts.next()
+                .ok_or_else(|| IrParseError::InvalidInput("Missing table in left join column".to_string()))?
+                .as_str().to_string();
+            let column = qual_parts.next()
+                .ok_or_else(|| IrParseError::InvalidInput("Missing column in left join column".to_string()))?
+                .as_str().to_string();
+            
+            // Validate the table refers to the input table
+            let input_table = match &*input {
+                IrPlan::Scan { alias: Some(alias), .. } => alias.clone(),
+                _ => "".to_string()
+            };
+            
+            if table != input_table {
+                return Err(Box::new(IrParseError::InvalidInput(format!(
+                    "Left join column table '{}' does not match input table '{}'",
+                    table, input_table
+                ))));
             }
-        }
-        
-        // Parse right join keys
-        let mut right_keys = Vec::new();
-        for col in right_keys_list.into_inner() {
-            if col.as_rule() == Rule::column_with_alias {
-                let column_name = col
-                    .into_inner()
-                    .next()
-                    .ok_or_else(|| IrParseError::InvalidInput("Missing column name".to_string()))?
-                    .as_str();
-                
-                right_keys.push(ColumnRef {
-                    table: Some(right_table_name.clone()), // Explicitly set the table
-                    column: column_name.to_string(),
-                });
+            
+            ColumnRef {
+                table: Some(table),
+                column,
             }
-        }
-        
-        // Check if the number of left and right keys match
-        if left_keys.len() != right_keys.len() {
+        } else {
             return Err(Box::new(IrParseError::InvalidInput(
-                "Number of columns in left and right keys must match".to_string(),
+                "Left join column must be in table.column format".to_string()
             )));
-        }
+        };
+        
+        // Process right qualified column (should be table.column format)
+        let right_col = if right_col_pair.as_rule() == Rule::qualified_column {
+            let mut qual_parts = right_col_pair.into_inner();
+            let table = qual_parts.next()
+                .ok_or_else(|| IrParseError::InvalidInput("Missing table in right join column".to_string()))?
+                .as_str().to_string();
+            let column = qual_parts.next()
+                .ok_or_else(|| IrParseError::InvalidInput("Missing column in right join column".to_string()))?
+                .as_str().to_string();
+            
+            // Validate the table refers to the right table
+            if table != right_table_name {
+                return Err(Box::new(IrParseError::InvalidInput(format!(
+                    "Right join column table '{}' does not match right table '{}'",
+                    table, right_table_name
+                ))));
+            }
+            
+            ColumnRef {
+                table: Some(table),
+                column,
+            }
+        } else {
+            return Err(Box::new(IrParseError::InvalidInput(
+                "Right join column must be in table.column format".to_string()
+            )));
+        };
         
         // Optional join type (default to inner join)
         let join_type = if let Some(type_token) = parts.next() {
@@ -587,16 +632,13 @@ impl DataFrameASTBuilder {
             JoinType::Inner // Default to inner join
         };
         
-        // Create join conditions from the key pairs
-        let mut conditions = Vec::new();
-        for (left, right) in left_keys.iter().zip(right_keys.iter()) {
-            conditions.push(JoinCondition {
-                left_col: left.clone(),
-                right_col: right.clone(),
-            });
-        }
+        // Create the join condition with the qualified columns
+        let condition = JoinCondition {
+            left_col,
+            right_col,
+        };
         
-        // Create the right side plan
+        // Create the right side plan - ensure alias is set
         let right_plan = Arc::new(IrPlan::Scan {
             stream_name: format!("stream{}", 1), // Use index 1 for right stream
             alias: Some(right_table_name.clone()),
@@ -609,8 +651,267 @@ impl DataFrameASTBuilder {
         Ok(Arc::new(IrPlan::Join {
             left: input,
             right: right_plan,
-            condition: conditions,
+            condition: vec![condition],
             join_type,
+        }))
+    }
+
+    fn process_groupby_method(
+        pair: Pair<Rule>,
+        input: Arc<IrPlan>,
+        has_join: bool,
+    ) -> Result<Arc<IrPlan>, Box<IrParseError>> {
+        let column_list = pair.into_inner().next().ok_or_else(|| {
+            IrParseError::InvalidInput("Missing column list in groupby()".to_string())
+        })?;
+
+        if column_list.as_rule() != Rule::column_list {
+            return Err(Box::new(IrParseError::InvalidInput(
+                "Expected column list in groupby()".to_string(),
+            )));
+        }
+
+        let mut group_keys = Vec::new();
+
+        // Get available tables for validation
+        let mut available_tables = Vec::new();
+        match &*input {
+            IrPlan::Join { left, right, .. } => {
+                if let IrPlan::Scan { alias: Some(left_alias), .. } = &**left {
+                    available_tables.push(left_alias.clone());
+                }
+                if let IrPlan::Scan { alias: Some(right_alias), .. } = &**right {
+                    available_tables.push(right_alias.clone());
+                }
+            },
+            IrPlan::Scan { alias: Some(alias), .. } => {
+                available_tables.push(alias.clone());
+            },
+            _ => {}
+        }
+
+        for col_item in column_list.into_inner() {
+            if col_item.as_rule() == Rule::column_with_alias {
+                let column_ref_pair = col_item
+                    .into_inner()
+                    .next()
+                    .ok_or_else(|| IrParseError::InvalidInput("Missing column reference".to_string()))?;
+                
+                // Process column reference
+                if column_ref_pair.as_rule() == Rule::column_ref {
+                    // Get the inner content that might be a qualified column or simple identifier
+                    let inner_col = column_ref_pair.into_inner().next()
+                        .ok_or_else(|| IrParseError::InvalidInput("Empty column reference".to_string()))?;
+                    
+                    if inner_col.as_rule() == Rule::qualified_column {
+                        // Handle table.column format
+                        let mut qual_parts = inner_col.into_inner();
+                        let table = qual_parts.next()
+                            .ok_or_else(|| IrParseError::InvalidInput("Missing table in qualified column".to_string()))?
+                            .as_str().to_string();
+                        let column = qual_parts.next()
+                            .ok_or_else(|| IrParseError::InvalidInput("Missing column in qualified column".to_string()))?
+                            .as_str().to_string();
+                        
+                        // Validate table exists
+                        if has_join && !available_tables.contains(&table) {
+                            return Err(Box::new(IrParseError::InvalidInput(format!(
+                                "Unknown table reference '{}' in groupby. Available tables: {:?}",
+                                table, available_tables
+                            ))));
+                        }
+                        
+                        group_keys.push(ColumnRef {
+                            table: Some(table),
+                            column,
+                        });
+                    } else {
+                        // Simple column name
+                        if has_join {
+                            return Err(Box::new(IrParseError::InvalidInput(format!(
+                                "Column '{}' must be qualified with a table name when using joins",
+                                inner_col.as_str()
+                            ))));
+                        }
+                        
+                        group_keys.push(ColumnRef {
+                            table: if available_tables.len() == 1 { Some(available_tables[0].clone()) } else { None },
+                            column: inner_col.as_str().to_string(),
+                        });
+                    }
+                } else {
+                    // Direct column identifier
+                    if has_join {
+                        return Err(Box::new(IrParseError::InvalidInput(format!(
+                            "Column '{}' must be qualified with a table name when using joins",
+                            column_ref_pair.as_str()
+                        ))));
+                    }
+                    
+                    group_keys.push(ColumnRef {
+                        table: if available_tables.len() == 1 { Some(available_tables[0].clone()) } else { None },
+                        column: column_ref_pair.as_str().to_string(),
+                    });
+                }
+            }
+        }
+
+        Ok(Arc::new(IrPlan::GroupBy {
+            input,
+            keys: group_keys,
+            group_condition: None,
+        }))
+    }
+
+    fn process_agg_method(
+        pair: Pair<Rule>,
+        input: Arc<IrPlan>,
+        keys: Vec<ColumnRef>,
+        has_join: bool,
+    ) -> Result<Arc<IrPlan>, Box<IrParseError>> {
+        let agg_list = pair.into_inner().next().ok_or_else(|| {
+            IrParseError::InvalidInput("Missing aggregation list in agg()".to_string())
+        })?;
+
+        if agg_list.as_rule() != Rule::agg_list {
+            return Err(Box::new(IrParseError::InvalidInput(
+                "Expected aggregation list in agg()".to_string(),
+            )));
+        }
+
+        let mut projection_columns = Vec::new();
+
+        // First add group by keys to projections
+        for key in &keys {
+            projection_columns.push(ProjectionColumn::Column(key.clone(), None));
+        }
+
+        // Get available tables for validation
+        let mut available_tables = Vec::new();
+        if let IrPlan::GroupBy { input: group_input, .. } = &*input {
+            match &**group_input {
+                IrPlan::Join { left, right, .. } => {
+                    if let IrPlan::Scan { alias: Some(left_alias), .. } = &**left {
+                        available_tables.push(left_alias.clone());
+                    }
+                    if let IrPlan::Scan { alias: Some(right_alias), .. } = &**right {
+                        available_tables.push(right_alias.clone());
+                    }
+                },
+                IrPlan::Scan { alias: Some(alias), .. } => {
+                    available_tables.push(alias.clone());
+                },
+                _ => {}
+            }
+        }
+
+        // Then process aggregation expressions
+        for agg_expr in agg_list.into_inner() {
+            if agg_expr.as_rule() == Rule::agg_expr {
+                let mut parts = agg_expr.into_inner();
+
+                let func_name = parts
+                    .next()
+                    .ok_or_else(|| {
+                        IrParseError::InvalidInput("Missing aggregation function".to_string())
+                    })?
+                    .as_str();
+
+                let column_ref_pair = parts
+                    .next()
+                    .ok_or_else(|| {
+                        IrParseError::InvalidInput(
+                            "Missing column in aggregation function".to_string(),
+                        )
+                    })?;
+
+                let alias = parts.next().map(|p| p.as_str().to_string());
+
+                let agg_type = match func_name {
+                    "sum" => AggregateType::Sum,
+                    "avg" => AggregateType::Avg,
+                    "min" => AggregateType::Min,
+                    "max" => AggregateType::Max,
+                    "count" => AggregateType::Count,
+                    _ => {
+                        return Err(Box::new(IrParseError::InvalidInput(format!(
+                            "Unsupported aggregation function: {}",
+                            func_name
+                        ))))
+                    }
+                };
+
+                // Parse the column reference in the aggregation
+                let column_ref = if column_ref_pair.as_rule() == Rule::column_ref {
+                    // Get inner content (qualified column or identifier)
+                    let inner_col = column_ref_pair.into_inner().next()
+                        .ok_or_else(|| IrParseError::InvalidInput("Empty column reference".to_string()))?;
+                    
+                    if inner_col.as_rule() == Rule::qualified_column {
+                        // Handle table.column format
+                        let mut qual_parts = inner_col.into_inner();
+                        let table = qual_parts.next()
+                            .ok_or_else(|| IrParseError::InvalidInput("Missing table in qualified column".to_string()))?
+                            .as_str().to_string();
+                        let column = qual_parts.next()
+                            .ok_or_else(|| IrParseError::InvalidInput("Missing column in qualified column".to_string()))?
+                            .as_str().to_string();
+                        
+                        // Validate table exists
+                        if has_join && !available_tables.contains(&table) {
+                            return Err(Box::new(IrParseError::InvalidInput(format!(
+                                "Unknown table reference '{}' in aggregation. Available tables: {:?}",
+                                table, available_tables
+                            ))));
+                        }
+                        
+                        ColumnRef {
+                            table: Some(table),
+                            column,
+                        }
+                    } else {
+                        // Simple column name
+                        if has_join {
+                            return Err(Box::new(IrParseError::InvalidInput(format!(
+                                "Column '{}' must be qualified with a table name when using joins",
+                                inner_col.as_str()
+                            ))));
+                        }
+                        
+                        ColumnRef {
+                            table: if available_tables.len() == 1 { Some(available_tables[0].clone()) } else { None },
+                            column: inner_col.as_str().to_string(),
+                        }
+                    }
+                } else {
+                    // Direct reference to column
+                    if has_join {
+                        return Err(Box::new(IrParseError::InvalidInput(format!(
+                            "Column '{}' must be qualified with a table name when using joins",
+                            column_ref_pair.as_str()
+                        ))));
+                    }
+                    
+                    ColumnRef {
+                        table: if available_tables.len() == 1 { Some(available_tables[0].clone()) } else { None },
+                        column: column_ref_pair.as_str().to_string(),
+                    }
+                };
+
+                projection_columns.push(ProjectionColumn::Aggregate(
+                    AggregateFunction {
+                        function: agg_type,
+                        column: column_ref,
+                    },
+                    alias,
+                ));
+            }
+        }
+
+        Ok(Arc::new(IrPlan::Project {
+            input,
+            columns: projection_columns,
+            distinct: false,
         }))
     }
 }
