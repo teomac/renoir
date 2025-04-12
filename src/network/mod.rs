@@ -112,6 +112,12 @@ impl<T> NetworkMessage<T> {
         }
     }
 
+    pub fn into_vec(self) -> Vec<StreamElement<T>> {
+        match self.data {
+            NetworkData::Batch(vec) => vec,
+        }
+    }
+
     /// The coordinates of the sending block.
     pub fn sender(&self) -> Coord {
         self.sender
@@ -216,6 +222,45 @@ impl From<ReceiverEndpoint> for DemuxCoord {
         Self {
             coord: endpoint.coord.into(),
             prev_block_id: endpoint.prev_block_id,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::remote::{MessageHeader, BINCODE_HEADER, HEADER_SIZE};
+    use bincode::enc::write::SizeWriter;
+
+    #[test]
+    fn header_size() {
+        let test_headers = vec![
+            MessageHeader {
+                size: 0,
+                replica_id: 0,
+                sender_block_id: 0,
+            },
+            MessageHeader {
+                size: 1,
+                replica_id: 1,
+                sender_block_id: 1,
+            },
+            MessageHeader {
+                size: 1 << 20,
+                replica_id: 1 << 10,
+                sender_block_id: 200,
+            },
+            MessageHeader {
+                size: u32::MAX - 1,
+                replica_id: u64::MAX,
+                sender_block_id: u64::MAX,
+            },
+        ];
+
+        for h in test_headers {
+            let mut size_w = SizeWriter::default();
+            bincode::serde::encode_into_writer(h, &mut size_w, BINCODE_HEADER).unwrap();
+
+            assert_eq!(HEADER_SIZE, size_w.bytes_written);
         }
     }
 }
