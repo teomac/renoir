@@ -17,7 +17,7 @@ pub struct StreamInfo {
     pub join_tree: Option<JoinTree>, // Join tree
     pub agg_position: IndexMap<AggregateFunction, String>, // Aggregate function → position mappings
     pub limit: Option<(usize, usize)>, // Limit and offset for the stream
-    pub order_by: Option<Vec<(String, Option<String>)>>, // Column name and order (ASC/DESC)
+    pub order_by: Vec<(ColumnRef, String)>, // Column name and order (ASC/DESC)
     pub distinct: bool,
 }
 
@@ -72,7 +72,7 @@ impl StreamInfo {
             join_tree: None,
             agg_position: IndexMap::new(),
             limit: None,
-            order_by: None,
+            order_by: Vec::new(),
             distinct: false,
         }
     }

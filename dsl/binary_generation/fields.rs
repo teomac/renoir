@@ -1,5 +1,5 @@
 use indexmap::IndexMap;
-use crate::dsl::{ir::r_distinct::process_distinct, struct_object::support_structs::StreamInfo};
+use crate::dsl::struct_object::support_structs::StreamInfo;
 use std::fmt::Write;
 
 
@@ -231,32 +231,22 @@ impl Fields {
 
         // Collection code using IndexSet instead of Vec
         let collection_code  = format!(r#"
-        let mut {} = indexmap::IndexSet::new();
-        if let Some(values) = result {{
-            values.iter().filter_map(|record| record.{}{}).for_each(|item| {{ {}.insert(item); }});
-        }}"#, new_result, stream.final_struct.first().unwrap().0, if needs_ordered_float {".map(OrderedFloat)"} else {".clone()"},new_result);
+        .map(|x| x.{}{})"#, stream.final_struct.first().unwrap().0, if needs_ordered_float {".map(OrderedFloat)"} else {""});
 
         stream.op_chain.push(format!(
-            r#"
-                .collect_vec();
+            r#" 
+                {}  
+                .collect_all();
         ctx.execute_blocking();
-        let result = {}.get();
-        
-        {}
-
-        {}
+        let {}: IndexSet<_> = {}.get().unwrap_or_default();
 
         {}
 
         let ctx = StreamContext::new(config.clone());  
             "#,
-            stream_name,
             collection_code,
-            if stream.distinct {
-                process_distinct(stream, true)
-            } else {
-                String::new()
-            },
+            new_result,
+            stream_name,
             if is_single_result {len_check} else {String::new()}
         ));
         

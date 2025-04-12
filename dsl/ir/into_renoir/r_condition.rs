@@ -384,7 +384,7 @@ fn process_condition(condition: &FilterConditionType, query_object: &QueryObject
                                 let cast_type = if c_type == "f64" { "i64" } else { "f64" };
                                 let condition_str = if cast_type == "f64" {
                                     format!(
-                                        "&OrderedFloat(x{}.{}.unwrap() as {})",
+                                        "&Some(OrderedFloat(x{}.{}.unwrap() as {}))",
                                         stream.get_access().get_base_path(),
                                         col_ref.column,
                                         cast_type
@@ -413,7 +413,7 @@ fn process_condition(condition: &FilterConditionType, query_object: &QueryObject
                             // Generate the condition
                             let condition_str = if c_type == "f64" {
                                 format!(
-                                    "&OrderedFloat(x{}.{}.unwrap())",
+                                    "&Some(OrderedFloat(x{}.{}.unwrap()))",
                                     stream.get_access().get_base_path(),
                                     col_ref.column,
                                 )
@@ -469,7 +469,7 @@ fn process_condition(condition: &FilterConditionType, query_object: &QueryObject
 
                                 if vector_type == "f64" {
                                     format!(
-                                        "{}{}.contains(&OrderedFloat({}{}))",
+                                        "{}{}.contains(&Some(OrderedFloat({}{})))",
                                         if *negated { "!" } else { "" },
                                         vector_name,
                                         convert_literal(lit),
@@ -517,7 +517,7 @@ fn process_condition(condition: &FilterConditionType, query_object: &QueryObject
                         )
                         } else{
                             format!(
-                                "{}{}.contains(&OrderedFloat({}))",
+                                "{}{}.contains(&Some(OrderedFloat({})))",
                                 if *negated { "!" } else { "" },
                                 vector_name,
                                 process_arithmetic_expression(&field, query_object)

@@ -298,7 +298,7 @@ impl DataFrameASTBuilder {
                         }
                         
                         // If it's an alias, resolve to the actual table name
-                        let real_table = if let Some(real) = table_aliases.get(&table) {
+                        let real_table = if let Some(_real) = table_aliases.get(&table) {
                             table.clone() // Keep the alias as the reference
                         } else {
                             table.clone()
@@ -350,7 +350,7 @@ impl DataFrameASTBuilder {
                     }
                     
                     // If it's an alias, resolve to the actual table name
-                    let real_table = if let Some(real) = table_aliases.get(&table) {
+                    let real_table = if let Some(_real) = table_aliases.get(&table) {
                         table.clone() // Keep the alias as the reference
                     } else {
                         table.clone()

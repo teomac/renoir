@@ -482,6 +482,12 @@ impl QueryObject {
                     }
                 }
             }
+            IrPlan::OrderBy { input, .. } =>{
+                self.collect_projection_aggregates(input);
+            }
+            IrPlan::Limit { input, .. } => {
+                self.collect_projection_aggregates(input);
+            } // Handle LIMIT clause if needed
             _ => panic!("Expected Project node at the root of the AST"),
         }
     }

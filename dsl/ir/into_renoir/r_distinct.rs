@@ -1,6 +1,4 @@
-use core::panic;
-
-use crate::dsl::{ir::QueryObject, struct_object::support_structs::StreamInfo};
+use crate::dsl::ir::QueryObject;
 
 pub fn process_distinct_old(query_object: &mut QueryObject) {
     let csv_path = query_object.output_path.replace("\\", "/");
@@ -45,14 +43,27 @@ pub fn process_distinct_old(query_object: &mut QueryObject) {
     query_object.distinct_string = distinct_code;
 }
 
-pub fn process_distinct_new(stream_name: &String, query_object: &mut QueryObject) {
+pub fn process_distinct_order(stream_name: &String, query_object: &mut QueryObject) {
     let stream = query_object.streams.get(stream_name).unwrap();
+
+    //if the stream has no distinct, nor order_by, nor limit, return
+    if !stream.distinct && stream.order_by.is_empty() && stream.limit.is_none() {
+        return;
+    }
+
+    let distinct = stream.distinct;
+    let order_by = stream.order_by.clone();
+    let limit = stream.limit.clone();
+
     let final_struct = stream.final_struct.clone();
     //map the output struct to an ordered float struct
     let final_struct_of_name = format!("{}_of", stream.final_struct_name.clone().last().unwrap());
     let mut final_struct_of = final_struct.clone();
 
     let mut needs_mapping = false;
+    let mut forward_map = String::new();
+    let mut backward_map = String::new();
+
     //replace all the float types with ordered float types in the final_struct_of
     for (_, value) in final_struct_of.iter_mut() {
         if value == "f64" {
@@ -100,43 +111,121 @@ pub fn process_distinct_new(stream_name: &String, query_object: &mut QueryObject
         }
 
         // Create the complete distinct operation chain
-        let forward_map = format!(
+        forward_map = format!(
             ".map(move |x| {} {{\n{}\n            }})",
             final_struct_of_name.clone(),
             forward_map_fields
         );
-
-        let unique_op = ".unique_assoc()".to_string();
-
-        let backward_map = format!(
+        backward_map = format!(
             ".map(move |x| {} {{\n{}\n            }})",
             stream.final_struct_name.last().unwrap(),
             backward_map_fields
         );
-
-        let stream_mut = query_object.get_mut_stream(stream_name);
-        stream_mut.op_chain.push(forward_map);
-        stream_mut.op_chain.push(unique_op);
-        stream_mut.op_chain.push(backward_map);
-    } else {
-        let stream_mut = query_object.get_mut_stream(stream_name);
-        stream_mut.op_chain.push(".unique_assoc()".to_string());
     }
-}
 
-pub fn process_distinct(stream_info: &StreamInfo, is_subquery: bool) -> String {
-    let stream_name = &stream_info.id;
-
-    if is_subquery {
-        format!(
-            r#"
-            let mut seen = indexmap::IndexSet::new();
-            {}_result.into_iter().for_each(|item| {{ seen.insert(item); }});
-            let {}_result = seen.into_iter().collect::<Vec<_>>();
-            "#,
-            stream_name, stream_name
-        )
+    //now let's process distinct, order_by and limit
+    let unique_op = if distinct {
+        ".unique_assoc()".to_string()
     } else {
-        panic!("Distinct processing for non-subquery is not implemented yet.")
+        String::new()
+    };
+
+    let order_op = if !order_by.is_empty() {
+        if limit.is_none() {
+            // Build sorting comparison function based on the order_by vector
+            let mut sort_fn = String::new();
+            sort_fn.push_str("|a,b| ");
+
+            // Iterate through order_by in reverse to apply sorting in correct order
+            let mut order_conditions = Vec::new();
+
+            for (col_name, direction) in order_by.iter() {
+                let field_name = if col_name.table.is_some() {
+                    format!("{}.{}", col_name.column, col_name.table.as_ref().unwrap())
+                } else {
+                    col_name.column.clone()
+                };
+
+                let field_type = if final_struct_of.get(&field_name).is_some() {
+                    final_struct_of.get(&field_name).unwrap()
+                } else {
+                    //we need to iterate on all the keys of the final struct to find one key that contains the field_name
+                    let key = final_struct_of
+                        .keys()
+                        .find(|key| key.contains(&field_name))
+                        .unwrap();
+                    final_struct_of.get(key).unwrap()
+                };
+
+                // Handle different field types and sort directions
+                let comparison = if field_type == "f64" || field_type == "OrderedFloat<f64>" {
+                    // For floating point fields using OrderedFloat
+                    if direction == "desc" {
+                        format!("std::cmp::Ord::cmp(\n                    &b.{}.as_ref().unwrap_or(&OrderedFloat(f64::MIN)),\n                    &a.{}.as_ref().unwrap_or(&OrderedFloat(f64::MIN))\n                )", col_name, col_name)
+                    } else {
+                        format!("std::cmp::Ord::cmp(\n                    &a.{}.as_ref().unwrap_or(&OrderedFloat(f64::MIN)),\n                    &b.{}.as_ref().unwrap_or(&OrderedFloat(f64::MIN))\n                )", col_name, col_name)
+                    }
+                } else if field_type == "String" {
+                    // For string fields
+                    if direction == "desc" {
+                        format!("b.{}.as_ref().unwrap_or(&String::new()).cmp(a.{}.as_ref().unwrap_or(&String::new()))", col_name, col_name)
+                    } else {
+                        format!("a.{}.as_ref().unwrap_or(&String::new()).cmp(b.{}.as_ref().unwrap_or(&String::new()))", col_name, col_name)
+                    }
+                } else {
+                    // Default comparison for other types
+                    if direction == "desc" {
+                        format!("b.{}.cmp(&a.{})", col_name, col_name)
+                    } else {
+                        format!("a.{}.cmp(&b.{})", col_name, col_name)
+                    }
+                };
+
+                order_conditions.push(comparison);
+            }
+
+            // Combine conditions with .then_with()
+            if order_conditions.len() == 1 {
+                sort_fn.push_str(&order_conditions[0]);
+            } else {
+                sort_fn.push_str(&order_conditions[0]);
+                for condition in &order_conditions[1..] {
+                    sort_fn.push_str(&format!(".then_with(|| {})", condition));
+                }
+            }
+
+            format!(".sorted_by({})", sort_fn)
+        } else {
+            //TODO
+            //need to use .sorted_limit_by()
+            "TODO".to_string()
+        }
+    } else {
+        String::new()
+    };
+
+    let limit_op = if limit.is_some() && order_op.is_empty() {
+        //TODO
+        //need to use .limit()
+        "TODO".to_string()
+    } else {
+        String::new()
+    };
+
+    let stream_mut = query_object.get_mut_stream(stream_name);
+    if !forward_map.is_empty() {
+        stream_mut.op_chain.push(forward_map)
+    };
+    if distinct {
+        stream_mut.op_chain.push(unique_op)
+    };
+    if !order_op.is_empty() {
+        stream_mut.op_chain.push(order_op);
     }
+    if !limit_op.is_empty() {
+        stream_mut.op_chain.push(limit_op);
+    }
+    if !backward_map.is_empty() {
+        stream_mut.op_chain.push(backward_map)
+    };
 }

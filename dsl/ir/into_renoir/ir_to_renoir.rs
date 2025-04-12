@@ -3,15 +3,12 @@ use crate::dsl::{
         ast_parser::ir_ast_structure::IrPlan,
         into_renoir::{
             r_condition::process_filter_clause, r_group::r_group_keys::process_group_by, r_join::*,
-            r_limit::*, r_order::*, r_sink::r_sink_main::process_projections,
-        },
+            r_sink::r_sink_main::process_projections,
+        }, OrderDirection,
     },
     struct_object::object::QueryObject,
 };
 use std::sync::Arc;
-
-use super::r_distinct::process_distinct_new;
-
 pub struct IrToRenoir;
 
 impl IrToRenoir {
@@ -43,7 +40,9 @@ impl IrToRenoir {
 
                 process_projections(columns, &stream_name, query_object)?;
                 if *distinct {
-                    process_distinct_new(&stream_name, query_object);
+                    let stream = query_object.get_mut_stream(&stream_name);
+                    // If distinct is true, we need to set the distinct flag in the stream
+                    stream.distinct = true;
                 }
                 Ok(stream_name)
             }
@@ -81,8 +80,18 @@ impl IrToRenoir {
             }
             IrPlan::OrderBy { input, items } => {
                 let stream_name = Self::convert(input, query_object)?;
+                let stream = query_object.get_mut_stream(&stream_name);
+
+                //for each item in items, push the order by clause to the stream
+                for item in items {
+                    let order = match item.direction{
+                        OrderDirection::Asc => "asc".to_string(),
+                        OrderDirection::Desc => "desc".to_string(),
+                    };
+                    stream.order_by.push((item.column.clone(), order));
+                }
                 // Store for output phase
-                process_order_by(items, query_object);
+                //process_order_by(items, query_object);
                 Ok(stream_name)
             }
             IrPlan::Limit {
@@ -92,7 +101,9 @@ impl IrToRenoir {
             } => {
                 let stream_name = Self::convert(input, query_object)?;
                 // Store for output phase
-                process_limit(*offset, *limit, query_object);
+                let stream = query_object.get_mut_stream(&stream_name);
+                stream.limit = Some(((*limit as usize), (offset.unwrap_or(0) as usize)));
+                //process_limit(*offset, *limit, query_object);
                 Ok(stream_name)
             }
             IrPlan::Table { table_name } => Ok(table_name.clone()),

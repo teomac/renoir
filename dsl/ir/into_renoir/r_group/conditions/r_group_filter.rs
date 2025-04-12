@@ -382,7 +382,7 @@ fn process_filter_condition(
                                         let cast_type = if c_type == "f64" { "i64" } else { "f64" };
                                         let condition_str = if cast_type == "f64" {
                                             format!(
-                                                "&OrderedFloat({}{}.unwrap() as {})",
+                                                "&Some(OrderedFloat({}{}.unwrap() as {}))",
                                                 access_str,
                                                 if !is_key {
                                                     format!(".{}", col_ref.column)
@@ -483,7 +483,7 @@ fn process_filter_condition(
 
                                         if vector_type == "f64" {
                                             format!(
-                                                "{}{}.contains(&OrderedFloat({}{}))",
+                                                "{}{}.contains(&Some(OrderedFloat({}{})))",
                                                 if *negated { "!" } else { "" },
                                                 vector_name,
                                                 convert_literal(lit),
@@ -585,7 +585,7 @@ fn process_filter_condition(
                                 // Compare the aggregate value with vector values
                                 // Need to handle type conversions appropriately
                                 let comparison_str = if vector_type == "f64" {
-                                    format!("&OrderedFloat({}{})", agg_value, cast_type)
+                                    format!("&Some(OrderedFloat({}{}))", agg_value, cast_type)
                                 } else {
                                     format!("&({}{})", agg_value, cast_type)
                                 };
@@ -630,7 +630,7 @@ fn process_filter_condition(
                                     {
                                         // Numeric types can be converted
                                         let cast_expr = if *vector_type == "f64" {
-                                            format!("&OrderedFloat({})", expr_result)
+                                            format!("&Some(OrderedFloat({}))", expr_result)
                                         } else {
                                             format!("&({} as {})", expr_result, vector_type)
                                         };
@@ -653,7 +653,7 @@ fn process_filter_condition(
                                 } else {
                                     // Types match - generate the appropriate comparison
                                     let comparison_str = if *vector_type == "f64" {
-                                        format!("&OrderedFloat({})", expr_result)
+                                        format!("&Some(OrderedFloat({}))", expr_result)
                                     } else {
                                         format!("&({})", expr_result)
                                     };
