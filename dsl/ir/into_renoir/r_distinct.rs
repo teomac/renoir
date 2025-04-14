@@ -1,4 +1,6 @@
-use crate::dsl::ir::QueryObject;
+use indexmap::IndexMap;
+
+use crate::dsl::ir::{ColumnRef, QueryObject};
 
 pub fn process_distinct_old(query_object: &mut QueryObject) {
     let csv_path = query_object.output_path.replace("\\", "/");
@@ -132,82 +134,21 @@ pub fn process_distinct_order(stream_name: &String, query_object: &mut QueryObje
 
     let order_op = if !order_by.is_empty() {
         if limit.is_none() {
-            // Build sorting comparison function based on the order_by vector
-            let mut sort_fn = String::new();
-            sort_fn.push_str("|a,b| ");
-
-            // Iterate through order_by in reverse to apply sorting in correct order
-            let mut order_conditions = Vec::new();
-
-            for (col_name, direction) in order_by.iter() {
-                let field_name = if col_name.table.is_some() {
-                    format!("{}.{}", col_name.column, col_name.table.as_ref().unwrap())
-                } else {
-                    col_name.column.clone()
-                };
-
-                let field_type = if final_struct_of.get(&field_name).is_some() {
-                    final_struct_of.get(&field_name).unwrap()
-                } else {
-                    //we need to iterate on all the keys of the final struct to find one key that contains the field_name
-                    let key = final_struct_of
-                        .keys()
-                        .find(|key| key.contains(&field_name))
-                        .unwrap();
-                    final_struct_of.get(key).unwrap()
-                };
-
-                // Handle different field types and sort directions
-                let comparison = if field_type == "f64" || field_type == "OrderedFloat<f64>" {
-                    // For floating point fields using OrderedFloat
-                    if direction == "desc" {
-                        format!("std::cmp::Ord::cmp(\n                    &b.{}.as_ref().unwrap_or(&OrderedFloat(f64::MIN)),\n                    &a.{}.as_ref().unwrap_or(&OrderedFloat(f64::MIN))\n                )", col_name, col_name)
-                    } else {
-                        format!("std::cmp::Ord::cmp(\n                    &a.{}.as_ref().unwrap_or(&OrderedFloat(f64::MIN)),\n                    &b.{}.as_ref().unwrap_or(&OrderedFloat(f64::MIN))\n                )", col_name, col_name)
-                    }
-                } else if field_type == "String" {
-                    // For string fields
-                    if direction == "desc" {
-                        format!("b.{}.as_ref().unwrap_or(&String::new()).cmp(a.{}.as_ref().unwrap_or(&String::new()))", col_name, col_name)
-                    } else {
-                        format!("a.{}.as_ref().unwrap_or(&String::new()).cmp(b.{}.as_ref().unwrap_or(&String::new()))", col_name, col_name)
-                    }
-                } else {
-                    // Default comparison for other types
-                    if direction == "desc" {
-                        format!("b.{}.cmp(&a.{})", col_name, col_name)
-                    } else {
-                        format!("a.{}.cmp(&b.{})", col_name, col_name)
-                    }
-                };
-
-                order_conditions.push(comparison);
-            }
-
-            // Combine conditions with .then_with()
-            if order_conditions.len() == 1 {
-                sort_fn.push_str(&order_conditions[0]);
-            } else {
-                sort_fn.push_str(&order_conditions[0]);
-                for condition in &order_conditions[1..] {
-                    sort_fn.push_str(&format!(".then_with(|| {})", condition));
-                }
-            }
-
-            format!(".sorted_by({})", sort_fn)
+            format!(".sorted_by({})", generate_sort_code(order_by, final_struct_of))
         } else {
-            //TODO
-            //need to use .sorted_limit_by()
-            "TODO".to_string()
+            //check if offset exists
+            let (limit, offset) = limit.unwrap();
+
+            format!(".sorted_limit_by({}, {}, Some({}))", generate_sort_code(order_by, final_struct_of), limit, offset)
+
         }
     } else {
         String::new()
     };
 
     let limit_op = if limit.is_some() && order_op.is_empty() {
-        //TODO
-        //need to use .limit()
-        "TODO".to_string()
+       let (limit, offset) = limit.unwrap();
+        format!(".limit({}, Some({}))", limit, offset)
     } else {
         String::new()
     };
@@ -228,4 +169,71 @@ pub fn process_distinct_order(stream_name: &String, query_object: &mut QueryObje
     if !backward_map.is_empty() {
         stream_mut.op_chain.push(backward_map)
     };
+}
+
+fn generate_sort_code(order_by: Vec<(ColumnRef, String)>, final_struct_of: IndexMap<String, String>) -> String {
+
+    // Build sorting comparison function based on the order_by vector
+    let mut sort_fn = String::new();
+    sort_fn.push_str("|a,b| ");
+
+    // Iterate through order_by in reverse to apply sorting in correct order
+    let mut order_conditions = Vec::new();
+
+    for (col_name, direction) in order_by.iter() {
+        let field_name = if col_name.table.is_some() {
+            format!("{}.{}", col_name.column, col_name.table.as_ref().unwrap())
+        } else {
+            col_name.column.clone()
+        };
+
+        let field_type = if final_struct_of.get(&field_name).is_some() {
+            final_struct_of.get(&field_name).unwrap()
+        } else {
+            //we need to iterate on all the keys of the final struct to find one key that contains the field_name
+            let key = final_struct_of
+                .keys()
+                .find(|key| key.contains(&field_name))
+                .unwrap();
+            final_struct_of.get(key).unwrap()
+        };
+
+        // Handle different field types and sort directions
+        let comparison = if field_type == "f64" || field_type == "OrderedFloat<f64>" {
+            // For floating point fields using OrderedFloat
+            if direction == "desc" {
+                format!("std::cmp::Ord::cmp(\n                    &b.{}.as_ref().unwrap_or(&OrderedFloat(f64::MIN)),\n                    &a.{}.as_ref().unwrap_or(&OrderedFloat(f64::MIN))\n                )", col_name, col_name)
+            } else {
+                format!("std::cmp::Ord::cmp(\n                    &a.{}.as_ref().unwrap_or(&OrderedFloat(f64::MIN)),\n                    &b.{}.as_ref().unwrap_or(&OrderedFloat(f64::MIN))\n                )", col_name, col_name)
+            }
+        } else if field_type == "String" {
+            // For string fields
+            if direction == "desc" {
+                format!("b.{}.as_ref().unwrap_or(&String::new()).cmp(a.{}.as_ref().unwrap_or(&String::new()))", col_name, col_name)
+            } else {
+                format!("a.{}.as_ref().unwrap_or(&String::new()).cmp(b.{}.as_ref().unwrap_or(&String::new()))", col_name, col_name)
+            }
+        } else {
+            // Default comparison for other types
+            if direction == "desc" {
+                format!("b.{}.cmp(&a.{})", col_name, col_name)
+            } else {
+                format!("a.{}.cmp(&b.{})", col_name, col_name)
+            }
+        };
+
+        order_conditions.push(comparison);
+    }
+
+    // Combine conditions with .then_with()
+    if order_conditions.len() == 1 {
+        sort_fn.push_str(&order_conditions[0]);
+    } else {
+        sort_fn.push_str(&order_conditions[0]);
+        for condition in &order_conditions[1..] {
+            sort_fn.push_str(&format!(".then_with(|| {})", condition));
+        }
+    }
+
+    sort_fn
 }
