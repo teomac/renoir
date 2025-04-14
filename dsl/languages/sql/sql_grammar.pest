@@ -58,12 +58,12 @@ arithmetic_term = {
 }
 
 arithmetic_factor = {
+    aggregate_expr |
+    table_column |
+    variable |
     number |
     string_literal |
-    boolean |
-    table_column |
-    aggregate_expr |
-    variable
+    boolean 
 }
 
 exists_expr = { exists_keyword ~ subquery_expr }
@@ -86,12 +86,11 @@ where_term = {
 where_expr = { where_keyword ~ where_conditions }
 
 column_item = {
+    select_expr |
     aggregate_expr |
     table_column | 
     variable | 
     string_literal |
-    
-    select_expr | 
     subquery_expr 
 }
 

@@ -164,7 +164,7 @@ pub fn create_simple_map(
                             .map(|(name, _)| name)
                             .unwrap()
                     });
-                    format!("{}: Some({}.first().unwrap().to_string().clone())", field_name, result)
+                    format!("{}: Some({}.first().unwrap().unwrap().to_string().clone())", field_name, result)
                 }
                 _ => unreachable!("Should not have aggregates in simple map"),
             }
@@ -419,9 +419,9 @@ pub fn process_complex_field(
         }
     } else if let Some((ref result, ref result_type)) = field.subquery_vec {
         if result_type == "String" {
-            format!("{}.first().unwrap().to_string().clone()", result)
+            format!("{}.first().unwrap().unwrap().to_string().clone()", result)
         } else {
-            format!("{}.first().unwrap().clone()", result)
+            format!("{}.first().unwrap().unwrap().clone()", result)
         }
     } else {
         panic!("Invalid ComplexField - no valid content");

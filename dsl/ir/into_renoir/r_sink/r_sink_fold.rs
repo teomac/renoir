@@ -500,7 +500,7 @@ pub fn create_map(
                 format!("Some(\"{}\".to_string())", value)
             }
             ProjectionColumn::SubqueryVec(result, _) => {
-                format!("Some({}.first().unwrap().to_string().clone())", result)
+                format!("Some({}.first().unwrap().unwrap().to_string().clone())", result)
             }
             _ => panic!("Invalid projection clause"),
         };
@@ -862,9 +862,9 @@ fn process_complex_field_for_map(
         }
     } else if let Some((ref result, ref result_type)) = field.subquery_vec {
         if result_type == "String" {
-            format!("{}.first().unwrap().to_string().clone()", result)
+            format!("{}.first().unwrap().unwrap().to_string().clone()", result)
         } else {
-            format!("{}.first().unwrap().clone()", result)
+            format!("{}.first().unwrap().unwrap().clone()", result)
         }
     } else {
         panic!("Invalid ComplexField - no valid content");

@@ -311,7 +311,7 @@ fn process_filter_condition(
                                             if field_type == "f64" { "i64" } else { "f64" };
 
                                         format!(
-                                            "{}{}.contains(&{}.first().unwrap() as {})",
+                                            "{}{}.contains(&Some({}.first().unwrap().unwrap() as {}))",
                                             if *negated { "!" } else { "" },
                                             vector_name,
                                             field_name,
@@ -325,7 +325,7 @@ fn process_filter_condition(
 
                                     // Generate the final string
                                     format!(
-                                        "{}{}.contains(&{}.first().unwrap())",
+                                        "{}{}.contains({}.first().unwrap())",
                                         if *negated { "!" } else { "" },
                                         vector_name,
                                         field_name,
@@ -393,7 +393,7 @@ fn process_filter_condition(
                                             )
                                         } else {
                                             format!(
-                                                "{}{}.as_ref().unwrap() as {}",
+                                                "&Some({}{}.as_ref().unwrap() as {})",
                                                 access_str,
                                                 if !is_key {
                                                     format!(".{}", col_ref.column)
@@ -420,7 +420,7 @@ fn process_filter_condition(
                                     // Generate the condition
                                     let condition_str = if c_type == "f64" {
                                         format!(
-                                            "&{}{}.unwrap()",
+                                            "&Some(OrderedFloat({}{}.unwrap()))",
                                             access_str,
                                             if !is_key {
                                                 format!(".{}", col_ref.column)
@@ -430,7 +430,7 @@ fn process_filter_condition(
                                         )
                                     } else {
                                         format!(
-                                            "{}{}.as_ref().unwrap()",
+                                            "&{}{}",
                                             access_str,
                                             if !is_key {
                                                 format!(".{}", col_ref.column)
@@ -461,7 +461,7 @@ fn process_filter_condition(
                                             panic!("Invalid InCondition - boolean literal does not match vector type {}", vector_type);
                                         }
                                         format!(
-                                            "{}{}.contains(&{})",
+                                            "{}{}.contains(&Some({}))",
                                             if *negated { "!" } else { "" },
                                             vector_name,
                                             convert_literal(lit)
@@ -492,7 +492,7 @@ fn process_filter_condition(
                                         } else {
                                             //case i64
                                             format!(
-                                                "{}{}.contains(&({}{}))",
+                                                "{}{}.contains(&Some(({}{})))",
                                                 if *negated { "!" } else { "" },
                                                 vector_name,
                                                 convert_literal(lit),
@@ -509,7 +509,7 @@ fn process_filter_condition(
                                             panic!("Invalid InCondition - empty string literal");
                                         }
                                         format!(
-                                            "{}{}.contains(\"{}\")",
+                                            "{}{}.contains(&Some(\"{}\".to_string()))",
                                             if *negated { "!" } else { "" },
                                             vector_name,
                                             string
@@ -574,8 +574,6 @@ fn process_filter_condition(
                                     query_object.get_type(&agg.column)
                                 };
 
-                                println!("Aggregate type: {}", agg_type);
-
                                 let cast_type = if agg_type != *vector_type {
                                     format!(" as {}", vector_type)
                                 } else {
@@ -630,9 +628,9 @@ fn process_filter_condition(
                                     {
                                         // Numeric types can be converted
                                         let cast_expr = if *vector_type == "f64" {
-                                            format!("&Some(OrderedFloat({}))", expr_result)
+                                            format!("&Some(OrderedFloat(({} as f64)))", expr_result)
                                         } else {
-                                            format!("&({} as {})", expr_result, vector_type)
+                                            format!("&Some({} as {})", expr_result, vector_type)
                                         };
 
                                         // Generate the final check with type conversion
@@ -653,9 +651,9 @@ fn process_filter_condition(
                                 } else {
                                     // Types match - generate the appropriate comparison
                                     let comparison_str = if *vector_type == "f64" {
-                                        format!("&Some(OrderedFloat({}))", expr_result)
+                                        format!("&Some(OrderedFloat(({} as f64)))", expr_result)
                                     } else {
-                                        format!("&({})", expr_result)
+                                        format!("&Some({})", expr_result)
                                     };
 
                                     // Generate the final IN condition check

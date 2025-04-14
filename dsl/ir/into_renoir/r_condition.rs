@@ -72,7 +72,7 @@ pub fn process_filter(clause: &FilterClause, query_object: &mut QueryObject) -> 
 }
 
 // Added new helper function to process arithmetic expressions
-fn process_arithmetic_expression(field: &ComplexField, query_object: &QueryObject) -> String {
+fn process_arithmetic_expression(field: &ComplexField, check_list: &mut Vec<String>, query_object: &QueryObject) -> String {
     if let Some(ref nested) = field.nested_expr {
         let (left, op, right) = &**nested;
 
@@ -89,16 +89,16 @@ fn process_arithmetic_expression(field: &ComplexField, query_object: &QueryObjec
                 if op == "/" {
                     return format!(
                         "({} as f64) {} ({} as f64)",
-                        process_arithmetic_expression(left, query_object),
+                        process_arithmetic_expression(left, check_list, query_object),
                         op,
-                        process_arithmetic_expression(right, query_object)
+                        process_arithmetic_expression(right, check_list, query_object)
                     );
                 }
 
                 // Special handling for power operation (^)
                 if op == "^" {
-                    let left_expr = process_arithmetic_expression(left, query_object);
-                    let right_expr = process_arithmetic_expression(right, query_object);
+                    let left_expr = process_arithmetic_expression(left, check_list, query_object);
+                    let right_expr = process_arithmetic_expression(right, check_list, query_object);
 
                     // If either operand is f64, use powf
                     if left_type == "f64" || right_type == "f64" {
@@ -117,8 +117,8 @@ fn process_arithmetic_expression(field: &ComplexField, query_object: &QueryObjec
                     }
                 }
 
-                let left_expr = process_arithmetic_expression(left, query_object);
-                let right_expr = process_arithmetic_expression(right, query_object);
+                let left_expr = process_arithmetic_expression(left, check_list, query_object);
+                let right_expr = process_arithmetic_expression(right, check_list, query_object);
 
                 // Add as f64 to integer literals when needed
                 let processed_left = if let Some(IrLiteral::Integer(_)) = left.literal {
@@ -164,16 +164,16 @@ fn process_arithmetic_expression(field: &ComplexField, query_object: &QueryObjec
             if op == "/" {
                 return format!(
                     "({} as f64) {} ({} as f64)",
-                    process_arithmetic_expression(left, query_object),
+                    process_arithmetic_expression(left, check_list, query_object),
                     op,
-                    process_arithmetic_expression(right, query_object)
+                    process_arithmetic_expression(right, check_list, query_object)
                 );
             }
 
             // Special handling for power operation (^)
             if op == "^" {
-                let left_expr = process_arithmetic_expression(left, query_object);
-                let right_expr = process_arithmetic_expression(right, query_object);
+                let left_expr = process_arithmetic_expression(left, check_list, query_object);
+                let right_expr = process_arithmetic_expression(right, check_list, query_object);
 
                 // If both are f64, use powf
                 if left_type == "f64" {
@@ -187,9 +187,9 @@ fn process_arithmetic_expression(field: &ComplexField, query_object: &QueryObjec
             // Regular arithmetic with same types
             format!(
                 "({} {} {})",
-                process_arithmetic_expression(left, query_object),
+                process_arithmetic_expression(left, check_list, query_object),
                 op,
-                process_arithmetic_expression(right, query_object)
+                process_arithmetic_expression(right, check_list, query_object)
             )
         }
     } else if let Some(ref col) = field.column_ref {
@@ -209,6 +209,13 @@ fn process_arithmetic_expression(field: &ComplexField, query_object: &QueryObjec
 
         let stream = query_object.get_stream(stream_name);
         let c_type = query_object.get_type(col);
+
+        check_list.push(format!(
+            "x{}.{}.is_some()",
+            stream.get_access().get_base_path(),
+            col.column
+        ));
+
         format!(
             "x{}.{}{}.unwrap()",
             stream.get_access().get_base_path(),
@@ -319,28 +326,36 @@ fn process_condition(condition: &FilterConditionType, query_object: &QueryObject
                         //compare field type with vector type
                         if *field_type != *vector_type {
                             //check if they are both numbers
-                            if (field_type == "f64" || field_type == "i64")
-                                && (*vector_type == "f64" || *vector_type == "i64")
+                            if (field_type == "f64" || field_type == "i64" || field_type == "usize")
+                                && (*vector_type == "f64" || *vector_type == "i64" || *vector_type == "usize")
                             {
                                 //needs to cast the field_type to the actual vector type
-                                let cast_type = if field_type == "f64" { "i64" } else { "f64" };
+                                let cast_type = vector_type;
 
-                                format!(
-                                    "{}{}.contains(&{}.first().unwrap() as {})",
+                                if *vector_type == "f64"{
+                                    format!(
+                                        "{}{}.contains(&Some(OrderedFloat({}.first().unwrap().unwrap() as {})))",
+                                        if *negated { "!" } else { "" },
+                                        vector_name,
+                                        field_name,
+                                        cast_type,
+                                    )
+                                }
+                                else{format!(
+                                    "{}{}.contains(&Some({}.first().unwrap().unwrap() as {}))",
                                     if *negated { "!" } else { "" },
                                     vector_name,
                                     field_name,
                                     cast_type,
-                                )
+                                )}
                             } else {
                                 panic!("Invalid InCondition - column type {} does not match vector type {}", field_type, vector_type);
                             }
                         } else {
                             //standard case
-
                             // Generate the final string
                             format!(
-                                "{}{}.contains(&{}.first().unwrap())",
+                                "{}{}.contains({}.first().unwrap())",
                                 if *negated { "!" } else { "" },
                                 vector_name,
                                 field_name,
@@ -391,7 +406,7 @@ fn process_condition(condition: &FilterConditionType, query_object: &QueryObject
                                     )
                                 } else {
                                     format!(
-                                        "x{}.{}.as_ref().unwrap() as {}",
+                                        "&Some(x{}.{}.as_ref().unwrap() as {})",
                                         stream.get_access().get_base_path(),
                                         col_ref.column,
                                         cast_type
@@ -419,7 +434,7 @@ fn process_condition(condition: &FilterConditionType, query_object: &QueryObject
                                 )
                             } else {
                                 format!(
-                                    "x{}.{}.as_ref().unwrap()",
+                                    "&x{}.{}",
                                     stream.get_access().get_base_path(),
                                     col_ref.column,
                                 )
@@ -478,7 +493,7 @@ fn process_condition(condition: &FilterConditionType, query_object: &QueryObject
                                 } else {
                                     //case i64
                                     format!(
-                                        "{}{}.contains(&({}{}))",
+                                        "{}{}.contains(&Some({}{}))",
                                         if *negated { "!" } else { "" },
                                         vector_name,
                                         convert_literal(lit),
@@ -495,7 +510,7 @@ fn process_condition(condition: &FilterConditionType, query_object: &QueryObject
                                     panic!("Invalid InCondition - empty string literal");
                                 }
                                 format!(
-                                    "{}{}.contains(\"{}\")",
+                                    "{}{}.contains(&Some(\"{}\".to_string()))",
                                     if *negated { "!" } else { "" },
                                     vector_name,
                                     string
@@ -507,22 +522,29 @@ fn process_condition(condition: &FilterConditionType, query_object: &QueryObject
                         }
                     }
                     else if field.nested_expr.is_some() {
+                        let mut check_list: Vec<String> = Vec::new();
+                        let cond: String;
                         //fourth, we have a nested expression
                         if vector_type != "f64" {
-                        format!(
-                            "{}{}.contains(&{})",
+                        cond = format!(
+                            "{}{}.contains(&Some({}))",
                             if *negated { "!" } else { "" },
                             vector_name,
-                            process_arithmetic_expression(&field, query_object)
-                        )
+                            process_arithmetic_expression(&field, &mut check_list, query_object)
+                        );
                         } else{
-                            format!(
-                                "{}{}.contains(&Some(OrderedFloat({})))",
+                            cond = format!(
+                                "{}{}.contains(&Some(OrderedFloat(({} as f64))))",
                                 if *negated { "!" } else { "" },
                                 vector_name,
-                                process_arithmetic_expression(&field, query_object)
-                            )
+                                process_arithmetic_expression(&field, &mut check_list, query_object)
+                            );
                         }
+                        format!(
+                            "if {} {{ {} }} else {{false}}",
+                            check_list.join(" && "),
+                            cond,
+                        )
                         
                     }
                     else{
@@ -616,6 +638,7 @@ fn process_null_check_condition(condition: &NullCondition, query_object: &QueryO
 
 /// Process a comparison condition (>, <, =, etc.)
 fn process_comparison_condition(condition: &Condition, query_object: &QueryObject) -> String {
+    let mut check_list: Vec<String> = Vec::new();
     let operator_str = match condition.operator {
         ComparisonOp::GreaterThan => ">",
         ComparisonOp::LessThan => "<",
@@ -690,20 +713,20 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
             format!(
                 "if {} {{ ({}{}) {} ({}{}) }} else {{ false }}",
                 null_check_str,
-                process_arithmetic_expression(&condition.left_field, query_object),
+                process_arithmetic_expression(&condition.left_field, &mut check_list, query_object),
                 left_conversion,
                 operator_str,
-                process_arithmetic_expression(&condition.right_field, query_object),
+                process_arithmetic_expression(&condition.right_field, &mut check_list, query_object),
                 right_conversion
             )
         } else {
             // No column references - direct comparison
             format!(
                 "{}{} {} {}{}",
-                process_arithmetic_expression(&condition.left_field, query_object),
+                process_arithmetic_expression(&condition.left_field, &mut check_list, query_object),
                 left_conversion,
                 operator_str,
-                process_arithmetic_expression(&condition.right_field, query_object),
+                process_arithmetic_expression(&condition.right_field, &mut check_list, query_object),
                 right_conversion
             )
         }
@@ -742,20 +765,20 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
             format!(
                 "if {} {{ ({}{}) {} ({}{}) }} else {{ false }}",
                 null_check_str,
-                process_arithmetic_expression(&condition.left_field, query_object),
+                process_arithmetic_expression(&condition.left_field, &mut check_list, query_object),
                 left_conversion,
                 operator_str,
-                process_arithmetic_expression(&condition.right_field, query_object),
+                process_arithmetic_expression(&condition.right_field, &mut check_list, query_object),
                 right_conversion
             )
         } else {
             // No column references - direct comparison
             format!(
                 "{}{} {} {}{}",
-                process_arithmetic_expression(&condition.left_field, query_object),
+                process_arithmetic_expression(&condition.left_field, &mut check_list, query_object),
                 left_conversion,
                 operator_str,
-                process_arithmetic_expression(&condition.right_field, query_object),
+                process_arithmetic_expression(&condition.right_field, &mut check_list ,query_object),
                 right_conversion
             )
         }
