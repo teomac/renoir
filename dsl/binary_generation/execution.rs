@@ -1,8 +1,8 @@
+use super::cleaning::preprocess_rust_code;
 use super::creation;
 use std::fs;
 use std::io;
 use std::process::Command;
-use super::cleaning::preprocess_rust_code;
 
 pub fn binary_execution(
     output_path: &str,
@@ -14,7 +14,6 @@ pub fn binary_execution(
     }
 
     preprocess_rust_code(&rust_project.project_path)?;
-
 
     // Added: Format the code using cargo fmt
     let fmt_status = Command::new("cargo")

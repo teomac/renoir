@@ -30,8 +30,6 @@ impl SqlParser {
         let pairs =
             Self::parse(Rule::query, input).map_err(|e| Box::new(SqlParseError::from(e)))?;
 
-        //println!("Pairs: {:?}", pairs);
-
         SqlASTBuilder::build_ast_from_pairs(pairs)
     }
 

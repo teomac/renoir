@@ -53,10 +53,6 @@ pub struct QueryObject {
     //this indexMap will be filled with:
     //"power" -> f64 || i64
     //"power_1" -> f64 || i64
-    pub order_by_string: String, //order by string
-    pub limit_string: String,    //limit string
-    pub distinct_string: String, //distinct string
-
     pub projection_agg: Vec<ProjectionColumn>, //projection aggregates.
                                                //Here we store ONLY the aggregates in the final projection, that we will need to generate the fold in case of a group by
 }
@@ -81,10 +77,7 @@ impl QueryObject {
             output_path: String::new(),
             ir_ast: None,
             fields: Fields::new(),
-            order_by_string: String::new(),
-            limit_string: String::new(),
             projection_agg: Vec::new(),
-            distinct_string: String::new(),
         }
     }
 
@@ -271,9 +264,6 @@ impl QueryObject {
         self.result_column_types.clear();
         self.projection_agg.clear();
         self.has_join = false;
-        self.order_by_string.clear();
-        self.limit_string.clear();
-        self.distinct_string.clear();
 
         self.set_ir_ast(ir_ast);
         // Collect all Scan and Join nodes
@@ -303,7 +293,6 @@ impl QueryObject {
         //check if the table is present in the list
         if self.tables_info.get(&main_table).is_none() {
             //check if the table is an alias
-            println!("Main table: {} is an alias.", main_table);
             if self.alias_to_stream.get(&main_table).is_some() {
                 //get the stream name
                 let stream_name = self.alias_to_stream.get(&main_table).unwrap();
@@ -453,11 +442,6 @@ impl QueryObject {
             if stream_obj.op_chain.is_empty() {
                 let table_name = stream_obj.source_table.clone();
                 let struct_name = all_structs.get(&table_name).unwrap();
-
-                println!(
-                    "Table name: {}, Struct name: {}",
-                    table_name, struct_name
-                );
                 //check if the table is a subquery
                 if !all_stream_names.contains(&table_name) {
                     stream_obj.insert_op(format!(
@@ -465,8 +449,7 @@ impl QueryObject {
                         struct_name,
                         csvs.get(&table_name).unwrap()
                     ));
-                }
-                else{
+                } else {
                     stream_obj.insert_op(table_name.to_string());
                 }
             }

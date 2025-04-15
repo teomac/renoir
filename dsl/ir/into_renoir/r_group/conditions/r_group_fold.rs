@@ -179,7 +179,6 @@ pub fn create_fold_operation(
                                     } else {
                                         format!(".{}", pos)
                                     },
-                                    
                                     if single_agg {
                                         String::from("")
                                     } else {

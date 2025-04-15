@@ -127,16 +127,19 @@ impl StreamInfo {
                             // Get the stream info for the right stream and return its final struct name
                             let right_stream = query_object.get_stream(stream_name);
                             if right_stream.final_struct_name.len() > 1 {
-                                right_stream.final_struct_name.get(right_stream.final_struct_name.len() - 2).unwrap().clone()
+                                right_stream
+                                    .final_struct_name
+                                    .get(right_stream.final_struct_name.len() - 2)
+                                    .unwrap()
+                                    .clone()
                             } else {
-                               format!("Struct_{}", right_stream.source_table)
+                                format!("Struct_{}", right_stream.source_table)
                             }
-                           
-                        },
-                        _ => panic!("Unexpected join tree structure")
+                        }
+                        _ => panic!("Unexpected join tree structure"),
                     }
-                },
-                _ => panic!("Expected a join tree")
+                }
+                _ => panic!("Expected a join tree"),
             }
         } else {
             // Fallback
@@ -146,30 +149,38 @@ impl StreamInfo {
 
     pub fn generate_nested_default(&self, query_object: &QueryObject) -> String {
         if self.join_tree.is_none() {
-            return format!("{}::default()", 
+            return format!(
+                "{}::default()",
                 if self.final_struct_name.len() > 1 {
-                    self.final_struct_name.get(self.final_struct_name.len() - 2).unwrap().clone()
+                    self.final_struct_name
+                        .get(self.final_struct_name.len() - 2)
+                        .unwrap()
+                        .clone()
                 } else {
                     format!("Struct_{}", self.source_table)
                 }
             );
         }
-    
+
         let join_tree = self.join_tree.as_ref().unwrap();
-        
+
         // Recursively build the nested default structure based on the actual join tree
         fn build_default(tree: &JoinTree, query_object: &QueryObject) -> String {
             match tree {
                 JoinTree::Leaf(stream_name) => {
                     let stream = query_object.get_stream(stream_name);
                     if stream.final_struct_name.len() > 1 {
-                        format!("{}::default()", 
-                            stream.final_struct_name.get(stream.final_struct_name.len() - 2).unwrap()
+                        format!(
+                            "{}::default()",
+                            stream
+                                .final_struct_name
+                                .get(stream.final_struct_name.len() - 2)
+                                .unwrap()
                         )
                     } else {
                         format!("Struct_{}::default()", stream.source_table)
                     }
-                },
+                }
                 JoinTree::Join { left, right, .. } => {
                     let left_str = build_default(left, query_object);
                     let right_str = build_default(right, query_object);
@@ -177,8 +188,7 @@ impl StreamInfo {
                 }
             }
         }
-    
-    
+
         build_default(join_tree, query_object)
     }
 }

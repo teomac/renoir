@@ -1,14 +1,12 @@
-use indexmap::IndexMap;
 use crate::dsl::struct_object::support_structs::StreamInfo;
+use indexmap::IndexMap;
 use std::fmt::Write;
-
 
 #[derive(Debug, Clone)]
 pub struct Fields {
-
     pub imports: String,
     pub structs: IndexMap<String, IndexMap<String, String>>, //struct name, struct
-    pub streams: IndexMap<String, StreamInfo>, //stream name, stream
+    pub streams: IndexMap<String, StreamInfo>,               //stream name, stream
     pub output_path: String,
 
     pub distinct: String,
@@ -19,15 +17,16 @@ pub struct Fields {
 }
 
 impl Default for Fields {
-     fn default() -> Self {
+    fn default() -> Self {
         Self::new()
-   }
     }
+}
 
 impl Fields {
     pub fn new() -> Self {
         Fields {
-            imports: {r#"#![allow(non_camel_case_types)]
+            imports: {
+                r#"#![allow(non_camel_case_types)]
         #![allow(unused_variables)]
         use renoir::{{config::ConfigBuilder, prelude::*}};
         use serde::{{Deserialize, Serialize}};
@@ -35,7 +34,9 @@ impl Fields {
         use std::fs;
         use csv;
         use indexmap::IndexSet;
-        use ordered_float::OrderedFloat;"#.to_string()},
+        use ordered_float::OrderedFloat;"#
+                    .to_string()
+            },
             structs: IndexMap::new(),
             streams: IndexMap::new(),
             main: String::new(),
@@ -49,14 +50,17 @@ impl Fields {
     pub fn fill_main(&mut self) {
         self.main.push_str(&self.imports);
         self.main.push_str("\n\n");
-        self.main.push_str(&Self::generate_struct_declarations(self.structs.clone()));
+        self.main
+            .push_str(&Self::generate_struct_declarations(self.structs.clone()));
         self.main.push_str("\n\n");
 
-        self.main.push_str(r#" fn main() {{
+        self.main.push_str(
+            r#" fn main() {{
             let config = ConfigBuilder::new_local(1).unwrap();
 
             let ctx = StreamContext::new(config.clone());
-            "#);
+            "#,
+        );
 
         let mut streams = self.streams.clone();
         streams.sort_unstable_keys();
@@ -66,13 +70,16 @@ impl Fields {
             self.main.push_str(&format!(
                 r#"let {} = {};
              "#,
-                stream_name, 
+                stream_name,
                 if i == self.streams.len() - 1 {
-                    format!(r#"{} .write_csv(move |_| r"{}.csv".into(), true)"#, stream.op_chain.concat(),
-                        self.output_path)
+                    format!(
+                        r#"{} .write_csv(move |_| r"{}.csv".into(), true)"#,
+                        stream.op_chain.concat(),
+                        self.output_path
+                    )
+                } else {
+                    stream.op_chain.concat()
                 }
-                else {
-                stream.op_chain.concat()}
             ));
 
             //if it is the last stream push .write_csv
@@ -91,10 +98,13 @@ impl Fields {
         self.main.push('\n');
         self.main.push_str(self.limit.as_str());
         self.main.push_str("}}");
-        
     }
 
-    pub fn fill(&mut self, structs: IndexMap<String, IndexMap<String, String>>, streams: IndexMap<String, StreamInfo>) {
+    pub fn fill(
+        &mut self,
+        structs: IndexMap<String, IndexMap<String, String>>,
+        streams: IndexMap<String, StreamInfo>,
+    ) {
         //push every struct from query_object
         for (struct_name, struct_str) in structs.iter() {
             self.structs.insert(struct_name.clone(), struct_str.clone());
@@ -104,15 +114,20 @@ impl Fields {
         //push every stream from query_object
         for (name, stream) in streams.iter() {
             self.streams.insert(name.clone(), stream.clone());
-            self.structs.insert(stream.final_struct_name.last().unwrap().clone(), stream.final_struct.clone());
+            self.structs.insert(
+                stream.final_struct_name.last().unwrap().clone(),
+                stream.final_struct.clone(),
+            );
         }
     }
 
-    pub fn generate_struct_declarations(structs: IndexMap<String, IndexMap<String,String>>) -> String {
+    pub fn generate_struct_declarations(
+        structs: IndexMap<String, IndexMap<String, String>>,
+    ) -> String {
         //Part1: generate struct definitions for input tables
-    
+
         // Use iterators to zip through table_names, struct_names, and field_lists to maintain order
-    
+
         //iterate and print all structs
         let result: String = structs
             .iter()
@@ -124,14 +139,13 @@ impl Fields {
                 struct_def.push_str(
                     "#[derive(Clone, Debug, Serialize, Deserialize, PartialOrd, PartialEq, Default, Eq, Hash)]\n",
                 );
-            } 
+            }
             else {
                 struct_def.push_str(
                     "#[derive(Clone, Debug, Serialize, Deserialize, PartialOrd, PartialEq, Default)]\n",
                 );
             }
                 struct_def.push_str(&format!("struct {} {{\n", struct_name));
-    
                 // Generate field definitions directly from table to struct mapping
                 let fields_str =
                     fields
@@ -140,10 +154,8 @@ impl Fields {
                             let _ = writeln!(output, "{}: Option<{}>,\n", field_name, field_type);
                             output
                         });
-    
                 struct_def.push_str(&fields_str);
                 struct_def.push_str("}\n\n");
-    
                 struct_def
             })
             .collect();
@@ -154,14 +166,17 @@ impl Fields {
     pub fn fill_subquery_main(&mut self, result_column_types: IndexMap<String, String>) {
         self.main.push_str(&self.imports);
         self.main.push_str("\n\n");
-        self.main.push_str(&Self::generate_struct_declarations(self.structs.clone()));
+        self.main
+            .push_str(&Self::generate_struct_declarations(self.structs.clone()));
         self.main.push_str("\n\n");
 
-        self.main.push_str(r#" fn main() {
+        self.main.push_str(
+            r#" fn main() {
             let config = ConfigBuilder::new_local(1).unwrap();
 
             let ctx = StreamContext::new(config.clone());
-            "#);
+            "#,
+        );
 
         let mut streams = self.streams.clone();
         streams.reverse();
@@ -170,22 +185,21 @@ impl Fields {
             self.main.push_str(&format!(
                 r#"let {} = {}{};
              "#,
-                stream_name, 
+                stream_name,
                 stream.op_chain.concat(),
                 if i == self.streams.len() - 1 {
                     ".collect_vec()"
+                } else {
+                    ""
                 }
-                else {
-                    ""}
             ));
             self.main.push_str("\n\n");
 
             if i == streams.len() - 1 {
                 self.main.push_str("ctx.execute_blocking();\n");
 
-                self.main.push_str(
-                    &format!(
-                        r#"let result = {}.get();
+                self.main.push_str(&format!(
+                    r#"let result = {}.get();
                     if let Some(values) = result {{
                 let values: Vec<_> = values
                     .iter()
@@ -200,38 +214,41 @@ impl Fields {
                     }} else {{
                 println!("");
                     }}"#,
-                        stream_name,
-                        result_column_types.first().unwrap().0,
-                    )
-                    
-                );
+                    stream_name,
+                    result_column_types.first().unwrap().0,
+                ));
             }
-
-
         }
 
         self.main.push('}');
     }
 
-    pub fn collect_subquery_result(
-        &mut self,
-        is_single_result: bool
-    ) -> (String, String) {
+    pub fn collect_subquery_result(&mut self, is_single_result: bool) -> (String, String) {
         let stream_name = self.streams.first().unwrap().0.clone();
         let new_result = format!("{}_result", stream_name);
         let stream = self.streams.get_mut(&stream_name).unwrap();
         let result_type = stream.final_struct.first().unwrap().1.clone();
 
-
-        let len_check = format!(r#"if {}.len() != 1 {{
+        let len_check = format!(
+            r#"if {}.len() != 1 {{
             panic!("Subquery did not return a single value");
-        }}"#, new_result);
+        }}"#,
+            new_result
+        );
 
         let needs_ordered_float = result_type == "f64";
 
         // Collection code using IndexSet instead of Vec
-        let collection_code  = format!(r#"
-        .map(|x| x.{}{})"#, stream.final_struct.first().unwrap().0, if needs_ordered_float {".map(OrderedFloat)"} else {""});
+        let collection_code = format!(
+            r#"
+        .map(|x| x.{}{})"#,
+            stream.final_struct.first().unwrap().0,
+            if needs_ordered_float {
+                ".map(OrderedFloat)"
+            } else {
+                ""
+            }
+        );
 
         stream.op_chain.push(format!(
             r#" 
@@ -247,10 +264,13 @@ impl Fields {
             collection_code,
             new_result,
             stream_name,
-            if is_single_result {len_check} else {String::new()}
+            if is_single_result {
+                len_check
+            } else {
+                String::new()
+            }
         ));
-        
+
         (new_result, stream.final_struct.first().unwrap().1.clone())
     }
-
 }

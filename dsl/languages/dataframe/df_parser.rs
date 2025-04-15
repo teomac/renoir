@@ -2,8 +2,8 @@ use pest::Parser;
 use pest_derive::Parser;
 use std::sync::Arc;
 
-use crate::dsl::ir::ast_parser::ir_ast_structure::*;
 use crate::dsl::ir::ast_parser::error::IrParseError;
+use crate::dsl::ir::ast_parser::ir_ast_structure::*;
 
 use super::df_builder::DataFrameASTBuilder;
 
@@ -19,9 +19,9 @@ impl DataFrameParser {
                 e
             )))
         })?;
-        
+
         let ast = DataFrameASTBuilder::build_ast_from_pairs(pairs)?;
-        
+
         Ok(ast)
     }
 }

@@ -4,7 +4,8 @@ use crate::dsl::{
         into_renoir::{
             r_condition::process_filter_clause, r_group::r_group_keys::process_group_by, r_join::*,
             r_sink::r_sink_main::process_projections,
-        }, OrderDirection,
+        },
+        OrderDirection,
     },
     struct_object::object::QueryObject,
 };
@@ -84,7 +85,7 @@ impl IrToRenoir {
 
                 //for each item in items, push the order by clause to the stream
                 for item in items {
-                    let order = match item.direction{
+                    let order = match item.direction {
                         OrderDirection::Asc => "asc".to_string(),
                         OrderDirection::Desc => "desc".to_string(),
                     };

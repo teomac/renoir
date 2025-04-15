@@ -106,8 +106,8 @@ pub enum WhereClause {
 pub enum WhereBaseCondition {
     Comparison(WhereCondition),
     NullCheck(WhereNullCondition),
-    Exists(Box<SqlAST>, bool),        // Subquery, negated
-    In(InCondition), // Column, subquery, negated
+    Exists(Box<SqlAST>, bool), // Subquery, negated
+    In(InCondition),           // Column, subquery, negated
     Boolean(bool),
 }
 
@@ -131,8 +131,8 @@ pub enum HavingClause {
 pub enum HavingBaseCondition {
     Comparison(HavingCondition),
     NullCheck(HavingNullCondition),
-    Exists(Box<SqlAST>, bool),        // Subquery, negated
-    In(InCondition), // Column, subquery, negated
+    Exists(Box<SqlAST>, bool), // Subquery, negated
+    In(InCondition),           // Column, subquery, negated
     Boolean(bool),
 }
 

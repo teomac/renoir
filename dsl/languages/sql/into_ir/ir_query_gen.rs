@@ -246,7 +246,7 @@ impl SqlToIr {
                             format!("({}) in ({})", subquery_in, subquery_str)
                         }
                     }
-                    InCondition::InHaving( .. ) => {
+                    InCondition::InHaving(..) => {
                         // Handle InHaving condition if needed
                         panic!("We cannot have InHaving condition in the WHERE clause")
                     }
@@ -494,8 +494,6 @@ impl SqlToIr {
                     }
                 }
                 HavingBaseCondition::In(condition) => match condition {
-                    
-
                     InCondition::InSubquery(in_subquery, subquery, negated) => {
                         let in_subquery_str = Self::convert(in_subquery, index, nested_index + 1);
                         let subquery_str = Self::convert(subquery, index, nested_index + 1);
@@ -504,7 +502,7 @@ impl SqlToIr {
                         } else {
                             format!("({}) in ({})", in_subquery_str, subquery_str)
                         }
-                    },
+                    }
                     InCondition::InHaving(field, subquery, negated) => {
                         let field_str = if let Some(ref arithmetic) = field.arithmetic {
                             Self::arithmetic_expr_to_string(arithmetic, index, nested_index)
@@ -528,14 +526,14 @@ impl SqlToIr {
                                 None => String::new(),
                             }
                         };
-                
+
                         let subquery_str = Self::convert(subquery, index, nested_index + 1);
                         if *negated {
                             format!("{} not in ({})", field_str, subquery_str)
                         } else {
                             format!("{} in ({})", field_str, subquery_str)
                         }
-                    },
+                    }
                     InCondition::InWhere(..) => {
                         panic!("We cannot have InWhere condition in the HAVING clause")
                     }

@@ -1,6 +1,6 @@
 use indexmap::IndexMap;
-use subquery_utils::manage_subqueries;
 use old_subquery_utils::old_manage_subqueries;
+use subquery_utils::manage_subqueries;
 
 use super::binary_generation::creation;
 use super::binary_generation::fields::Fields;
@@ -57,15 +57,20 @@ pub fn query(
     input_tables: &IndexMap<String, (String, String)>, // key: table name, value: (csv_path, user_defined_types)
 ) -> io::Result<String> {
     // Determine query type based on syntax
-    let is_sql_query = query_str.to_uppercase().contains("SELECT") && 
-                      query_str.to_uppercase().contains("FROM");
-    
+    let is_sql_query =
+        query_str.to_uppercase().contains("SELECT") && query_str.to_uppercase().contains("FROM");
+
     let ir_ast = if !is_sql_query && query_str.contains('.') {
         // Parse as DataFrame query
         println!("Detected DataFrame query syntax");
         match dataframe_to_ir(query_str) {
             Ok(ast) => ast,
-            Err(e) => return Err(io::Error::new(io::ErrorKind::Other, format!("Error parsing DataFrame query: {}", e))),
+            Err(e) => {
+                return Err(io::Error::new(
+                    io::ErrorKind::Other,
+                    format!("Error parsing DataFrame query: {}", e),
+                ))
+            }
         }
     } else {
         // Parse as SQL query
@@ -73,7 +78,7 @@ pub fn query(
         let ir_query = sql_to_ir(query_str);
         query_ir_to_ast(&ir_query)
     };
-    
+
     // Common processing logic for both query types
     process_query(ir_ast, output_path, input_tables)
 }
@@ -83,7 +88,6 @@ pub fn process_query(
     output_path: &String,
     input_tables: &IndexMap<String, (String, String)>, // key: table name, value: (csv_path, user_defined_types)
 ) -> io::Result<String> {
-
     // step 0: safety checks
     if input_tables.is_empty() {
         panic!("No input tables provided");
@@ -98,8 +102,6 @@ pub fn process_query(
             panic!("No user-defined types provided for table {}", key);
         }
     }
-
-    println!("Ir AST: {:?}", ir_ast);
 
     let mut query_object = QueryObject::new();
 
@@ -128,7 +130,6 @@ pub fn process_query(
     query_object.set_tables_info(tables_info);
     query_object.set_table_to_csv(tables_csv);
 
-
     // step 3: manage subqueries
     //ir_ast = manage_subqueries(&ir_ast, &output_path.to_string(), &mut query_object).unwrap();
     let ir_ast = manage_subqueries(&ir_ast, &output_path.to_string(), &mut query_object).unwrap();
@@ -148,16 +149,10 @@ pub fn process_query(
 
     let structs = query_object.structs.clone();
     let streams = query_object.streams.clone();
-    let limit = query_object.limit_string.clone();
-    let order_by = query_object.order_by_string.clone();
-    let distinct = query_object.distinct_string.clone();
 
     //step 4.5: update fields
     let fields = query_object.get_mut_fields();
     fields.output_path = output_path.clone();
-    fields.limit = limit.clone();
-    fields.order_by = order_by.clone();
-    fields.distinct = distinct.clone();
     fields.fill(structs, streams);
     fields.fill_main();
 
@@ -169,7 +164,6 @@ pub fn process_query(
     // step 6: compile the binary
     binary_execution(output_path, rust_project)
 }
-
 
 //method that appends the generated substream to the unique main.rs file
 pub fn subquery_csv(
@@ -189,8 +183,6 @@ pub fn subquery_csv(
 
     // step 3: check if there is a subquery
     let ir_ast = manage_subqueries(&ir_ast, &output_path.to_string(), &mut query_object).unwrap();
-
-    println!("Ir AST: {:?}", ir_ast);
 
     // step 3.5: populate query_object with ir_ast
     query_object = query_object.populate(&ir_ast);
@@ -236,7 +228,8 @@ pub fn old_subquery_csv(
     let rust_project = creation::RustProject::create_empty_project(output_path).unwrap();
 
     // step 3: check if there is a subquery
-    let ir_ast = old_manage_subqueries(&ir_ast, &output_path.to_string(), &mut query_object).unwrap();
+    let ir_ast =
+        old_manage_subqueries(&ir_ast, &output_path.to_string(), &mut query_object).unwrap();
 
     // step 3.5: populate query_object with ir_ast
     query_object = query_object.populate(&ir_ast);
@@ -275,7 +268,6 @@ pub fn old_subquery_csv(
     }
 }
 
-
 //method that creates a stream that has no sink, that will be used for scan operations
 //method that appends the generated substream to the unique main.rs file
 pub fn subquery_sink(
@@ -294,8 +286,6 @@ pub fn subquery_sink(
 
     // step 3: check if there is a subquery
     let ir_ast = manage_subqueries(&ir_ast, &output_path.to_string(), &mut query_object).unwrap();
-
-    println!("Ir AST: {:?}", ir_ast);
 
     // step 3.5: populate query_object with ir_ast
     query_object = query_object.populate(&ir_ast);
@@ -320,4 +310,3 @@ pub fn subquery_sink(
     // return the name of the alias stream
     fields.clone()
 }
-

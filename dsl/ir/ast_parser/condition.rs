@@ -166,7 +166,7 @@ impl ConditionParser {
                 let first_expr = inner.next().ok_or_else(|| {
                     IrParseError::InvalidInput("Missing expression in IN condition".to_string())
                 })?;
-            
+
                 let field = if first_expr.as_rule() == Rule::subquery {
                     // If it's a subquery, create ComplexField with subquery
                     ComplexField {
@@ -185,27 +185,27 @@ impl ConditionParser {
                         "Invalid expression in IN condition".to_string(),
                     )));
                 };
-            
+
                 // Check for NOT (it's optional)
                 let is_negated = if let Some(token) = inner.next() {
                     token.as_str().to_lowercase() == "not"
                 } else {
                     false
                 };
-            
+
                 // If we found NOT, we need to skip past it to get to IN
                 if is_negated {
                     inner.next(); // Skip the IN keyword
                 } else {
                     // The token we got wasn't NOT, it was IN, so we don't need to skip again
                 }
-            
+
                 // Parse the subquery
                 let subquery = inner.next().ok_or_else(|| {
                     IrParseError::InvalidInput("Missing subquery in IN expression".to_string())
                 })?;
                 let subquery_plan = IrParser::parse_subquery(subquery)?;
-            
+
                 Ok(FilterClause::Base(FilterConditionType::In(
                     InCondition::InSubquery {
                         field,

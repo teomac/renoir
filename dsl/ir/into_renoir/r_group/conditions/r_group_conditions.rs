@@ -42,20 +42,33 @@ pub fn parse_group_conditions(
                 }
                 GroupBaseCondition::In(in_cond) => {
                     match in_cond {
-                        InCondition::InOldVersion { field, values: _, negated: _ } => {
+                        InCondition::InOldVersion {
+                            field,
+                            values: _,
+                            negated: _,
+                        } => {
                             // Process the field for aggregates
                             collect_field_aggregates(field, acc_info, query_object, keys);
-                        },
-                        InCondition::InSubquery { field, subquery: _, negated: _ } => {
+                        }
+                        InCondition::InSubquery {
+                            field,
+                            subquery: _,
+                            negated: _,
+                        } => {
                             // Process the field for aggregates
                             collect_field_aggregates(field, acc_info, query_object, keys);
-                        },
-                        InCondition::InVec { field, vector_name: _, vector_type: _, negated: _ } => {
+                        }
+                        InCondition::InVec {
+                            field,
+                            vector_name: _,
+                            vector_type: _,
+                            negated: _,
+                        } => {
                             // Process the field for aggregates
                             collect_field_aggregates(field, acc_info, query_object, keys);
                         }
                     }
-                },
+                }
                 GroupBaseCondition::Exists(_, _) => (),
                 GroupBaseCondition::Boolean(_) => (),
                 GroupBaseCondition::ExistsVec(_, _) => (),

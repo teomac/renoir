@@ -128,10 +128,11 @@ pub fn process_group_by(
                         acc_info.add_avg(agg.column.clone(), col_type);
                     } else if agg.function == AggregateType::Count {
                         acc_info.add_aggregate(agg_value, "usize".to_string());
-                    } else if agg.function == AggregateType::Max || agg.function == AggregateType::Min {
+                    } else if agg.function == AggregateType::Max
+                        || agg.function == AggregateType::Min
+                    {
                         acc_info.add_aggregate(agg_value, "f64".to_string());
-                    }
-                    else {
+                    } else {
                         acc_info.add_aggregate(agg_value, col_type);
                     }
                 }
@@ -146,8 +147,8 @@ pub fn process_group_by(
         ));
     }
 
-     // Generate operations using the collected information
-     if !acc_info.agg_positions.is_empty() {
+    // Generate operations using the collected information
+    if !acc_info.agg_positions.is_empty() {
         group_string_fold.push_str(&create_fold_operation(
             &acc_info,
             stream_name,

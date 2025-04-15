@@ -102,15 +102,6 @@ pub fn create_template(query_object: &QueryObject, is_subquery: bool) -> String 
             );
 
             stream.push_str("ctx.execute_blocking();");
-
-            //insert order by string
-            stream.push_str(&query_object.order_by_string);
-
-            //insert limit string
-            stream.push_str(&query_object.limit_string);
-
-            //insert distinct string
-            stream.push_str(&query_object.distinct_string);
         } else {
             let stream_object = all_streams.get(stream_name).unwrap();
             let stream_op_chain = stream_object.op_chain.concat();
@@ -201,7 +192,6 @@ pub fn generate_struct_declarations(query_object: &QueryObject) -> String {
                     "#[derive(Clone, Debug, Serialize, Deserialize, PartialOrd, PartialEq, Default)]\n",
                 );
             }
-            
             struct_def.push_str(&format!("struct {} {{\n", struct_name));
 
             // Generate field definitions directly from table to struct mapping
@@ -229,7 +219,10 @@ pub fn generate_struct_declarations(query_object: &QueryObject) -> String {
             continue;
         } else {
             //if fields contains OrderedFloat or does not contain <f64>, add Eq and Hash to the struct definition
-            if stream.final_struct.values().any(|field_type| field_type.contains("Option<OrderedFloat<f64>>") || !field_type.contains("Option<f64>")) {
+            if stream.final_struct.values().any(|field_type| {
+                field_type.contains("Option<OrderedFloat<f64>>")
+                    || !field_type.contains("Option<f64>")
+            }) {
                 result.push_str(
                     "#[derive(Clone, Debug, Serialize, Deserialize, PartialOrd, PartialEq, Default, Eq, Hash)]\n",
                 );
@@ -238,7 +231,10 @@ pub fn generate_struct_declarations(query_object: &QueryObject) -> String {
                     "#[derive(Clone, Debug, Serialize, Deserialize, PartialOrd, PartialEq, Default)]\n",
                 );
             }
-            result.push_str(&format!("struct {} {{\n", stream.final_struct_name.last().unwrap()));
+            result.push_str(&format!(
+                "struct {} {{\n",
+                stream.final_struct_name.last().unwrap()
+            ));
 
             // Add fields from stream
             for (field_name, field_type) in stream.final_struct.clone() {

@@ -5,7 +5,6 @@ pub fn sql_to_ir(query_str: &str) -> String {
     println!("Input SQL query: {}", query_str);
 
     let sql_ast = SqlParser::parse_query(query_str).expect("Failed to parse query");
-    //println!("SQL AST: {:?}", sql_ast);
 
     let mut index: usize = 0;
 

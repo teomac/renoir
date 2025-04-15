@@ -2,49 +2,6 @@ use indexmap::IndexMap;
 
 use crate::dsl::ir::{ColumnRef, QueryObject};
 
-pub fn process_distinct_old(query_object: &mut QueryObject) {
-    let csv_path = query_object.output_path.replace("\\", "/");
-
-    // Generate code to remove duplicates from the CSV
-    let distinct_code = format!(
-        r#"
-        // Process DISTINCT - remove duplicate rows from CSV
-        let mut rdr = csv::Reader::from_path(format!("{}.csv")).unwrap();
-        let mut wtr = csv::Writer::from_path(format!("{}_distinct.csv")).unwrap();
-        
-        // Copy the header
-        let headers = rdr.headers().unwrap().clone();
-        wtr.write_record(&headers).unwrap();
-        
-        // Use a HashSet to track unique rows
-        let mut seen_rows = std::collections::HashSet::new();
-        
-        // Process records and keep only unique ones
-        for result in rdr.records() {{
-            if let Ok(record) = result {{
-                // Convert record to a string that can be hashed
-                let record_str = record.iter().collect::<Vec<_>>().join("\t");
-                
-                // Only write this record if we haven't seen it before
-                if seen_rows.insert(record_str) {{
-                    wtr.write_record(&record).unwrap();
-                }}
-            }}
-        }}
-        
-        wtr.flush().unwrap();
-        drop(wtr);
-        drop(rdr);
-        
-        // Replace original file with distinct version
-        std::fs::rename(format!("{}_distinct.csv"), format!("{}.csv")).unwrap();
-        "#,
-        csv_path, csv_path, csv_path, csv_path
-    );
-
-    query_object.distinct_string = distinct_code;
-}
-
 pub fn process_distinct_order(stream_name: &String, query_object: &mut QueryObject) {
     let stream = query_object.streams.get(stream_name).unwrap();
 
@@ -134,20 +91,27 @@ pub fn process_distinct_order(stream_name: &String, query_object: &mut QueryObje
 
     let order_op = if !order_by.is_empty() {
         if limit.is_none() {
-            format!(".sorted_by({})", generate_sort_code(order_by, final_struct_of))
+            format!(
+                ".sorted_by({})",
+                generate_sort_code(order_by, final_struct_of)
+            )
         } else {
             //check if offset exists
             let (limit, offset) = limit.unwrap();
 
-            format!(".sorted_limit_by({}, {}, Some({}))", generate_sort_code(order_by, final_struct_of), limit, offset)
-
+            format!(
+                ".sorted_limit_by({}, {}, Some({}))",
+                generate_sort_code(order_by, final_struct_of),
+                limit,
+                offset
+            )
         }
     } else {
         String::new()
     };
 
     let limit_op = if limit.is_some() && order_op.is_empty() {
-       let (limit, offset) = limit.unwrap();
+        let (limit, offset) = limit.unwrap();
         format!(".limit({}, Some({}))", limit, offset)
     } else {
         String::new()
@@ -171,8 +135,10 @@ pub fn process_distinct_order(stream_name: &String, query_object: &mut QueryObje
     };
 }
 
-fn generate_sort_code(order_by: Vec<(ColumnRef, String)>, final_struct_of: IndexMap<String, String>) -> String {
-
+fn generate_sort_code(
+    order_by: Vec<(ColumnRef, String)>,
+    final_struct_of: IndexMap<String, String>,
+) -> String {
     // Build sorting comparison function based on the order_by vector
     let mut sort_fn = String::new();
     sort_fn.push_str("|a,b| ");

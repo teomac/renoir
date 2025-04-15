@@ -291,7 +291,7 @@ impl GroupByParser {
                             Box::new(subquery),
                             is_negated,
                         ),
-                    )))
+                    )));
                 }
             }
         }
