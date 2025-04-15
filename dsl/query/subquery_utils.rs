@@ -2,7 +2,7 @@ use core::panic;
 use std::{io, sync::Arc};
 
 use crate::dsl::ir::ast_parser::ir_ast_structure::ComplexField;
-use crate::dsl::ir::{ir_ast_to_renoir, InCondition};
+use crate::dsl::ir::InCondition;
 use crate::dsl::{
     ir::{
         Condition, FilterClause, FilterConditionType, GroupBaseCondition, GroupClause, IrPlan,
@@ -11,7 +11,7 @@ use crate::dsl::{
     struct_object::object::QueryObject,
 };
 
-use super::subquery_csv;
+use super::{subquery_csv, subquery_sink};
 
 pub fn manage_subqueries(
     ir_ast: &Arc<IrPlan>,
@@ -150,17 +150,15 @@ pub fn manage_subqueries(
             stream_name,
             alias,
         } => {
-            if !matches!(
+            if matches!(
                 &**input,
-                IrPlan::Project {
-                    input: _,
-                    columns: _,
-                    distinct: _
+                IrPlan::Table {
+                    table_name: _,
                 }
             ) {
                 Ok(ir_ast.clone())
             } else {
-                let processed_input = manage_nested_join(input, stream_name, alias, query_object);
+                let processed_input = process_scan(input, output_path, query_object);
                 Ok(Arc::new(IrPlan::Scan {
                     input: processed_input,
                     stream_name: stream_name.clone(),
@@ -386,7 +384,22 @@ fn process_filter_condition(
                                 )))
                             }
                         }
-                        _ => panic!("Invalid IN condition while parsing the subqueries"),
+                        InCondition::InVec { field, vector_name, vector_type, negated }
+                        => {
+                            // Process the field for subqueries
+                            let processed_field =
+                                process_complex_field(field, output_path, query_object)?;
+
+                            Ok(FilterClause::Base(FilterConditionType::In(
+                                InCondition::InVec {
+                                    field: processed_field,
+                                    vector_name: vector_name.clone(),
+                                    vector_type: vector_type.clone(),
+                                    negated: *negated,
+                                },
+                            )))
+                        }
+                        _ => panic!("Invalid IN condition while parsing the subqueries. Condition: {:?}", in_condition),
                     }
                 }
             }
@@ -562,7 +575,26 @@ fn process_group_condition(
                                 )));
                             }
                         }
-                        _ => panic!("Invalid IN condition in group clause for subquery_utils"),
+                        InCondition::InVec {
+                            field,
+                            vector_name,
+                            vector_type,
+                            negated,
+                        } => {
+                            // Process the field for subqueries
+                            let processed_field =
+                                process_complex_field(field, output_path, query_object)?;
+
+                            Ok(GroupClause::Base(GroupBaseCondition::In(
+                                InCondition::InVec {
+                                    field: processed_field,
+                                    vector_name: vector_name.clone(),
+                                    vector_type: vector_type.clone(),
+                                    negated: *negated,
+                                },
+                            )))
+                        }
+                        _ => panic!("Invalid IN condition in group clause for subquery_utils. Condition: {:?}", in_condition),
                     }
                 }
             }
@@ -581,41 +613,39 @@ fn process_group_condition(
     }
 }
 
-fn manage_nested_join(
+fn process_scan(
     input: &Arc<IrPlan>,
-    stream_name: &String,
-    alias: &Option<String>,
-    query_object: &mut QueryObject,
+    output_path: &String,
+    mut query_object: &mut QueryObject,
 ) -> Arc<IrPlan> {
     // process all the subqueries in the nested joins
-    let processed_input = manage_subqueries(input, &query_object.output_path.clone(), query_object)
+    let processed_input = manage_subqueries(input, output_path, &mut query_object)
         .expect("Failed to process nested join subqueries");
 
-    let mut object = query_object.clone().populate(&processed_input);
-    let _ = ir_ast_to_renoir(&mut object);
-    let binding = object.clone();
-    let stream = binding.get_stream(stream_name);
+        let sub_fields = subquery_sink(processed_input, output_path, query_object.tables_info.clone(), 
+        query_object.table_to_csv.clone());
 
-    query_object
-        .streams
-        .insert(stream_name.clone(), stream.clone());
-
-    query_object.table_to_struct_name.insert(
-        alias.clone().unwrap(),
-        stream.final_struct_name.last().unwrap().to_string(),
-    );
-    query_object
-        .alias_to_stream
-        .insert(alias.clone().unwrap(), stream_name.to_string());
-    query_object
-        .tables_info
-        .insert(alias.clone().unwrap(), stream.final_struct.clone());
-    query_object.structs.insert(
-        stream.final_struct_name.last().unwrap().clone(),
-        stream.final_struct.clone(),
-    );
+        let (stream_name, stream_info) = sub_fields.streams.first().unwrap().clone();
+        
+        query_object.streams.insert(stream_name.clone(), stream_info.clone());
+        query_object.tables_info.insert(
+            stream_name.clone(),
+            stream_info.final_struct.clone(),
+        );
+        query_object.table_to_struct_name.insert(
+            stream_name.clone(),
+            stream_info.final_struct_name.last().unwrap().to_string(),
+        );
+        query_object.structs.insert(
+            stream_info.final_struct_name.last().unwrap().clone(),
+            stream_info.final_struct.clone(),
+        );
+        
+        let fields = query_object.get_mut_fields();
+        fields.output_path = output_path.clone();
+        fields.fill(sub_fields.structs, sub_fields.streams.clone());
 
     Arc::new(IrPlan::Table {
-        table_name: alias.clone().unwrap(),
+        table_name: stream_name.to_string(),
     })
 }

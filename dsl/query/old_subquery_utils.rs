@@ -56,8 +56,6 @@ pub fn old_manage_subqueries(
                             // Clean up the result string - remove quotes and whitespace/newlines
                             result = result.trim().trim_matches('"').to_string();
 
-                            println!("Result: {}", result);
-
                             ProjectionColumn::StringLiteral(result, alias.clone())
                         }
                         // Add handling for complex values that might contain subqueries

@@ -101,6 +101,8 @@ pub fn process_query(
         }
     }
 
+    println!("Ir AST: {:?}", ir_ast);
+
     let mut query_object = QueryObject::new();
 
     query_object.set_output_path(output_path);
@@ -190,6 +192,8 @@ pub fn subquery_csv(
     // step 3: check if there is a subquery
     let ir_ast = manage_subqueries(&ir_ast, &output_path.to_string(), &mut query_object).unwrap();
 
+    println!("Ir AST: {:?}", ir_ast);
+
     // step 3.5: populate query_object with ir_ast
     query_object = query_object.populate(&ir_ast);
     query_object.collect_projection_aggregates(&ir_ast);
@@ -271,5 +275,51 @@ pub fn old_subquery_csv(
     } else {
         panic!("Error compiling the binary");
     }
+}
+
+
+//method that creates a stream that has no sink, that will be used for scan operations
+//method that appends the generated substream to the unique main.rs file
+pub fn subquery_sink(
+    ir_ast: Arc<IrPlan>,
+    output_path: &String,
+    tables_info: IndexMap<String, IndexMap<String, String>>,
+    tables_csv: IndexMap<String, String>,
+) -> Fields {
+    // step 1: create query_object
+    let mut query_object = QueryObject::new();
+    query_object.set_output_path(output_path);
+    query_object.set_tables_info(tables_info);
+    query_object.set_table_to_csv(tables_csv);
+
+    // step2: -----------
+
+    // step 3: check if there is a subquery
+    let ir_ast = manage_subqueries(&ir_ast, &output_path.to_string(), &mut query_object).unwrap();
+
+    println!("Ir AST: {:?}", ir_ast);
+
+    // step 3.5: populate query_object with ir_ast
+    query_object = query_object.populate(&ir_ast);
+    query_object.collect_projection_aggregates(&ir_ast);
+
+    // step 4: convert Ir AST to renoir string
+    let result = ir_ast_to_renoir(&mut query_object);
+    if result.is_err() {
+        panic!("Error converting IR AST to Renoir");
+    }
+
+    let structs = query_object.structs.clone();
+    let streams = query_object.streams.clone();
+    let _result_columns = query_object.result_column_types.clone();
+
+    //step 4.5: update fields
+    let fields = query_object.get_mut_fields();
+    fields.output_path = output_path.clone();
+    fields.fill(structs, streams);
+
+    // step 5: ----------------
+    // return the name of the alias stream
+    fields.clone()
 }
 

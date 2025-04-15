@@ -302,7 +302,22 @@ impl QueryObject {
 
         //check if the table is present in the list
         if self.tables_info.get(&main_table).is_none() {
-            panic!("Table {} is not present in the list of tables.", main_table);
+            //check if the table is an alias
+            println!("Main table: {} is an alias.", main_table);
+            if self.alias_to_stream.get(&main_table).is_some() {
+                //get the stream name
+                let stream_name = self.alias_to_stream.get(&main_table).unwrap();
+                //check if the stream is present in the list of streams
+                if self.streams.get(stream_name).is_none() {
+                    panic!(
+                        "Stream {} is not present in the list of streams.",
+                        stream_name
+                    );
+                }
+            } else {
+                //throw error
+                panic!("Table {} is not present in the list of tables.", main_table);
+            }
         }
 
         //create the first stream
@@ -438,11 +453,25 @@ impl QueryObject {
             if stream_obj.op_chain.is_empty() {
                 let table_name = stream_obj.source_table.clone();
                 let struct_name = all_structs.get(&table_name).unwrap();
-                stream_obj.insert_op(format!(
-                    "ctx.stream_csv::<{}>(\"{}\")",
-                    struct_name,
-                    csvs.get(&table_name).unwrap()
-                ));
+
+                println!(
+                    "Table name: {}, Struct name: {}",
+                    table_name, struct_name
+                );
+                //check if the table is a subquery
+                if !all_stream_names.contains(&table_name) {
+                    stream_obj.insert_op(format!(
+                        "ctx.stream_csv::<{}>(\"{}\")",
+                        struct_name,
+                        csvs.get(&table_name).unwrap()
+                    ));
+                }
+                else{
+                    stream_obj.insert_op(format!(
+                        "{}",
+                        table_name
+                    ));
+                }
             }
         }
 
@@ -482,7 +511,7 @@ impl QueryObject {
                     }
                 }
             }
-            IrPlan::OrderBy { input, .. } =>{
+            IrPlan::OrderBy { input, .. } => {
                 self.collect_projection_aggregates(input);
             }
             IrPlan::Limit { input, .. } => {
@@ -689,7 +718,9 @@ impl QueryObject {
                 ProjectionColumn::StringLiteral(_, alias)
                 | ProjectionColumn::SubqueryVec(_, alias) => {
                     let col_name = self.get_unique_name(
-                        alias.as_ref().unwrap_or(&format!("{}_result", stream_name).to_string()),
+                        alias
+                            .as_ref()
+                            .unwrap_or(&format!("{}_result", stream_name).to_string()),
                         &mut used_names,
                     );
                     self.result_column_types
@@ -776,7 +807,7 @@ impl QueryObject {
                 AggregateType::Avg => "f64".to_string(),
                 _ => self.get_type(&agg.column),
             }
-        } else if let Some((_, ref result_type)) = field.subquery_vec{
+        } else if let Some((_, ref result_type)) = field.subquery_vec {
             result_type.to_string()
         } else {
             panic!("Invalid complex field - no valid content")
