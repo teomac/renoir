@@ -616,7 +616,7 @@ fn process_group_condition(
 fn process_scan(
     input: &Arc<IrPlan>,
     output_path: &String,
-    mut query_object: &mut QueryObject,
+    query_object: &mut QueryObject,
 ) -> Arc<IrPlan> {
     // process all the subqueries in the nested joins
     let processed_input = manage_subqueries(input, output_path, query_object)

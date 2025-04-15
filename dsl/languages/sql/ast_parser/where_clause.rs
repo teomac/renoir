@@ -201,10 +201,10 @@ impl ConditionParser {
                 // Parse the inner SQL directly
                 let subquery = SqlParser::parse_subquery(subquery_expr)?;
 
-                if in_subquery.is_some() {
+                if let Some(in_subquery) = in_subquery {
                     return Ok(WhereClause::Base(WhereBaseCondition::In(
                         InCondition::InSubquery(
-                            Box::new(in_subquery.unwrap()),
+                            Box::new(in_subquery),
                             Box::new(subquery),
                             is_negated,
                         ),

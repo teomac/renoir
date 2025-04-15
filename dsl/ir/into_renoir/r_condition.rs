@@ -1,4 +1,3 @@
-use core::panic;
 use crate::dsl::ir::ir_ast_structure::ComplexField;
 use crate::dsl::ir::ir_ast_structure::{
     ColumnRef, FilterConditionType, IrLiteral, NullCondition, NullOp,
@@ -9,6 +8,7 @@ use crate::dsl::ir::QueryObject;
 use crate::dsl::ir::{BinaryOp, InCondition};
 use crate::dsl::ir::{ComparisonOp, Condition};
 use crate::dsl::struct_object::utils::*;
+use core::panic;
 
 pub fn process_filter_clause(
     clause: &FilterClause,
@@ -72,7 +72,11 @@ pub fn process_filter(clause: &FilterClause, query_object: &mut QueryObject) -> 
 }
 
 // Added new helper function to process arithmetic expressions
-fn process_arithmetic_expression(field: &ComplexField, check_list: &mut Vec<String>, query_object: &QueryObject) -> String {
+fn process_arithmetic_expression(
+    field: &ComplexField,
+    check_list: &mut Vec<String>,
+    query_object: &QueryObject,
+) -> String {
     if let Some(ref nested) = field.nested_expr {
         let (left, op, right) = &**nested;
 
@@ -327,12 +331,14 @@ fn process_condition(condition: &FilterConditionType, query_object: &QueryObject
                         if *field_type != *vector_type {
                             //check if they are both numbers
                             if (field_type == "f64" || field_type == "i64" || field_type == "usize")
-                                && (*vector_type == "f64" || *vector_type == "i64" || *vector_type == "usize")
+                                && (*vector_type == "f64"
+                                    || *vector_type == "i64"
+                                    || *vector_type == "usize")
                             {
                                 //needs to cast the field_type to the actual vector type
                                 let cast_type = vector_type;
 
-                                if *vector_type == "f64"{
+                                if *vector_type == "f64" {
                                     format!(
                                         "{}{}.contains(&Some(OrderedFloat({}.first().unwrap().unwrap() as {})))",
                                         if *negated { "!" } else { "" },
@@ -340,14 +346,15 @@ fn process_condition(condition: &FilterConditionType, query_object: &QueryObject
                                         field_name,
                                         cast_type,
                                     )
+                                } else {
+                                    format!(
+                                        "{}{}.contains(&Some({}.first().unwrap().unwrap() as {}))",
+                                        if *negated { "!" } else { "" },
+                                        vector_name,
+                                        field_name,
+                                        cast_type,
+                                    )
                                 }
-                                else{format!(
-                                    "{}{}.contains(&Some({}.first().unwrap().unwrap() as {}))",
-                                    if *negated { "!" } else { "" },
-                                    vector_name,
-                                    field_name,
-                                    cast_type,
-                                )}
                             } else {
                                 panic!("Invalid InCondition - column type {} does not match vector type {}", field_type, vector_type);
                             }
@@ -361,7 +368,7 @@ fn process_condition(condition: &FilterConditionType, query_object: &QueryObject
                                 field_name,
                             )
                         }
-                    } else if  field.column_ref.is_some() {
+                    } else if field.column_ref.is_some() {
                         //second, we have another type of complexField
                         //as for now we only manage the Column Ref case
                         let col_ref = if field.column_ref.is_some() {
@@ -450,8 +457,7 @@ fn process_condition(condition: &FilterConditionType, query_object: &QueryObject
                                 condition_str
                             )
                         }
-                    }
-                    else if  field.literal.is_some() {
+                    } else if field.literal.is_some() {
                         //third, we have a literal
 
                         let lit = field.literal.as_ref().unwrap();
@@ -520,34 +526,30 @@ fn process_condition(condition: &FilterConditionType, query_object: &QueryObject
                                 panic!("Invalid InCondition - missing field")
                             }
                         }
-                    }
-                    else if field.nested_expr.is_some() {
+                    } else if field.nested_expr.is_some() {
                         let mut check_list: Vec<String> = Vec::new();
-                        let cond: String;
                         //fourth, we have a nested expression
-                        if vector_type != "f64" {
-                        cond = format!(
-                            "{}{}.contains(&Some({}))",
-                            if *negated { "!" } else { "" },
-                            vector_name,
-                            process_arithmetic_expression(field, &mut check_list, query_object)
-                        );
-                        } else{
-                            cond = format!(
+                        let cond: String = if vector_type != "f64" {
+                            format!(
+                                "{}{}.contains(&Some({}))",
+                                if *negated { "!" } else { "" },
+                                vector_name,
+                                process_arithmetic_expression(field, &mut check_list, query_object)
+                            )
+                        } else {
+                            format!(
                                 "{}{}.contains(&Some(OrderedFloat(({} as f64))))",
                                 if *negated { "!" } else { "" },
                                 vector_name,
                                 process_arithmetic_expression(field, &mut check_list, query_object)
-                            );
-                        }
+                            )
+                        };
                         format!(
                             "if {} {{ {} }} else {{false}}",
                             check_list.join(" && "),
                             cond,
                         )
-                        
-                    }
-                    else{
+                    } else {
                         //other cases such as AggregateFunction, Subquery, etc.
                         //we should not have these cases here
                         panic!("Invalid InCondition - not supported")
@@ -716,7 +718,11 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
                 process_arithmetic_expression(&condition.left_field, &mut check_list, query_object),
                 left_conversion,
                 operator_str,
-                process_arithmetic_expression(&condition.right_field, &mut check_list, query_object),
+                process_arithmetic_expression(
+                    &condition.right_field,
+                    &mut check_list,
+                    query_object
+                ),
                 right_conversion
             )
         } else {
@@ -726,7 +732,11 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
                 process_arithmetic_expression(&condition.left_field, &mut check_list, query_object),
                 left_conversion,
                 operator_str,
-                process_arithmetic_expression(&condition.right_field, &mut check_list, query_object),
+                process_arithmetic_expression(
+                    &condition.right_field,
+                    &mut check_list,
+                    query_object
+                ),
                 right_conversion
             )
         }
@@ -768,7 +778,11 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
                 process_arithmetic_expression(&condition.left_field, &mut check_list, query_object),
                 left_conversion,
                 operator_str,
-                process_arithmetic_expression(&condition.right_field, &mut check_list, query_object),
+                process_arithmetic_expression(
+                    &condition.right_field,
+                    &mut check_list,
+                    query_object
+                ),
                 right_conversion
             )
         } else {
@@ -778,7 +792,11 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
                 process_arithmetic_expression(&condition.left_field, &mut check_list, query_object),
                 left_conversion,
                 operator_str,
-                process_arithmetic_expression(&condition.right_field, &mut check_list ,query_object),
+                process_arithmetic_expression(
+                    &condition.right_field,
+                    &mut check_list,
+                    query_object
+                ),
                 right_conversion
             )
         }

@@ -51,8 +51,6 @@ pub mod subquery_utils;
 /// 4. Convert the Ir AST to a valid Renoir query.
 /// 5. Generate the main.rs file and update it in the Rust project.
 /// 6. Compile the binary and save it to the specified output path.
-
-
 pub fn query(
     query_str: &str,
     output_path: &String,
