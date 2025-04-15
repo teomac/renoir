@@ -411,7 +411,7 @@ fn process_filter_condition(
                                     }
                                 }
 
-                                return Ok(FilterClause::Base(FilterConditionType::In(
+                                Ok(FilterClause::Base(FilterConditionType::In(
                                     InCondition::InOldVersion {
                                         field: ComplexField {
                                             column_ref: None,
@@ -424,7 +424,7 @@ fn process_filter_condition(
                                         values: ir_literals,
                                         negated: *negated,
                                     },
-                                )));
+                                )))
                             } else {
                                 //second, field is a complex_expr or a column_ref
                                 // Process the subquery
@@ -461,13 +461,13 @@ fn process_filter_condition(
                                     }
                                 }
 
-                                return Ok(FilterClause::Base(FilterConditionType::In(
+                                Ok(FilterClause::Base(FilterConditionType::In(
                                     InCondition::InOldVersion {
                                         field: field.clone(),
                                         values: ir_literals,
                                         negated: *negated,
                                     },
-                                )));
+                                )))
                             }
                         }
                         _ => panic!("We should not get here"),
@@ -641,7 +641,7 @@ fn process_group_condition(
                                     }
                                 }
 
-                                return Ok(GroupClause::Base(GroupBaseCondition::In(
+                                Ok(GroupClause::Base(GroupBaseCondition::In(
                                     InCondition::InOldVersion {
                                         field: ComplexField {
                                             column_ref: None,
@@ -654,7 +654,7 @@ fn process_group_condition(
                                         values: ir_literals,
                                         negated: *negated,
                                     },
-                                )));
+                                )))
                             } else {
                                 // Process the subquery
                                 let processed_subquery =
@@ -690,13 +690,13 @@ fn process_group_condition(
                                     }
                                 }
 
-                                return Ok(GroupClause::Base(GroupBaseCondition::In(
+                                Ok(GroupClause::Base(GroupBaseCondition::In(
                                     InCondition::InOldVersion {
                                         field: field.clone(),
                                         values: ir_literals,
                                         negated: *negated,
                                     },
-                                )));
+                                )))
                             }
                         }
                         _ => panic!("We should not get here"),

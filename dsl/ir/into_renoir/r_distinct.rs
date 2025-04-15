@@ -55,7 +55,7 @@ pub fn process_distinct_order(stream_name: &String, query_object: &mut QueryObje
 
     let distinct = stream.distinct;
     let order_by = stream.order_by.clone();
-    let limit = stream.limit.clone();
+    let limit = stream.limit;
 
     let final_struct = stream.final_struct.clone();
     //map the output struct to an ordered float struct

@@ -530,14 +530,14 @@ fn process_condition(condition: &FilterConditionType, query_object: &QueryObject
                             "{}{}.contains(&Some({}))",
                             if *negated { "!" } else { "" },
                             vector_name,
-                            process_arithmetic_expression(&field, &mut check_list, query_object)
+                            process_arithmetic_expression(field, &mut check_list, query_object)
                         );
                         } else{
                             cond = format!(
                                 "{}{}.contains(&Some(OrderedFloat(({} as f64))))",
                                 if *negated { "!" } else { "" },
                                 vector_name,
-                                process_arithmetic_expression(&field, &mut check_list, query_object)
+                                process_arithmetic_expression(field, &mut check_list, query_object)
                             );
                         }
                         format!(

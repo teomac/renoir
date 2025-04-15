@@ -467,10 +467,7 @@ impl QueryObject {
                     ));
                 }
                 else{
-                    stream_obj.insert_op(format!(
-                        "{}",
-                        table_name
-                    ));
+                    stream_obj.insert_op(table_name.to_string());
                 }
             }
         }

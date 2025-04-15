@@ -341,7 +341,7 @@ fn process_filter_condition(
                                 let temp_fields = query_object.get_mut_fields();
                                 temp_fields.fill(fields.structs.clone(), fields.streams.clone());
 
-                                return Ok(FilterClause::Base(FilterConditionType::In(
+                                Ok(FilterClause::Base(FilterConditionType::In(
                                     InCondition::InVec {
                                         field: ComplexField {
                                             subquery_vec: Some((in_result, in_result_type)),
@@ -355,7 +355,7 @@ fn process_filter_condition(
                                         vector_type: result_type,
                                         negated: *negated,
                                     },
-                                )));
+                                )))
                             } else {
                                 //second: the field is either a column_ref or a complex_expr
                                 // Process the subquery
@@ -532,7 +532,7 @@ fn process_group_condition(
                                 let temp_fields = query_object.get_mut_fields();
                                 temp_fields.fill(fields.structs.clone(), fields.streams.clone());
 
-                                return Ok(GroupClause::Base(GroupBaseCondition::In(
+                                Ok(GroupClause::Base(GroupBaseCondition::In(
                                     InCondition::InVec {
                                         field: ComplexField {
                                             subquery_vec: Some((in_result, in_result_type)),
@@ -546,7 +546,7 @@ fn process_group_condition(
                                         vector_type: result_type,
                                         negated: *negated,
                                     },
-                                )));
+                                )))
                             } else {
                                 //second, field is a complex_expr, a column_ref or an aggregate
                                 // Process the subquery
@@ -565,14 +565,14 @@ fn process_group_condition(
                                 let temp_fields = query_object.get_mut_fields();
                                 temp_fields.fill(fields.structs.clone(), fields.streams.clone());
 
-                                return Ok(GroupClause::Base(GroupBaseCondition::In(
+                                Ok(GroupClause::Base(GroupBaseCondition::In(
                                     InCondition::InVec {
                                         field: field.clone(),
                                         vector_name: result,
                                         vector_type: result_type,
                                         negated: *negated,
                                     },
-                                )));
+                                )))
                             }
                         }
                         InCondition::InVec {
@@ -619,13 +619,13 @@ fn process_scan(
     mut query_object: &mut QueryObject,
 ) -> Arc<IrPlan> {
     // process all the subqueries in the nested joins
-    let processed_input = manage_subqueries(input, output_path, &mut query_object)
+    let processed_input = manage_subqueries(input, output_path, query_object)
         .expect("Failed to process nested join subqueries");
 
         let sub_fields = subquery_sink(processed_input, output_path, query_object.tables_info.clone(), 
         query_object.table_to_csv.clone());
 
-        let (stream_name, stream_info) = sub_fields.streams.first().unwrap().clone();
+        let (stream_name, stream_info) = sub_fields.streams.first().unwrap();
         
         query_object.streams.insert(stream_name.clone(), stream_info.clone());
         query_object.tables_info.insert(
