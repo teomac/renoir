@@ -15,12 +15,10 @@ pub fn validate_ast(ast: &SqlAST) -> Result<(), Box<SqlParseError>> {
 }
 
 fn validate_order_by(ast: &SqlAST) -> Result<(), Box<SqlParseError>> {
-    // If there's no ORDER BY clause, nothing to validate
     if let Some(order_by) = &ast.order_by {
-        // Extract column references from SELECT clause
         let mut select_columns = Vec::new();
 
-        // Extract column references and also collect any referenceable columns from complex expressions
+        // Extract column references and also collect any referenceable columns from expressions
         for select_clause in &ast.select.select {
             match &select_clause.selection {
                 SelectType::Simple(col_ref) => {
@@ -29,16 +27,15 @@ fn validate_order_by(ast: &SqlAST) -> Result<(), Box<SqlParseError>> {
                 SelectType::Aggregate(_, col_ref) => {
                     select_columns.push(col_ref.clone());
                 }
-                SelectType::ComplexValue(left, _, right) => {
-                    // For complex expressions, extract any direct column references
-                    extract_columns_from_complex(left, &mut select_columns);
-                    extract_columns_from_complex(right, &mut select_columns);
+                // Updated to handle ArithmeticExpr instead of ComplexValue
+                SelectType::ArithmeticExpr(expr) => {
+                    extract_columns_from_arithmetic(expr, &mut select_columns);
                 }
-                _ => { /* Ignore literals */ }
+                _ => { /* Ignore literals and subqueries */ }
             }
         }
 
-        // Also get column aliases from SELECT clause for matching
+        // Rest of validation logic remains the same
         let select_aliases: Vec<String> = ast
             .select
             .select
@@ -46,35 +43,27 @@ fn validate_order_by(ast: &SqlAST) -> Result<(), Box<SqlParseError>> {
             .filter_map(|s| s.alias.clone())
             .collect();
 
-        // Check if SELECT contains asterisk (SELECT *) - in that case any column is valid for ORDER BY
         let has_asterisk = ast.select.select.iter().any(|s| match &s.selection {
             SelectType::Simple(col_ref) => col_ref.column == "*",
             _ => false,
         });
 
-        // If we have SELECT *, all columns are available for ORDER BY
         if has_asterisk {
             return Ok(());
         }
 
-        // Check each ORDER BY item
         for item in &order_by.items {
             let column_name = &item.column.column;
             let table_name = &item.column.table;
 
-            // Check if ORDER BY column is in SELECT columns
             let in_select = select_columns.iter().any(|col| {
-                // Match on column name
                 col.column == *column_name &&
-                // Match on table name if both are specified, or if ORDER BY doesn't specify table
                 (col.table == *table_name || table_name.is_none())
             });
 
-            // Check if ORDER BY column matches a SELECT alias
             let matches_alias =
                 table_name.is_none() && select_aliases.iter().any(|alias| alias == column_name);
 
-            // If it's neither in SELECT columns nor matches an alias, it's invalid
             if !in_select && !matches_alias {
                 return Err(Box::new(SqlParseError::InvalidInput(format!(
                     "ORDER BY column '{}' must appear in the SELECT list",
@@ -91,22 +80,28 @@ fn validate_order_by(ast: &SqlAST) -> Result<(), Box<SqlParseError>> {
     Ok(())
 }
 
-// Helper method to extract column references from complex expressions
-fn extract_columns_from_complex(field: &ComplexField, columns: &mut Vec<ColumnRef>) {
-    if let Some(col_ref) = &field.column_ref {
-        columns.push(col_ref.clone());
-    }
-
-    if let Some(ref nested) = field.nested_expr {
-        let (left, _, right, _) = &**nested;
-        extract_columns_from_complex(left, columns);
-        extract_columns_from_complex(right, columns);
-    }
-
-    if let Some((_, col_ref)) = &field.aggregate {
-        columns.push(col_ref.clone());
+// Replace extract_columns_from_complex with this new function
+fn extract_columns_from_arithmetic(expr: &ArithmeticExpr, columns: &mut Vec<ColumnRef>) {
+    match expr {
+        ArithmeticExpr::Column(col_ref) => {
+            columns.push(col_ref.clone());
+        }
+        ArithmeticExpr::NestedExpr(left, _, right, _) => {
+            extract_columns_from_arithmetic(left, columns);
+            extract_columns_from_arithmetic(right, columns);
+        }
+        ArithmeticExpr::Aggregate(_, col_ref) => {
+            columns.push(col_ref.clone());
+        }
+        ArithmeticExpr::Subquery(_) => {
+            // Subqueries are handled separately
+        }
+        ArithmeticExpr::Literal(_) => {
+            // Literals don't contain column references
+        }
     }
 }
+
 
 // check if where has aggregates
 fn validate_no_aggregates_in_where(clause: &Option<WhereClause>) -> Result<(), Box<SqlParseError>> {
@@ -301,16 +296,51 @@ fn validate_limit_offset(clause: &Option<LimitClause>) -> Result<(), Box<SqlPars
 
 // check that the subquery contains only one column in the select clause. other checks are made at runtime
 fn validate_select_subquery(select_type: &SelectType) -> Result<(), Box<SqlParseError>> {
-    if let SelectType::ComplexValue(left_field, _, _) = select_type {
-        // Check if this ComplexValue contains a subquery
-        if let Some(ref subquery) = left_field.subquery {
-            // Check that subquery's SELECT clause has exactly one column
+    match select_type {
+        SelectType::ArithmeticExpr(expr) => {
+            // Recursively validate any subqueries in arithmetic expressions
+            match expr {
+                ArithmeticExpr::Subquery(subquery) => {
+                    if subquery.select.select.len() != 1 {
+                        return Err(Box::new(SqlParseError::InvalidInput(
+                            "Subquery in SELECT clause must return exactly one column".to_string(),
+                        )));
+                    }
+                }
+                ArithmeticExpr::NestedExpr(left, _, right, _) => {
+                    // Check both sides of the expression for subqueries
+                    validate_arithmetic_subquery(left)?;
+                    validate_arithmetic_subquery(right)?;
+                }
+                _ => {}
+            }
+        }
+        SelectType::Subquery(subquery) => {
             if subquery.select.select.len() != 1 {
                 return Err(Box::new(SqlParseError::InvalidInput(
                     "Subquery in SELECT clause must return exactly one column".to_string(),
                 )));
             }
         }
+        _ => {}
     }
     Ok(())
+}
+
+fn validate_arithmetic_subquery(expr: &ArithmeticExpr) -> Result<(), Box<SqlParseError>> {
+    match expr {
+        ArithmeticExpr::Subquery(subquery) => {
+            if subquery.select.select.len() != 1 {
+                return Err(Box::new(SqlParseError::InvalidInput(
+                    "Subquery in arithmetic expression must return exactly one column".to_string(),
+                )));
+            }
+            Ok(())
+        }
+        ArithmeticExpr::NestedExpr(left, _, right, _) => {
+            validate_arithmetic_subquery(left)?;
+            validate_arithmetic_subquery(right)
+        }
+        _ => Ok(()),
+    }
 }

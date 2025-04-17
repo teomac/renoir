@@ -26,18 +26,9 @@ pub struct SelectColumn {
 pub enum SelectType {
     Simple(ColumnRef),
     Aggregate(AggregateFunction, ColumnRef),
-    ComplexValue(ComplexField, String, ComplexField),
+    ArithmeticExpr(ArithmeticExpr),
     StringLiteral(String),
     Subquery(Box<SqlAST>),
-}
-
-#[derive(Debug, PartialEq, Clone)]
-pub struct ComplexField {
-    pub column_ref: Option<ColumnRef>,
-    pub literal: Option<SqlLiteral>,
-    pub aggregate: Option<(AggregateFunction, ColumnRef)>,
-    pub nested_expr: Option<Box<(ComplexField, String, ComplexField, bool)>>,
-    pub subquery: Option<Box<SqlAST>>,
 }
 
 #[derive(Debug, PartialEq, Clone)]

@@ -380,12 +380,12 @@ impl ConditionParser {
                         )))
                     }
                 };
-                Ok((ArithmeticExpr::Literal(value)))
+                Ok(ArithmeticExpr::Literal(value))
             }
             Rule::string_literal => {
                 let inner_str = factor.as_str();
                 let clean_str = inner_str[1..inner_str.len() - 1].to_string();
-                Ok((ArithmeticExpr::Literal(SqlLiteral::String(clean_str))))
+                Ok(ArithmeticExpr::Literal(SqlLiteral::String(clean_str)))
             }
             Rule::table_column => {
                 let mut inner = factor.into_inner();
@@ -399,15 +399,15 @@ impl ConditionParser {
                     .ok_or_else(|| SqlParseError::InvalidInput("Missing column name".to_string()))?
                     .as_str()
                     .to_string();
-                Ok((ArithmeticExpr::Column(ColumnRef {
+                Ok(ArithmeticExpr::Column(ColumnRef {
                     table: Some(table),
                     column,
-                })))
+                }))
             }
-            Rule::variable => Ok((ArithmeticExpr::Column(ColumnRef {
+            Rule::variable => Ok(ArithmeticExpr::Column(ColumnRef {
                 table: None,
                 column: factor.as_str().to_string(),
-            }))),
+            })),
             Rule::aggregate_expr => {
                 let mut agg = factor.into_inner();
                 let func = match agg
@@ -435,12 +435,12 @@ impl ConditionParser {
                     SqlParseError::InvalidInput("Missing aggregate column".to_string())
                 })?)?;
 
-                Ok((ArithmeticExpr::Aggregate(func, col_ref)))
+                Ok(ArithmeticExpr::Aggregate(func, col_ref))
             }
             Rule::subquery_expr => {
                 // New: Handle subquery in arithmetic expression
                 let subquery = SqlParser::parse_subquery(factor)?;
-                Ok((ArithmeticExpr::Subquery(Box::new(subquery))))
+                Ok(ArithmeticExpr::Subquery(Box::new(subquery)))
             }
             _ => Err(Box::new(SqlParseError::InvalidInput(format!(
                 "Invalid arithmetic factor: {:?}",

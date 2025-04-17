@@ -151,90 +151,81 @@ impl SelectParser {
     }
 
     fn parse_complex_expression(pair: Pair<Rule>) -> Result<SelectType, Box<SqlParseError>> {
-        let mut pairs = pair.into_inner().peekable();
-
-        // Get first operand
-        let first = pairs
-            .next()
-            .ok_or_else(|| SqlParseError::InvalidInput("Missing first operand".to_string()))?;
-
-        let mut left_field = match first.as_rule() {
-            Rule::parenthesized_expr => Self::parse_parenthesized_expr(first)?,
-            Rule::column_operand => Self::parse_operand(first)?,
-            _ => {
-                return Err(Box::new(SqlParseError::InvalidInput(format!(
-                    "Invalid first operand: {:?}",
-                    first.as_rule()
-                ))))
-            }
-        };
-
-        // If no operator, return just the left field
-        while let Some(op) = pairs.next() {
-            let symbol = op.as_str().to_string();
-
-            let right = pairs
-                .next()
-                .ok_or_else(|| SqlParseError::InvalidInput("Missing right operand".to_string()))?;
-
-            let right_field = match right.as_rule() {
-                Rule::parenthesized_expr => Self::parse_parenthesized_expr(right)?,
-                Rule::column_operand => Self::parse_operand(right)?,
-                _ => {
-                    return Err(Box::new(SqlParseError::InvalidInput(format!(
-                        "Invalid right operand: {:?}",
-                        right.as_rule()
-                    ))))
+        match pair.as_rule() {
+            Rule::select_expr => {
+                let mut pairs = pair.into_inner().peekable();
+    
+                // Get first operand
+                let first = pairs
+                    .next()
+                    .ok_or_else(|| SqlParseError::InvalidInput("Missing first operand".to_string()))?;
+    
+                let mut left_expr = match first.as_rule() {
+                    Rule::parenthesized_expr => Self::parse_parenthesized_expr(first)?,
+                    Rule::column_operand => Self::parse_operand(first)?,
+                    _ => {
+                        return Err(Box::new(SqlParseError::InvalidInput(format!(
+                            "Invalid first operand: {:?}",
+                            first.as_rule()
+                        ))))
+                    }
+                };
+    
+                // Process any subsequent operations
+                while let Some(op) = pairs.next() {
+                    let symbol = op.as_str().to_string();
+    
+                    let right = pairs
+                        .next()
+                        .ok_or_else(|| SqlParseError::InvalidInput("Missing right operand".to_string()))?;
+    
+                    let right_expr = match right.as_rule() {
+                        Rule::parenthesized_expr => Self::parse_parenthesized_expr(right)?,
+                        Rule::column_operand => Self::parse_operand(right)?,
+                        _ => {
+                            return Err(Box::new(SqlParseError::InvalidInput(format!(
+                                "Invalid right operand: {:?}",
+                                right.as_rule()
+                            ))))
+                        }
+                    };
+    
+                    left_expr = ArithmeticExpr::NestedExpr(
+                        Box::new(left_expr),
+                        symbol,
+                        Box::new(right_expr),
+                        false,  // Not parenthesized by default
+                    );
                 }
-            };
-
-            left_field = ComplexField {
-                column_ref: None,
-                literal: None,
-                aggregate: None,
-                nested_expr: Some(Box::new((left_field, symbol, right_field))),
-                subquery: None,
-            };
+    
+                Ok(SelectType::ArithmeticExpr(left_expr))
+            }
+            _ => Err(Box::new(SqlParseError::InvalidInput(format!(
+                "Expected select expression, got {:?}",
+                pair.as_rule()
+            )))),
         }
-
-        Ok(SelectType::ComplexValue(
-            left_field,
-            String::new(), // Empty string since we handled operators in nested_expr
-            ComplexField {
-                // Empty right field since we handled everything in left_field
-                column_ref: None,
-                literal: None,
-                aggregate: None,
-                nested_expr: None,
-                subquery: None,
-            },
-        ))
     }
-
-    // New helper function to parse operands
-    fn parse_parenthesized_expr(pair: Pair<Rule>) -> Result<ComplexField, Box<SqlParseError>> {
+    
+    fn parse_parenthesized_expr(pair: Pair<Rule>) -> Result<ArithmeticExpr, Box<SqlParseError>> {
         let mut inner = pair.into_inner();
-
+        
         // Skip left parenthesis
         inner.next();
-
+    
         // Get the inner expression
         let expr = inner
             .next()
             .ok_or_else(|| SqlParseError::InvalidInput("Empty parentheses".to_string()))?;
-
+    
         match Self::parse_complex_expression(expr)? {
-            SelectType::ComplexValue(left, op, right) => {
-                if op.is_empty() {
-                    Ok(left) // If no operator, just return the left field
-                } else {
-                    Ok(ComplexField {
-                        column_ref: None,
-                        literal: None,
-                        aggregate: None,
-                        nested_expr: Some(Box::new((left, op, right))),
-                        subquery: None,
-                    })
+            SelectType::ArithmeticExpr(expr) => {
+                // If the expression is already nested, mark it as parenthesized
+                match expr {
+                    ArithmeticExpr::NestedExpr(left, op, right, _) => {
+                        Ok(ArithmeticExpr::NestedExpr(left, op, right, true))
+                    }
+                    _ => Ok(expr) // Return as is if not nested
                 }
             }
             _ => Err(Box::new(SqlParseError::InvalidInput(
@@ -243,57 +234,28 @@ impl SelectParser {
         }
     }
 
-    fn parse_operand(pair: Pair<Rule>) -> Result<ComplexField, Box<SqlParseError>> {
+    fn parse_operand(pair: Pair<Rule>) -> Result<ArithmeticExpr, Box<SqlParseError>> {
         let inner = pair
             .into_inner()
             .next()
             .ok_or_else(|| SqlParseError::InvalidInput("Empty operand".to_string()))?;
-
+    
         match inner.as_rule() {
-            Rule::number => Ok(ComplexField {
-                column_ref: None,
-                literal: Some(LiteralParser::parse(inner.as_str())?),
-                aggregate: None,
-                nested_expr: None,
-                subquery: None,
-            }),
-            Rule::table_column => Ok(ComplexField {
-                column_ref: Some(Self::parse_column_ref(inner)?),
-                literal: None,
-                aggregate: None,
-                nested_expr: None,
-                subquery: None,
-            }),
-            Rule::variable => Ok(ComplexField {
-                column_ref: Some(ColumnRef {
-                    table: None,
-                    column: inner.as_str().to_string(),
-                }),
-                literal: None,
-                aggregate: None,
-                nested_expr: None,
-                subquery: None,
-            }),
+            Rule::number => Ok(ArithmeticExpr::Literal(
+                LiteralParser::parse(inner.as_str())?
+            )),
+            Rule::table_column => Ok(ArithmeticExpr::Column(Self::parse_column_ref(inner)?)),
+            Rule::variable => Ok(ArithmeticExpr::Column(ColumnRef {
+                table: None,
+                column: inner.as_str().to_string(),
+            })),
             Rule::aggregate_expr => {
                 let (func, col) = Self::parse_aggregate(inner)?;
-                Ok(ComplexField {
-                    column_ref: None,
-                    literal: None,
-                    aggregate: Some((func, col)),
-                    nested_expr: None,
-                    subquery: None,
-                })
+                Ok(ArithmeticExpr::Aggregate(func, col))
             }
             Rule::subquery_expr => {
-                // New: Handle subquery in column operand
                 let subquery = SqlParser::parse_subquery(inner)?;
-                Ok(ComplexField {
-                    column_ref: None,
-                    literal: None,
-                    aggregate: None,
-                    nested_expr: None,
-                    subquery: Some(Box::new(subquery)),
-                })
+                Ok(ArithmeticExpr::Subquery(Box::new(subquery)))
             }
             _ => Err(Box::new(SqlParseError::InvalidInput(format!(
                 "Invalid operand: {:?}",

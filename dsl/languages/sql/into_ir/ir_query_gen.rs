@@ -36,45 +36,39 @@ impl SqlToIr {
         };
 
         let select_strs: Vec<String> = sql_ast
-            .select
-            .select
-            .iter()
-            .map(|select_clause| {
-                let selection_str = match &select_clause.selection {
-                    SelectType::Simple(col_ref) => col_ref.to_string(),
-                    SelectType::Aggregate(func, col_ref) => {
-                        let agg = match func {
-                            AggregateFunction::Max => "max",
-                            AggregateFunction::Min => "min",
-                            AggregateFunction::Sum => "sum",
-                            AggregateFunction::Avg => "avg",
-                            AggregateFunction::Count => "count",
-                        };
-                        format!("{}({})", agg, col_ref)
-                    }
-                    SelectType::ComplexValue(left, op, right) => format!(
-                        "{} {} {}",
-                        Self::convert_complex_field(left, index, nested_index),
-                        op,
-                        Self::convert_complex_field(right, index, nested_index)
-                    )
-                    .trim()
-                    .to_string(),
-                    SelectType::StringLiteral(val) => format!("'{}'", val),
-                    // Handle subquery in SELECT
-                    SelectType::Subquery(subquery) => {
-                        format!("({})", Self::convert(subquery, index, nested_index + 1))
-                    }
-                };
-
-                // Add alias if present
-                if let Some(alias) = &select_clause.alias {
-                    format!("{} as {}", selection_str, alias)
-                } else {
-                    selection_str
+        .select
+        .select
+        .iter()
+        .map(|select_clause| {
+            let selection_str = match &select_clause.selection {
+                SelectType::Simple(col_ref) => col_ref.to_string(),
+                SelectType::Aggregate(func, col_ref) => {
+                    let agg = match func {
+                        AggregateFunction::Max => "max",
+                        AggregateFunction::Min => "min",
+                        AggregateFunction::Sum => "sum",
+                        AggregateFunction::Avg => "avg",
+                        AggregateFunction::Count => "count",
+                    };
+                    format!("{}({})", agg, col_ref)
                 }
-            })
-            .collect();
+                SelectType::ArithmeticExpr(expr) => {
+                    Self::arithmetic_expr_to_string(expr, index, nested_index)
+                }
+                SelectType::StringLiteral(val) => format!("'{}'", val),
+                SelectType::Subquery(subquery) => {
+                    format!("({})", Self::convert(subquery, index, nested_index + 1))
+                }
+            };
+
+            // Add alias if present
+            if let Some(alias) = &select_clause.alias {
+                format!("{} as {}", selection_str, alias)
+            } else {
+                selection_str
+            }
+        })
+        .collect();
 
         parts.push(format!("{} {}", select_keyword, select_strs.join(", ")));
 
@@ -366,23 +360,14 @@ impl SqlToIr {
             ArithmeticExpr::NestedExpr(left, op, right, is_parenthesized) => {
                 let left_str = Self::arithmetic_expr_to_string(left, index, nested_index);
                 let right_str = Self::arithmetic_expr_to_string(right, index, nested_index);
-                format!("{}{} {} {}{}", 
-                    if *is_parenthesized {
-                        "("
-                    } else {
-                        ""
-                    },
-                    left_str,
-                    op,
-                    right_str,
-                    if *is_parenthesized {
-                        ")"
-                    } else {
-                        ""
-                    }
-                )
+                
+                let expr = format!("{} {} {}", left_str, op, right_str);
+                if *is_parenthesized {
+                    format!("({})", expr)
+                } else {
+                    expr
+                }
             }
-            // Handle subquery in arithmetic expression
             ArithmeticExpr::Subquery(subquery) => {
                 format!("({})", Self::convert(subquery, index, nested_index + 1))
             }
@@ -629,59 +614,7 @@ impl SqlToIr {
 
         items.join(", ")
     }
-
-    //function used to convert complex field to string - updated to handle subqueries
-    fn convert_complex_field(
-        field: &ComplexField,
-        index: &mut usize,
-        nested_index: usize,
-    ) -> String {
-        if let Some(ref nested) = field.nested_expr {
-            // Handle nested expression
-            let (left_field, op, right_field, is_parenthesized) = &**nested;
-            return format!(
-                "{}{} {} {}{}",
-                if *is_parenthesized {
-                    "("
-                } else {
-                    ""
-                },
-                Self::convert_complex_field(left_field, index, nested_index),
-                op,
-                Self::convert_complex_field(right_field, index, nested_index),
-                if *is_parenthesized {
-                    ")"
-                } else {
-                    ""
-                }
-            );
-        }
-
-        if let Some(ref col_ref) = field.column_ref {
-            col_ref.to_string()
-        } else if let Some(ref lit) = field.literal {
-            match lit {
-                SqlLiteral::Float(val) => format!("{:.2}", val),
-                SqlLiteral::Integer(val) => val.to_string(),
-                SqlLiteral::String(val) => format!("'{}'", val),
-                SqlLiteral::Boolean(val) => val.to_string(),
-            }
-        } else if let Some((agg_func, col_ref)) = &field.aggregate {
-            let agg = match agg_func {
-                AggregateFunction::Max => "max",
-                AggregateFunction::Min => "min",
-                AggregateFunction::Sum => "sum",
-                AggregateFunction::Avg => "avg",
-                AggregateFunction::Count => "count",
-            };
-            format!("{}({})", agg, col_ref)
-        } else if let Some(ref subquery) = field.subquery {
-            format!("({})", Self::convert(subquery, index, nested_index + 1))
-        } else {
-            String::new()
-        }
-    }
-
+    
     fn get_stream_prefix(index: usize) -> String {
         match index {
             0 => "stream".to_string(),
