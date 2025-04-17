@@ -148,10 +148,22 @@ fn generate_sort_code(
 
     for (col_name, direction) in order_by.iter() {
         let field_name = if col_name.table.is_some() {
-            format!("{}.{}", col_name.column, col_name.table.as_ref().unwrap())
+            format!("{}_{}", col_name.column, col_name.table.as_ref().unwrap())
         } else {
-            col_name.column.clone()
+            //check if the final struct has the field_name
+            //if not, we need to add the table name to the field name
+
+            if final_struct_of.get(&col_name.column).is_some() {
+                col_name.column.clone()
+            } else {
+                //take the table name from the final_struct
+                let key = final_struct_of.keys().last().unwrap();
+                let table_name = key.rsplit_once("_").unwrap().1;
+                format!("{}_{}", col_name.column, table_name)
+            }
         };
+
+        println!("field_name: {}", field_name);
 
         let field_type = if final_struct_of.get(&field_name).is_some() {
             final_struct_of.get(&field_name).unwrap()
@@ -168,23 +180,23 @@ fn generate_sort_code(
         let comparison = if field_type == "f64" || field_type == "OrderedFloat<f64>" {
             // For floating point fields using OrderedFloat
             if direction == "desc" {
-                format!("std::cmp::Ord::cmp(\n                    &b.{}.as_ref().unwrap_or(&OrderedFloat(f64::MIN)),\n                    &a.{}.as_ref().unwrap_or(&OrderedFloat(f64::MIN))\n                )", col_name, col_name)
+                format!("std::cmp::Ord::cmp(\n                    &b.{}.as_ref().unwrap_or(&OrderedFloat(f64::MIN)),\n                    &a.{}.as_ref().unwrap_or(&OrderedFloat(f64::MIN))\n                )", field_name, field_name)
             } else {
-                format!("std::cmp::Ord::cmp(\n                    &a.{}.as_ref().unwrap_or(&OrderedFloat(f64::MIN)),\n                    &b.{}.as_ref().unwrap_or(&OrderedFloat(f64::MIN))\n                )", col_name, col_name)
+                format!("std::cmp::Ord::cmp(\n                    &a.{}.as_ref().unwrap_or(&OrderedFloat(f64::MIN)),\n                    &b.{}.as_ref().unwrap_or(&OrderedFloat(f64::MIN))\n                )", field_name, field_name)
             }
         } else if field_type == "String" {
             // For string fields
             if direction == "desc" {
-                format!("b.{}.as_ref().unwrap_or(&String::new()).cmp(a.{}.as_ref().unwrap_or(&String::new()))", col_name, col_name)
+                format!("b.{}.as_ref().unwrap_or(&String::new()).cmp(a.{}.as_ref().unwrap_or(&String::new()))", field_name, field_name)
             } else {
-                format!("a.{}.as_ref().unwrap_or(&String::new()).cmp(b.{}.as_ref().unwrap_or(&String::new()))", col_name, col_name)
+                format!("a.{}.as_ref().unwrap_or(&String::new()).cmp(b.{}.as_ref().unwrap_or(&String::new()))", field_name, field_name)
             }
         } else {
             // Default comparison for other types
             if direction == "desc" {
-                format!("b.{}.cmp(&a.{})", col_name, col_name)
+                format!("b.{}.cmp(&a.{})", field_name, field_name)
             } else {
-                format!("a.{}.cmp(&b.{})", col_name, col_name)
+                format!("a.{}.cmp(&b.{})", field_name, field_name)
             }
         };
 
