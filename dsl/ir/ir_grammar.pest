@@ -28,6 +28,8 @@ distinct_keyword = { "_distinct" }
 left_parenthesis = { "(" }
 right_parenthesis = { ")" }
 
+binary_op = { ^"&&" | ^"||"}
+
 null_op = @{ "is null" | "is not null" }
 
 query = {
@@ -141,12 +143,6 @@ column_item = {
 }
 
 projection_clause = { "select" ~ distinct_keyword? ~ (asterisk | column_list) }
-
-// Binary logical operators
-binary_op = { 
-    ^"&&" | 
-    ^"||"
-}
 
 // Group by clause
 having_term = {

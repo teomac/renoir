@@ -878,7 +878,8 @@ fn collect_column_null_checks(
         collect_column_null_checks(right, query_object, checks);
     }
     if field.literal.is_some() {
-        panic!("Invalid ComplexField - literal not expected here");
+        //skip literal check
+        return;
     }
     if let Some(ref agg) = field.aggregate {
         let stream_name = if agg.column.table.is_some() {

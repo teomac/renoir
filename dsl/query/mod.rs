@@ -93,6 +93,13 @@ pub fn process_query(
         panic!("No input tables provided");
     }
 
+    //check if no input table name contains an underscore
+    for key in input_tables.keys() {
+        if key.contains('_') {
+            panic!("Table names cannot contain an underscore. {} .", key);
+        }
+    }
+
     // check if every key of input_tables has a value
     for (key, (csv, types)) in input_tables.iter() {
         if csv.is_empty() {
