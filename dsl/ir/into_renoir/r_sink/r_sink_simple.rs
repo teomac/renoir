@@ -200,8 +200,8 @@ pub fn process_complex_field(
 
         // Different types case
         if left_type != right_type {
-            if (left_type == "f64" || left_type == "i64")
-                && (right_type == "f64" || right_type == "i64")
+            if (left_type == "f64" || left_type == "i64" || left_type == "usize")
+                && (right_type == "f64" || right_type == "i64" || right_type == "usize")
             {
                 // Division always results in f64
                 if op == "/" {
@@ -283,9 +283,9 @@ pub fn process_complex_field(
                 };
 
                 //if left is i64 and right is float or vice versa, convert the i64 to f64
-                if left_type == "i64" && right_type == "f64" {
+                if right_type == "f64" {
                     return format!("({} as f64 {} {})", processed_left, op, processed_right);
-                } else if left_type == "f64" && right_type == "i64" {
+                } else if left_type == "f64" {
                     return format!("({} {} {} as f64)", processed_left, op, processed_right);
                 }
 
@@ -302,6 +302,10 @@ pub fn process_complex_field(
             if (op == "+" || op == "-" || op == "*" || op == "/" || op == "^")
                 && left_type != "f64"
                 && left_type != "i64"
+                && left_type != "usize"
+                && right_type != "f64"
+                && right_type != "i64"
+                && right_type != "usize"
             {
                 panic!(
                     "Invalid arithmetic expression - non-numeric types: {} and {}",
@@ -423,7 +427,11 @@ pub fn process_complex_field(
     } else if let Some((ref result, ref result_type)) = field.subquery_vec {
         if result_type == "String" {
             format!("{}.first().unwrap().unwrap().to_string().clone()", result)
-        } else {
+        }
+        else if result_type == "f64" {
+            format!("{}.first().unwrap().unwrap().into_inner() as f64", result)
+        }
+        else {
             format!("{}.first().unwrap().unwrap().clone()", result)
         }
     } else {
