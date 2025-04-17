@@ -36,7 +36,7 @@ pub struct ComplexField {
     pub column_ref: Option<ColumnRef>,
     pub literal: Option<SqlLiteral>,
     pub aggregate: Option<(AggregateFunction, ColumnRef)>,
-    pub nested_expr: Option<Box<(ComplexField, String, ComplexField)>>,
+    pub nested_expr: Option<Box<(ComplexField, String, ComplexField, bool)>>,
     pub subquery: Option<Box<SqlAST>>,
 }
 
@@ -212,7 +212,7 @@ pub enum ArithmeticExpr {
     Column(ColumnRef),
     Literal(SqlLiteral),
     Aggregate(AggregateFunction, ColumnRef),
-    BinaryOp(Box<ArithmeticExpr>, String, Box<ArithmeticExpr>),
+    NestedExpr(Box<ArithmeticExpr>, String, Box<ArithmeticExpr>, bool), //bool for whether it is parenthesized
     Subquery(Box<SqlAST>),
 }
 

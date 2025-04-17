@@ -98,7 +98,7 @@ fn extract_columns_from_complex(field: &ComplexField, columns: &mut Vec<ColumnRe
     }
 
     if let Some(ref nested) = field.nested_expr {
-        let (left, _, right) = &**nested;
+        let (left, _, right, _) = &**nested;
         extract_columns_from_complex(left, columns);
         extract_columns_from_complex(right, columns);
     }
@@ -156,7 +156,7 @@ fn check_arithmetic_for_aggregates(expr: &ArithmeticExpr) -> Result<(), Box<SqlP
                 col_ref
             ))));
         }
-        ArithmeticExpr::BinaryOp(left, _, right) => {
+        ArithmeticExpr::NestedExpr(left, _, right, _) => {
             check_arithmetic_for_aggregates(left)?;
             check_arithmetic_for_aggregates(right)?;
         }
@@ -264,7 +264,7 @@ fn validate_arithmetic_columns(
             // Aggregates are always allowed in HAVING
         }
         ArithmeticExpr::Literal(_) => Ok(()),
-        ArithmeticExpr::BinaryOp(left, _, right) => {
+        ArithmeticExpr::NestedExpr(left, _, right, _) => {
             validate_arithmetic_columns(left, group_by_columns)?;
             validate_arithmetic_columns(right, group_by_columns)?;
             Ok(())

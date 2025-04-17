@@ -175,7 +175,7 @@ impl ConditionParser {
                     complex_field = Some(WhereField {
                         column: None,
                         value: None,
-                        arithmetic: Some(Self::parse_arithmetic_expr(left_expr)?),
+                        arithmetic: Some((Self::parse_arithmetic_expr(left_expr, false))?),
                         subquery: None,
                     });
                 } else {
@@ -286,75 +286,67 @@ impl ConditionParser {
         }
     }
 
-    fn parse_arithmetic_expr(pair: Pair<Rule>) -> Result<ArithmeticExpr, Box<SqlParseError>> {
+
+    fn parse_arithmetic_expr(pair: Pair<Rule>, is_parenthesized: bool) -> Result<ArithmeticExpr, Box<SqlParseError>> {
         match pair.as_rule() {
             Rule::arithmetic_expr => {
-                let mut pairs = pair.into_inner().peekable();
-
-                // Parse first term
+                let mut pairs = pair.clone().into_inner().peekable();
+    
+                // Get first term (which might be parenthesized)
                 let first_term = pairs
                     .next()
                     .ok_or_else(|| SqlParseError::InvalidInput("Missing first term".to_string()))?;
+
+                    
                 let mut left = Self::parse_arithmetic_term(first_term)?;
 
-                // Process any subsequent operations
+                 // Process any subsequent operations
                 while let Some(op) = pairs.next() {
-                    if let Some(next_term) = pairs.next() {
-                        let right = Self::parse_arithmetic_term(next_term)?;
-                        left = ArithmeticExpr::BinaryOp(
-                            Box::new(left),
-                            op.as_str().to_string(),
-                            Box::new(right),
-                        );
-                    }
+                if let Some(next_term) = pairs.next() {
+                    let right = Self::parse_arithmetic_term(next_term)?;
+                    left = ArithmeticExpr::NestedExpr(
+                        Box::new(left),
+                        op.as_str().to_string(),
+                        Box::new(right),
+                        is_parenthesized
+                    );
                 }
-
-                Ok(left)
             }
-            Rule::subquery_expr => {
-                // New: Handle subquery in arithmetic expression
-                let subquery = SqlParser::parse_subquery(pair)?;
-                Ok(ArithmeticExpr::Subquery(Box::new(subquery)))
+
+            Ok(left)
             }
             _ => Err(Box::new(SqlParseError::InvalidInput(format!(
                 "Expected arithmetic expression, got {:?}",
                 pair.as_rule()
-            )))),
+            ))))
         }
     }
-
+    
     fn parse_arithmetic_term(pair: Pair<Rule>) -> Result<ArithmeticExpr, Box<SqlParseError>> {
         match pair.as_rule() {
             Rule::arithmetic_term => {
-                let mut inner = pair.into_inner();
+                let mut inner = pair.clone().into_inner();
                 let first = inner.next().ok_or_else(|| {
-                    SqlParseError::InvalidInput("Empty arithmetic primary".to_string())
+                    SqlParseError::InvalidInput("Empty arithmetic term".to_string())
                 })?;
-
+    
                 match first.as_rule() {
                     Rule::l_paren => {
-                        // For parenthesized expressions, get the inner expression
+                        // For parenthesized expressions, create a new expression
                         let expr = inner.next().ok_or_else(|| {
                             SqlParseError::InvalidInput("Empty parentheses".to_string())
                         })?;
-
-                        // Skip the right parenthesis
-                        inner.next();
-
-                        Self::parse_arithmetic_expr(expr)
+                        
+                        // Parse the inner expression
+                        let result = Self::parse_arithmetic_expr(expr, true)?;
+                        
+                        // Return the parenthesized expression
+                        Ok(result)
                     }
                     _ => Self::parse_arithmetic_factor(first),
                 }
             }
-            Rule::subquery_expr => {
-                // New: Handle subquery in arithmetic expression
-                let subquery = SqlParser::parse_subquery(pair)?;
-                Ok(ArithmeticExpr::Subquery(Box::new(subquery)))
-            }
-            _ => Err(Box::new(SqlParseError::InvalidInput(format!(
-                "Expected arithmetic primary, got {:?}",
-                pair.as_rule()
-            )))),
+            _ => Self::parse_arithmetic_factor(pair),
         }
     }
 
@@ -388,12 +380,12 @@ impl ConditionParser {
                         )))
                     }
                 };
-                Ok(ArithmeticExpr::Literal(value))
+                Ok((ArithmeticExpr::Literal(value)))
             }
             Rule::string_literal => {
                 let inner_str = factor.as_str();
                 let clean_str = inner_str[1..inner_str.len() - 1].to_string();
-                Ok(ArithmeticExpr::Literal(SqlLiteral::String(clean_str)))
+                Ok((ArithmeticExpr::Literal(SqlLiteral::String(clean_str))))
             }
             Rule::table_column => {
                 let mut inner = factor.into_inner();
@@ -407,15 +399,15 @@ impl ConditionParser {
                     .ok_or_else(|| SqlParseError::InvalidInput("Missing column name".to_string()))?
                     .as_str()
                     .to_string();
-                Ok(ArithmeticExpr::Column(ColumnRef {
+                Ok((ArithmeticExpr::Column(ColumnRef {
                     table: Some(table),
                     column,
-                }))
+                })))
             }
-            Rule::variable => Ok(ArithmeticExpr::Column(ColumnRef {
+            Rule::variable => Ok((ArithmeticExpr::Column(ColumnRef {
                 table: None,
                 column: factor.as_str().to_string(),
-            })),
+            }))),
             Rule::aggregate_expr => {
                 let mut agg = factor.into_inner();
                 let func = match agg
@@ -443,12 +435,12 @@ impl ConditionParser {
                     SqlParseError::InvalidInput("Missing aggregate column".to_string())
                 })?)?;
 
-                Ok(ArithmeticExpr::Aggregate(func, col_ref))
+                Ok((ArithmeticExpr::Aggregate(func, col_ref)))
             }
             Rule::subquery_expr => {
                 // New: Handle subquery in arithmetic expression
                 let subquery = SqlParser::parse_subquery(factor)?;
-                Ok(ArithmeticExpr::Subquery(Box::new(subquery)))
+                Ok((ArithmeticExpr::Subquery(Box::new(subquery))))
             }
             _ => Err(Box::new(SqlParseError::InvalidInput(format!(
                 "Invalid arithmetic factor: {:?}",
@@ -496,7 +488,7 @@ impl ConditionParser {
             Rule::arithmetic_expr => Ok(WhereField {
                 column: None,
                 value: None,
-                arithmetic: Some(Self::parse_arithmetic_expr(pair)?),
+                arithmetic: Some(Self::parse_arithmetic_expr(pair, false)?),
                 subquery: None,
             }),
             Rule::subquery_expr => {

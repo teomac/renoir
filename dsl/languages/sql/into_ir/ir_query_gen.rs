@@ -5,6 +5,7 @@ pub struct SqlToIr;
 // index is used to propagate the stream number to the subqueries
 impl SqlToIr {
     pub fn convert(sql_ast: &SqlAST, index: &mut usize, nested_index: usize) -> String {
+        println!("Converting SQL AST to IR: {:?}", sql_ast);
         let mut parts = Vec::new();
 
         // FROM clause
@@ -303,11 +304,21 @@ impl SqlToIr {
     fn convert_where_field(field: &WhereField, index: &mut usize, nested_index: usize) -> String {
         if let Some(ref arithmetic) = field.arithmetic {
             match arithmetic {
-                ArithmeticExpr::BinaryOp(_left, _op, _right) => {
+                ArithmeticExpr::NestedExpr(_left, _op, _right, is_parenthesized) => {
                     // Add parentheses around binary operations
                     format!(
-                        "({})",
-                        Self::arithmetic_expr_to_string(arithmetic, index, nested_index)
+                        "{}{}{}",
+                        if *is_parenthesized {
+                            "("
+                        } else {
+                            ""
+                        },
+                        Self::arithmetic_expr_to_string(arithmetic, index, nested_index),
+                        if *is_parenthesized {
+                            ")"
+                        } else {
+                            ""
+                        }
                     )
                 }
                 _ => Self::arithmetic_expr_to_string(arithmetic, index, nested_index),
@@ -352,10 +363,24 @@ impl SqlToIr {
                 };
                 format!("{}({})", agg, col_ref)
             }
-            ArithmeticExpr::BinaryOp(left, op, right) => {
+            ArithmeticExpr::NestedExpr(left, op, right, is_parenthesized) => {
                 let left_str = Self::arithmetic_expr_to_string(left, index, nested_index);
                 let right_str = Self::arithmetic_expr_to_string(right, index, nested_index);
-                format!("{} {} {}", left_str, op, right_str)
+                format!("{}{} {} {}{}", 
+                    if *is_parenthesized {
+                        "("
+                    } else {
+                        ""
+                    },
+                    left_str,
+                    op,
+                    right_str,
+                    if *is_parenthesized {
+                        ")"
+                    } else {
+                        ""
+                    }
+                )
             }
             // Handle subquery in arithmetic expression
             ArithmeticExpr::Subquery(subquery) => {
@@ -613,12 +638,22 @@ impl SqlToIr {
     ) -> String {
         if let Some(ref nested) = field.nested_expr {
             // Handle nested expression
-            let (left_field, op, right_field) = &**nested;
+            let (left_field, op, right_field, is_parenthesized) = &**nested;
             return format!(
-                "({} {} {})",
+                "{}{} {} {}{}",
+                if *is_parenthesized {
+                    "("
+                } else {
+                    ""
+                },
                 Self::convert_complex_field(left_field, index, nested_index),
                 op,
-                Self::convert_complex_field(right_field, index, nested_index)
+                Self::convert_complex_field(right_field, index, nested_index),
+                if *is_parenthesized {
+                    ")"
+                } else {
+                    ""
+                }
             );
         }
 

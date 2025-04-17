@@ -251,7 +251,7 @@ impl GroupByParser {
                         column: None,
                         value: None,
                         aggregate: None,
-                        arithmetic: Some(Self::parse_arithmetic_expr(left_expr)?),
+                        arithmetic: Some(Self::parse_arithmetic_expr(left_expr, false)?),
                         subquery: None,
                     });
                 } else {
@@ -427,7 +427,7 @@ impl GroupByParser {
                 column: None,
                 value: None,
                 aggregate: None,
-                arithmetic: Some(Self::parse_arithmetic_expr(pair)?),
+                arithmetic: Some(Self::parse_arithmetic_expr(pair, false)?),
                 subquery: None,
             }),
             Rule::subquery_expr => {
@@ -555,10 +555,10 @@ impl GroupByParser {
     }
 
     // Add method to parse arithmetic expressions in HAVING clause
-    fn parse_arithmetic_expr(pair: Pair<Rule>) -> Result<ArithmeticExpr, Box<SqlParseError>> {
+    fn parse_arithmetic_expr(pair: Pair<Rule>, is_parenthesized: bool) -> Result<ArithmeticExpr, Box<SqlParseError>> {
         match pair.as_rule() {
             Rule::arithmetic_expr => {
-                let mut pairs = pair.into_inner().peekable();
+                let mut pairs = pair.clone().into_inner().peekable();
 
                 // Parse first term
                 let first_term = pairs
@@ -570,10 +570,11 @@ impl GroupByParser {
                 while let Some(op) = pairs.next() {
                     if let Some(next_term) = pairs.next() {
                         let right = Self::parse_arithmetic_term(next_term)?;
-                        left = ArithmeticExpr::BinaryOp(
+                        left = ArithmeticExpr::NestedExpr(
                             Box::new(left),
                             op.as_str().to_string(),
                             Box::new(right),
+                            is_parenthesized,
                         );
                     }
                 }
@@ -610,7 +611,14 @@ impl GroupByParser {
                         // Skip the right parenthesis
                         inner.next();
 
-                        Self::parse_arithmetic_expr(expr)
+                        // Parse with is_parenthesized set to true
+                    let inner_expr = Self::parse_arithmetic_expr(expr, true)?;
+                    match inner_expr {
+                        ArithmeticExpr::NestedExpr(left, op, right, _) => {
+                            Ok(ArithmeticExpr::NestedExpr(left, op, right, true))
+                        }
+                        other => Ok(other),
+                    }
                     }
                     _ => Self::parse_arithmetic_factor(first),
                 }
@@ -748,7 +756,7 @@ impl GroupByParser {
             ArithmeticExpr::Literal(_) => Ok(()), // Literals are always allowed
             ArithmeticExpr::Aggregate(_, _) => Ok(()), // Aggregates are allowed
             ArithmeticExpr::Subquery(_) => Ok(()), // Subqueries are allowed
-            ArithmeticExpr::BinaryOp(left, _, right) => {
+            ArithmeticExpr::NestedExpr(left, _, right, _) => {
                 // Recursively validate both sides
                 Self::validate_having_arithmetic(left, group_by_cols)?;
                 Self::validate_having_arithmetic(right, group_by_cols)
