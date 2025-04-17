@@ -101,6 +101,11 @@ impl QueryObject {
             self.alias_to_stream
                 .insert(alias.to_owned(), stream_name.clone());
         }
+        else{
+            //if the alias is empty, we have to insert the table name
+            self.alias_to_stream
+                .insert(source_table.clone(), stream_name.clone());
+        }
 
         stream.update_columns(self.tables_info.get(source_table).unwrap().clone());
 
