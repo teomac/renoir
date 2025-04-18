@@ -78,7 +78,7 @@ fn process_arithmetic_expression(
     query_object: &QueryObject,
 ) -> String {
     if let Some(ref nested) = field.nested_expr {
-        let (left, op, right) = &**nested;
+        let (left, op, right, _) = &**nested;
 
         let left_type = query_object.get_complex_field_type(left);
         let right_type = query_object.get_complex_field_type(right);
@@ -809,7 +809,7 @@ fn has_column_reference(field: &ComplexField) -> bool {
         return true;
     }
     if let Some(ref nested) = field.nested_expr {
-        let (left, _, right) = &**nested;
+        let (left, _, right, _) = &**nested;
         return has_column_reference(left) || has_column_reference(right);
     }
     if let Some(IrLiteral::ColumnRef(_)) = field.literal {
@@ -829,7 +829,7 @@ fn collect_columns(field: &ComplexField) -> Vec<ColumnRef> {
         columns.push(col.clone());
     }
     if let Some(ref nested) = field.nested_expr {
-        let (left, _, right) = &**nested;
+        let (left, _, right, _) = &**nested;
         columns.extend(collect_columns(left));
         columns.extend(collect_columns(right));
     }
@@ -873,7 +873,7 @@ fn collect_column_null_checks(
         ));
     }
     if let Some(ref nested) = field.nested_expr {
-        let (left, _, right) = &**nested;
+        let (left, _, right, _) = &**nested;
         collect_column_null_checks(left, query_object, checks);
         collect_column_null_checks(right, query_object, checks);
     }

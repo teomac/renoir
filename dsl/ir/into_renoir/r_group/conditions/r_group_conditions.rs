@@ -133,7 +133,7 @@ fn collect_field_aggregates(
             ..
         } => {
             // Process nested expressions recursively
-            let (left, op, right) = &**nested;
+            let (left, op, right, _) = &**nested;
 
             collect_field_aggregates(left, acc_info, query_object, keys);
             collect_field_aggregates(right, acc_info, query_object, keys);

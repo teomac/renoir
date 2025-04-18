@@ -205,7 +205,7 @@ fn process_complex_field(
             nested_expr: Some(box_expr),
             ..
         } => {
-            let (left, op, right) = &**box_expr;
+            let (left, op, right, is_par) = &**box_expr;
 
             // Recursively process both sides of the expression
             let processed_left = process_complex_field(left, output_path, query_object)?;
@@ -215,7 +215,7 @@ fn process_complex_field(
                 column_ref: None,
                 literal: None,
                 aggregate: None,
-                nested_expr: Some(Box::new((processed_left, op.clone(), processed_right))),
+                nested_expr: Some(Box::new((processed_left, op.clone(), processed_right, is_par.clone()))),
                 subquery: None,
                 subquery_vec: None,
             })

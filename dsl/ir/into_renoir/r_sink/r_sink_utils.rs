@@ -60,7 +60,7 @@ pub fn has_aggregate_in_complex_field(field: &ComplexField) -> bool {
 
     // Recursively check nested expressions
     if let Some(nested) = &field.nested_expr {
-        let (left, _, right) = &**nested;
+        let (left, _, right, _) = &**nested;
         // Check both sides of the nested expression
         return has_aggregate_in_complex_field(left) || has_aggregate_in_complex_field(right);
     }

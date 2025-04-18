@@ -520,7 +520,7 @@ impl QueryObject {
 
         // Check nested expressions recursively
         if let Some(ref nested) = field.nested_expr {
-            let (left, _, right) = &**nested;
+            let (left, _, right, _) = &**nested;
             self.collect_aggregates_from_complex_field(left, alias.clone());
             self.collect_aggregates_from_complex_field(right, alias.clone());
         }
@@ -760,7 +760,7 @@ impl QueryObject {
                 IrLiteral::ColumnRef(col) => self.get_type(col),
             }
         } else if let Some(ref nested) = field.nested_expr {
-            let (left, op, right) = &**nested;
+            let (left, op, right, _) = &**nested;
             let left_type = self.get_complex_field_type(left);
             let right_type = self.get_complex_field_type(right);
 

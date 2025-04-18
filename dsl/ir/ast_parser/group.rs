@@ -173,9 +173,9 @@ impl GroupParser {
 
                 Ok(GroupClause::Base(GroupBaseCondition::Comparison(
                     Condition {
-                        left_field: Self::parse_arithmetic_expr(first)?,
+                        left_field: Self::parse_arithmetic_expr(first, false)?,
                         operator,
-                        right_field: Self::parse_arithmetic_expr(right_expr)?,
+                        right_field: Self::parse_arithmetic_expr(right_expr, false)?,
                     },
                 )))
             }
@@ -199,7 +199,7 @@ impl GroupParser {
                     }
                 } else if first_expr.as_rule() == Rule::arithmetic_expr {
                     // Parse arithmetic expression
-                    Self::parse_arithmetic_expr(first_expr)?
+                    Self::parse_arithmetic_expr(first_expr, false)?
                 } else {
                     return Err(Box::new(IrParseError::InvalidInput(
                         "Invalid expression in IN condition".to_string(),
@@ -287,14 +287,15 @@ impl GroupParser {
         }
     }
 
-    fn parse_arithmetic_expr(pair: Pair<Rule>) -> Result<ComplexField, Box<IrParseError>> {
+    fn parse_arithmetic_expr(pair: Pair<Rule>, is_parenthesized: bool) -> Result<ComplexField, Box<IrParseError>> {
         let mut inner = pair.into_inner();
         let first_term = inner
             .next()
             .ok_or_else(|| IrParseError::InvalidInput("Empty arithmetic expression".to_string()))?;
-
+    
         let mut result = Self::parse_arithmetic_term(first_term)?;
-
+    
+        // Process any additional operations (symbols and terms)
         while let Some(op) = inner.next() {
             if let Some(term) = inner.next() {
                 let next_field = Self::parse_arithmetic_term(term)?;
@@ -302,13 +303,13 @@ impl GroupParser {
                     column_ref: None,
                     literal: None,
                     aggregate: None,
-                    nested_expr: Some(Box::new((result, op.as_str().to_string(), next_field))),
+                    nested_expr: Some(Box::new((result, op.as_str().to_string(), next_field, is_parenthesized))),
                     subquery: None,
                     subquery_vec: None,
                 };
             }
         }
-
+    
         Ok(result)
     }
 
@@ -318,27 +319,33 @@ impl GroupParser {
             .into_inner()
             .next()
             .ok_or_else(|| IrParseError::InvalidInput("Empty arithmetic term".to_string()))?;
-
+    
         match inner.as_rule() {
             Rule::left_parenthesis => {
-                let expr = pair.into_inner().nth(1).ok_or_else(|| {
-                    IrParseError::InvalidInput("Empty parenthesized expression".to_string())
-                })?;
-                Self::parse_arithmetic_expr(expr)
+                let expr = pair
+                    .into_inner()
+                    .nth(1) 
+                    .ok_or_else(|| IrParseError::InvalidInput("Empty parentheses".to_string()))?;
+                
+                // Pass true for is_parenthesized when inside parentheses
+                Self::parse_arithmetic_expr(expr, true)
             }
             Rule::arithmetic_factor => Self::parse_arithmetic_factor(inner),
-            Rule::subquery => Ok(ComplexField {
-                column_ref: None,
-                literal: None,
-                aggregate: None,
-                nested_expr: None,
-                subquery: Some(IrParser::parse_subquery(inner)?),
-                subquery_vec: None,
-            }),
+            Rule::subquery => {
+                let subquery = IrParser::parse_subquery(inner)?;
+                Ok(ComplexField {
+                    column_ref: None,
+                    literal: None,
+                    aggregate: None,
+                    nested_expr: None,
+                    subquery: Some(subquery),
+                    subquery_vec: None,
+                })
+            }
             _ => Err(Box::new(IrParseError::InvalidInput(format!(
                 "Unexpected token in arithmetic term: {:?}",
                 inner.as_rule()
-            )))),
+            ))))
         }
     }
 

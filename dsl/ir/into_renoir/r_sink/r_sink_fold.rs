@@ -118,7 +118,7 @@ fn collect_aggregates_from_complex_field(
 
     // Check nested expressions recursively
     if let Some(ref nested) = field.nested_expr {
-        let (left, _, right) = &**nested;
+        let (left, _, right, _) = &**nested;
         collect_aggregates_from_complex_field(left, acc_info, query_object);
         collect_aggregates_from_complex_field(right, acc_info, query_object);
     }
@@ -259,7 +259,7 @@ fn create_fold(
                                     None => val
                                 }});
                             }}\n",
-                            if asterisk.is_empty() || col_type != "i64" {
+                            if asterisk.is_empty() || col_type != "f64" {
                                 ""
                             } else {
                                 "mut "
@@ -273,7 +273,7 @@ fn create_fold(
                             } else {
                                 "".to_string()
                             },
-                            if asterisk.is_empty() || col_type != "i64" {
+                            if asterisk.is_empty() || col_type != "f64" {
                                 ""
                             } else {
                                 "&mut "
@@ -288,7 +288,7 @@ fn create_fold(
                                     None => val
                                 }});
                             }}\n",
-                            if asterisk.is_empty() || col_type != "i64" {
+                            if asterisk.is_empty() || col_type != "f64" {
                                 ""
                             } else {
                                 "mut "
@@ -302,7 +302,7 @@ fn create_fold(
                             } else {
                                 "".to_string()
                             },
-                            if asterisk.is_empty() || col_type != "i64" {
+                            if asterisk.is_empty() || col_type != "f64" {
                                 ""
                             } else {
                                 "&mut "
@@ -542,7 +542,7 @@ fn process_complex_field_for_map(
 
     if let Some(ref nested) = field.nested_expr {
         // Handle nested expression (left_field OP right_field)
-        let (left, op, right) = &**nested;
+        let (left, op, right, _) = &**nested;
 
         let left_type = query_object.get_complex_field_type(left);
         let right_type = query_object.get_complex_field_type(right);

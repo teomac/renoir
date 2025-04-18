@@ -702,7 +702,7 @@ fn process_filter_field(
     check_list: &mut Vec<String>, // Added parameter
 ) -> String {
     if let Some(ref nested) = field.nested_expr {
-        let (left, op, right) = &**nested;
+        let (left, op, right, _) = &**nested;
 
         let left_type = query_object.get_complex_field_type(left);
         let right_type = query_object.get_complex_field_type(right);

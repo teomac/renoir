@@ -5,7 +5,6 @@ pub struct SqlToIr;
 // index is used to propagate the stream number to the subqueries
 impl SqlToIr {
     pub fn convert(sql_ast: &SqlAST, index: &mut usize, nested_index: usize) -> String {
-        println!("Converting SQL AST to IR: {:?}", sql_ast);
         let mut parts = Vec::new();
 
         // FROM clause

@@ -153,9 +153,9 @@ impl ConditionParser {
 
                 Ok(FilterClause::Base(FilterConditionType::Comparison(
                     Condition {
-                        left_field: Self::parse_arithmetic_expr(first)?,
+                        left_field: Self::parse_arithmetic_expr(first, false)?,
                         operator,
-                        right_field: Self::parse_arithmetic_expr(right_expr)?,
+                        right_field: Self::parse_arithmetic_expr(right_expr, false)?,
                     },
                 )))
             }
@@ -179,7 +179,7 @@ impl ConditionParser {
                     }
                 } else if first_expr.as_rule() == Rule::arithmetic_expr {
                     // Parse arithmetic expression
-                    Self::parse_arithmetic_expr(first_expr)?
+                    Self::parse_arithmetic_expr(first_expr, false)?
                 } else {
                     return Err(Box::new(IrParseError::InvalidInput(
                         "Invalid expression in IN condition".to_string(),
@@ -267,14 +267,14 @@ impl ConditionParser {
         }
     }
 
-    fn parse_arithmetic_expr(pair: Pair<Rule>) -> Result<ComplexField, Box<IrParseError>> {
+    fn parse_arithmetic_expr(pair: Pair<Rule>, is_parenthesized: bool) -> Result<ComplexField, Box<IrParseError>> {
         let mut inner = pair.into_inner();
         let first_term = inner
             .next()
             .ok_or_else(|| IrParseError::InvalidInput("Empty arithmetic expression".to_string()))?;
-
+    
         let mut result = Self::parse_arithmetic_term(first_term)?;
-
+    
         // Process any additional operations (symbols and terms)
         while let Some(op) = inner.next() {
             if let Some(term) = inner.next() {
@@ -283,13 +283,13 @@ impl ConditionParser {
                     column_ref: None,
                     literal: None,
                     aggregate: None,
-                    nested_expr: Some(Box::new((result, op.as_str().to_string(), next_field))),
+                    nested_expr: Some(Box::new((result, op.as_str().to_string(), next_field, is_parenthesized))),
                     subquery: None,
                     subquery_vec: None,
                 };
             }
         }
-
+    
         Ok(result)
     }
 
@@ -299,17 +299,15 @@ impl ConditionParser {
             .into_inner()
             .next()
             .ok_or_else(|| IrParseError::InvalidInput("Empty arithmetic term".to_string()))?;
-
+    
         match inner.as_rule() {
             Rule::left_parenthesis => {
-                // If we find a left parenthesis, we expect: left_parenthesis ~ arithmetic_expr ~ right_parenthesis
                 let expr = pair
                     .into_inner()
                     .nth(1) // Get the arithmetic_expr between parentheses
-                    .ok_or_else(|| {
-                        IrParseError::InvalidInput("Empty parenthesized expression".to_string())
-                    })?;
-                Self::parse_arithmetic_expr(expr)
+                    .ok_or_else(|| IrParseError::InvalidInput("Empty parenthesized expression".to_string()))?;
+                // Parse with is_parenthesized set to true
+                Self::parse_arithmetic_expr(expr, true)
             }
             Rule::arithmetic_factor => Self::parse_arithmetic_operand(inner),
             Rule::subquery => {
@@ -326,7 +324,7 @@ impl ConditionParser {
             _ => Err(Box::new(IrParseError::InvalidInput(format!(
                 "Unexpected token in arithmetic term: {:?}",
                 inner.as_rule()
-            )))),
+            ))))
         }
     }
 

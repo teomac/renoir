@@ -193,7 +193,7 @@ pub fn process_complex_field(
 
     if let Some(ref nested) = field.nested_expr {
         // Handle nested expression (left_field OP right_field)
-        let (left, op, right) = &**nested;
+        let (left, op, right, _) = &**nested;
 
         let left_type = query_object.get_complex_field_type(left);
         let right_type = query_object.get_complex_field_type(right);

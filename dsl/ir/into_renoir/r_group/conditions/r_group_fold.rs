@@ -28,7 +28,7 @@ pub fn create_fold_operation(
                         // These will be Option types
                         let actual_type = match (agg_type, val_type.as_str()) {
                             (AggregateType::Max | AggregateType::Min, "i64") => {
-                                "Option<f64>".to_string()
+                                "Option<i64>".to_string()
                             }
                             _ => format!("Option<{}>", val_type),
                         };
@@ -222,11 +222,11 @@ pub fn create_fold_operation(
                             AggregateType::Max => {
                                 update_code.push_str(&format!(
                                     "if let Some({}val) = {} {{ {}acc{} = Some(match {}acc{} {{
-                                            Some(current_max) => current_max.max({}val as f64),
-                                            None => val as f64
+                                            Some(current_max) => current_max.max({}val),
+                                            None => val
                                         }});
                                     }}\n",
-                                    if !single_agg || col_type != "i64" {
+                                    if !single_agg || col_type != "f64" {
                                         String::from("")
                                     } else {
                                         String::from("mut ")
@@ -252,7 +252,7 @@ pub fn create_fold_operation(
                                     } else {
                                         format!(".{}", pos)
                                     },
-                                    if !single_agg || col_type != "i64" {
+                                    if !single_agg || col_type != "f64" {
                                         String::from("")
                                     } else {
                                         String::from("&mut ")
@@ -288,11 +288,11 @@ pub fn create_fold_operation(
                             AggregateType::Min => {
                                 update_code.push_str(&format!(
                                     "if let Some({}val) = {} {{{}acc{} = Some(match {}acc{} {{
-                                            Some(current_min) => current_min.min({}val as f64),
-                                            None => val as f64
+                                            Some(current_min) => current_min.min({}val),
+                                            None => val
                                         }});
                                     }}\n",
-                                    if !single_agg || col_type != "i64" {
+                                    if !single_agg || col_type != "f64" {
                                         String::from("")
                                     } else {
                                         String::from("mut ")
@@ -318,7 +318,7 @@ pub fn create_fold_operation(
                                     } else {
                                         format!(".{}", pos)
                                     },
-                                    if !single_agg || col_type != "i64" {
+                                    if !single_agg || col_type != "f64" {
                                         String::from("")
                                     } else {
                                         String::from("&mut ")

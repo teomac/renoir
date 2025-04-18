@@ -140,7 +140,7 @@ pub struct ComplexField {
     pub column_ref: Option<ColumnRef>,
     pub literal: Option<IrLiteral>,
     pub aggregate: Option<AggregateFunction>,
-    pub nested_expr: Option<Box<(ComplexField, String, ComplexField)>>,
+    pub nested_expr: Option<Box<(ComplexField, String, ComplexField, bool)>>, //bool true if parenthesized
     pub subquery: Option<Arc<IrPlan>>,
     pub subquery_vec: Option<(String, String)>, // <name, type>
 }
@@ -334,8 +334,8 @@ impl std::fmt::Display for AggregateType {
 impl std::fmt::Display for ComplexField {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         if let Some(ref nested) = self.nested_expr {
-            let (left, op, right) = &**nested;
-            write!(f, "({} {} {})", left, op, right)
+            let (left, op, right, is_par) = &**nested;
+            write!(f, "{}{} {} {}{}", is_par, left, op, right, is_par)
         } else if let Some(ref col) = self.column_ref {
             write!(f, "{}", col)
         } else if let Some(ref lit) = self.literal {
