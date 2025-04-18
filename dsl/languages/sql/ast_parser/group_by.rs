@@ -555,15 +555,18 @@ impl GroupByParser {
     }
 
     // Add method to parse arithmetic expressions in HAVING clause
-    fn parse_arithmetic_expr(pair: Pair<Rule>, is_parenthesized: bool) -> Result<ArithmeticExpr, Box<SqlParseError>> {
+    fn parse_arithmetic_expr(
+        pair: Pair<Rule>,
+        is_parenthesized: bool,
+    ) -> Result<ArithmeticExpr, Box<SqlParseError>> {
         match pair.as_rule() {
             Rule::arithmetic_expr => {
                 let mut pairs = pair.clone().into_inner().peekable();
 
-                // Parse first term
                 let first_term = pairs
                     .next()
                     .ok_or_else(|| SqlParseError::InvalidInput("Missing first term".to_string()))?;
+
                 let mut left = Self::parse_arithmetic_term(first_term)?;
 
                 // Process any subsequent operations
@@ -574,15 +577,23 @@ impl GroupByParser {
                             Box::new(left),
                             op.as_str().to_string(),
                             Box::new(right),
-                            is_parenthesized,
+                            false, // Intermediate operations are not parenthesized
                         );
+                    }
+                }
+
+                if is_parenthesized {
+                    match left {
+                        ArithmeticExpr::NestedExpr(l, op, r, _) => {
+                            left = ArithmeticExpr::NestedExpr(l, op, r, true);
+                        }
+                        _ => {}
                     }
                 }
 
                 Ok(left)
             }
             Rule::subquery_expr => {
-                // New: Handle subquery in arithmetic expression
                 let subquery = SqlParser::parse_subquery(pair)?;
                 Ok(ArithmeticExpr::Subquery(Box::new(subquery)))
             }
@@ -612,13 +623,13 @@ impl GroupByParser {
                         inner.next();
 
                         // Parse with is_parenthesized set to true
-                    let inner_expr = Self::parse_arithmetic_expr(expr, true)?;
-                    match inner_expr {
-                        ArithmeticExpr::NestedExpr(left, op, right, _) => {
-                            Ok(ArithmeticExpr::NestedExpr(left, op, right, true))
+                        let inner_expr = Self::parse_arithmetic_expr(expr, true)?;
+                        match inner_expr {
+                            ArithmeticExpr::NestedExpr(left, op, right, _) => {
+                                Ok(ArithmeticExpr::NestedExpr(left, op, right, true))
+                            }
+                            other => Ok(other),
                         }
-                        other => Ok(other),
-                    }
                     }
                     _ => Self::parse_arithmetic_factor(first),
                 }

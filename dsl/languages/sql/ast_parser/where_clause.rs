@@ -292,28 +292,35 @@ impl ConditionParser {
             Rule::arithmetic_expr => {
                 let mut pairs = pair.clone().into_inner().peekable();
     
-                // Get first term (which might be parenthesized)
                 let first_term = pairs
                     .next()
                     .ok_or_else(|| SqlParseError::InvalidInput("Missing first term".to_string()))?;
-
                     
                 let mut left = Self::parse_arithmetic_term(first_term)?;
-
-                 // Process any subsequent operations
+    
+                // Process any subsequent operations
                 while let Some(op) = pairs.next() {
-                if let Some(next_term) = pairs.next() {
-                    let right = Self::parse_arithmetic_term(next_term)?;
-                    left = ArithmeticExpr::NestedExpr(
-                        Box::new(left),
-                        op.as_str().to_string(),
-                        Box::new(right),
-                        is_parenthesized
-                    );
+                    if let Some(next_term) = pairs.next() {
+                        let right = Self::parse_arithmetic_term(next_term)?;
+                        left = ArithmeticExpr::NestedExpr(
+                            Box::new(left),
+                            op.as_str().to_string(),
+                            Box::new(right),
+                            false // Intermediate operations are not parenthesized
+                        );
+                    }
                 }
-            }
-
-            Ok(left)
+    
+                if is_parenthesized {
+                    match left {
+                        ArithmeticExpr::NestedExpr(l, op, r, _) => {
+                            left = ArithmeticExpr::NestedExpr(l, op, r, true);
+                        }
+                        _ => {}
+                    }
+                }
+    
+                Ok(left)
             }
             _ => Err(Box::new(SqlParseError::InvalidInput(format!(
                 "Expected arithmetic expression, got {:?}",

@@ -36,39 +36,39 @@ impl SqlToIr {
         };
 
         let select_strs: Vec<String> = sql_ast
-        .select
-        .select
-        .iter()
-        .map(|select_clause| {
-            let selection_str = match &select_clause.selection {
-                SelectType::Simple(col_ref) => col_ref.to_string(),
-                SelectType::Aggregate(func, col_ref) => {
-                    let agg = match func {
-                        AggregateFunction::Max => "max",
-                        AggregateFunction::Min => "min",
-                        AggregateFunction::Sum => "sum",
-                        AggregateFunction::Avg => "avg",
-                        AggregateFunction::Count => "count",
-                    };
-                    format!("{}({})", agg, col_ref)
-                }
-                SelectType::ArithmeticExpr(expr) => {
-                    Self::arithmetic_expr_to_string(expr, index, nested_index)
-                }
-                SelectType::StringLiteral(val) => format!("'{}'", val),
-                SelectType::Subquery(subquery) => {
-                    format!("({})", Self::convert(subquery, index, nested_index + 1))
-                }
-            };
+            .select
+            .select
+            .iter()
+            .map(|select_clause| {
+                let selection_str = match &select_clause.selection {
+                    SelectType::Simple(col_ref) => col_ref.to_string(),
+                    SelectType::Aggregate(func, col_ref) => {
+                        let agg = match func {
+                            AggregateFunction::Max => "max",
+                            AggregateFunction::Min => "min",
+                            AggregateFunction::Sum => "sum",
+                            AggregateFunction::Avg => "avg",
+                            AggregateFunction::Count => "count",
+                        };
+                        format!("{}({})", agg, col_ref)
+                    }
+                    SelectType::ArithmeticExpr(expr) => {
+                        Self::arithmetic_expr_to_string(expr, index, nested_index)
+                    }
+                    SelectType::StringLiteral(val) => format!("'{}'", val),
+                    SelectType::Subquery(subquery) => {
+                        format!("({})", Self::convert(subquery, index, nested_index + 1))
+                    }
+                };
 
-            // Add alias if present
-            if let Some(alias) = &select_clause.alias {
-                format!("{} as {}", selection_str, alias)
-            } else {
-                selection_str
-            }
-        })
-        .collect();
+                // Add alias if present
+                if let Some(alias) = &select_clause.alias {
+                    format!("{} as {}", selection_str, alias)
+                } else {
+                    selection_str
+                }
+            })
+            .collect();
 
         parts.push(format!("{} {}", select_keyword, select_strs.join(", ")));
 
@@ -302,17 +302,9 @@ impl SqlToIr {
                     // Add parentheses around binary operations
                     format!(
                         "{}{}{}",
-                        if *is_parenthesized {
-                            "("
-                        } else {
-                            ""
-                        },
+                        if *is_parenthesized { "" } else { "" },
                         Self::arithmetic_expr_to_string(arithmetic, index, nested_index),
-                        if *is_parenthesized {
-                            ")"
-                        } else {
-                            ""
-                        }
+                        if *is_parenthesized { "" } else { "" }
                     )
                 }
                 _ => Self::arithmetic_expr_to_string(arithmetic, index, nested_index),
@@ -360,7 +352,7 @@ impl SqlToIr {
             ArithmeticExpr::NestedExpr(left, op, right, is_parenthesized) => {
                 let left_str = Self::arithmetic_expr_to_string(left, index, nested_index);
                 let right_str = Self::arithmetic_expr_to_string(right, index, nested_index);
-                
+
                 let expr = format!("{} {} {}", left_str, op, right_str);
                 if *is_parenthesized {
                     format!("({})", expr)
@@ -614,7 +606,7 @@ impl SqlToIr {
 
         items.join(", ")
     }
-    
+
     fn get_stream_prefix(index: usize) -> String {
         match index {
             0 => "stream".to_string(),

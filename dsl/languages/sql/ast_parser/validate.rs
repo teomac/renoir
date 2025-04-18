@@ -57,8 +57,7 @@ fn validate_order_by(ast: &SqlAST) -> Result<(), Box<SqlParseError>> {
             let table_name = &item.column.table;
 
             let in_select = select_columns.iter().any(|col| {
-                col.column == *column_name &&
-                (col.table == *table_name || table_name.is_none())
+                col.column == *column_name && (col.table == *table_name || table_name.is_none())
             });
 
             let matches_alias =
@@ -101,7 +100,6 @@ fn extract_columns_from_arithmetic(expr: &ArithmeticExpr, columns: &mut Vec<Colu
         }
     }
 }
-
 
 // check if where has aggregates
 fn validate_no_aggregates_in_where(clause: &Option<WhereClause>) -> Result<(), Box<SqlParseError>> {
