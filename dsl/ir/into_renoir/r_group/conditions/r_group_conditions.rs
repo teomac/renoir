@@ -144,13 +144,13 @@ fn collect_field_aggregates(
 
             // Check arithmetic operations are only performed on numeric types
             if op == "+" || op == "-" || op == "*" || op == "/" || op == "^" {
-                if left_type != "f64" && left_type != "i64" {
+                if left_type != "f64" && left_type != "i64" && left_type != "usize" {
                     panic!(
                         "Invalid arithmetic operation on non-numeric type: {}",
                         left_type
                     );
                 }
-                if right_type != "f64" && right_type != "i64" {
+                if right_type != "f64" && right_type != "i64"  && right_type != "usize" {
                     panic!(
                         "Invalid arithmetic operation on non-numeric type: {}",
                         right_type

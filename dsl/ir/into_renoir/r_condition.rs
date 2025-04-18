@@ -78,7 +78,7 @@ fn process_arithmetic_expression(
     query_object: &QueryObject,
 ) -> String {
     if let Some(ref nested) = field.nested_expr {
-        let (left, op, right, _) = &**nested;
+        let (left, op, right, is_par) = &**nested;
 
         let left_type = query_object.get_complex_field_type(left);
         let right_type = query_object.get_complex_field_type(right);
@@ -92,10 +92,12 @@ fn process_arithmetic_expression(
                 // Division always results in f64
                 if op == "/" {
                     return format!(
-                        "({} as f64) {} ({} as f64)",
+                        "{}({} as f64) {} ({} as f64){}",
+                        if *is_par { "(" } else { "" },
                         process_arithmetic_expression(left, check_list, query_object),
                         op,
-                        process_arithmetic_expression(right, check_list, query_object)
+                        process_arithmetic_expression(right, check_list, query_object),
+                        if *is_par { ")" } else { "" }
                     );
                 }
 
@@ -139,12 +141,33 @@ fn process_arithmetic_expression(
 
                 //if left is i64 and right is float or vice versa, convert the i64 to f64
                 if left_type == "i64" && right_type == "f64" {
-                    return format!("({} as f64 {} {})", processed_left, op, processed_right);
+                    return format!(
+                        "{}({} as f64) {} {}{}",
+                        if *is_par { "(" } else { "" },
+                        processed_left,
+                        op,
+                        processed_right,
+                        if *is_par { ")" } else { "" }
+                    );
                 } else if left_type == "f64" && right_type == "i64" {
-                    return format!("({} {} {} as f64)", processed_left, op, processed_right);
+                    return format!(
+                        "{}{} {} ({} as f64){}",
+                        if *is_par { "(" } else { "" },
+                        processed_left,
+                        op,
+                        processed_right,
+                        if *is_par { ")" } else { "" }
+                    );
                 }
 
-                format!("({} {} {})", processed_left, op, processed_right)
+                format!(
+                    "{}{} {} {}{}",
+                    if *is_par { "(" } else { "" },
+                    processed_left,
+                    op,
+                    processed_right,
+                    if *is_par { ")" } else { "" }
+                )
             } else {
                 panic!(
                     "Invalid arithmetic expression - incompatible types: {} and {}",
@@ -167,10 +190,12 @@ fn process_arithmetic_expression(
             // Division always results in f64
             if op == "/" {
                 return format!(
-                    "({} as f64) {} ({} as f64)",
+                    "{}({} as f64) {} ({} as f64){}",
+                    if *is_par { "(" } else { "" },
                     process_arithmetic_expression(left, check_list, query_object),
                     op,
-                    process_arithmetic_expression(right, check_list, query_object)
+                    process_arithmetic_expression(right, check_list, query_object),
+                    if *is_par { ")" } else { "" }
                 );
             }
 
@@ -190,10 +215,12 @@ fn process_arithmetic_expression(
 
             // Regular arithmetic with same types
             format!(
-                "({} {} {})",
+                "{}{} {} {}{}",
+                if *is_par { "(" } else { "" },
                 process_arithmetic_expression(left, check_list, query_object),
                 op,
-                process_arithmetic_expression(right, check_list, query_object)
+                process_arithmetic_expression(right, check_list, query_object),
+                if *is_par { ")" } else { "" }
             )
         }
     } else if let Some(ref col) = field.column_ref {

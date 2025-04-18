@@ -542,7 +542,7 @@ fn process_complex_field_for_map(
 
     if let Some(ref nested) = field.nested_expr {
         // Handle nested expression (left_field OP right_field)
-        let (left, op, right, _) = &**nested;
+        let (left, op, right, is_par) = &**nested;
 
         let left_type = query_object.get_complex_field_type(left);
         let right_type = query_object.get_complex_field_type(right);
@@ -555,7 +555,8 @@ fn process_complex_field_for_map(
                 // Division always results in f64
                 if op == "/" {
                     return format!(
-                        "({} as f64) {} ({} as f64)",
+                        "{}({} as f64) {} ({} as f64){}",
+                        if *is_par { "(" } else { "" },
                         process_complex_field_for_map(
                             left,
                             stream_name,
@@ -570,7 +571,8 @@ fn process_complex_field_for_map(
                             acc_info,
                             query_object,
                             check_list
-                        )
+                        ),
+                        if *is_par { ")" } else { "" }
                     );
                 }
 
@@ -635,12 +637,33 @@ fn process_complex_field_for_map(
                 };
 
                 if right_type == "f64" {
-                    return format!("({} as f64 {} {})", processed_left, op, processed_right);
+                    return format!(
+                        "{}({} as f64) {} {}{}",
+                        if *is_par { "(" } else { "" },
+                        processed_left,
+                        op,
+                        processed_right,
+                        if *is_par { ")" } else { "" }
+                    );
                 } else if left_type == "f64" {
-                    return format!("({} {} {} as f64)", processed_left, op, processed_right);
+                    return format!(
+                        "{}{} {} ({} as f64){}",
+                        if *is_par { "(" } else { "" },
+                        processed_left,
+                        op,
+                        processed_right,
+                        if *is_par { ")" } else { "" }
+                    );
                 }
 
-                format!("({} {} {})", processed_left, op, processed_right)
+                format!(
+                    "{}{} {} {}{}",
+                    if *is_par { "(" } else { "" },
+                    processed_left,
+                    op,
+                    processed_right,
+                    if *is_par { ")" } else { "" }
+                )
             } else {
                 panic!(
                     "Invalid arithmetic expression - incompatible types: {} and {}",
@@ -665,7 +688,8 @@ fn process_complex_field_for_map(
 
             if op == "/" {
                 return format!(
-                    "({} as f64) {} ({} as f64)",
+                    "{}({} as f64) {} ({} as f64){}",
+                    if *is_par { "(" } else { "" },
                     process_complex_field_for_map(
                         left,
                         stream_name,
@@ -680,7 +704,8 @@ fn process_complex_field_for_map(
                         acc_info,
                         query_object,
                         check_list
-                    )
+                    ),
+                    if *is_par { ")" } else { "" }
                 );
             }
 
@@ -708,7 +733,8 @@ fn process_complex_field_for_map(
             }
 
             format!(
-                "({} {} {})",
+                "{}{} {} {}{}",
+                if *is_par { "(" } else { "" },
                 process_complex_field_for_map(
                     left,
                     stream_name,
@@ -723,7 +749,8 @@ fn process_complex_field_for_map(
                     acc_info,
                     query_object,
                     check_list
-                )
+                ),
+                if *is_par { ")" } else { "" }
             )
         }
     } else if let Some(ref col) = field.column_ref {
@@ -804,7 +831,7 @@ fn process_complex_field_for_map(
                     sum_pos
                 ));
                 format!(
-                    "(x{}.{} as f64) / (x{}.{} as f64)",
+                    "(x{}{}.unwrap() as f64) / (x{}{} as f64)",
                     if is_keyed { ".1" } else { "" },
                     if is_single_acc {
                         "".to_string()
@@ -874,11 +901,9 @@ fn process_complex_field_for_map(
     } else if let Some((ref result, ref result_type)) = field.subquery_vec {
         if result_type == "String" {
             format!("{}.first().unwrap().unwrap().to_string().clone()", result)
-        } 
-        else if result_type == "f64" {
+        } else if result_type == "f64" {
             format!("{}.first().unwrap().unwrap().into_inner()", result)
-        } 
-        else {
+        } else {
             format!("{}.first().unwrap().unwrap().clone()", result)
         }
     } else {

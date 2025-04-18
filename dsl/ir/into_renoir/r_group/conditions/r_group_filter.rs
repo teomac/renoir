@@ -702,7 +702,7 @@ fn process_filter_field(
     check_list: &mut Vec<String>, // Added parameter
 ) -> String {
     if let Some(ref nested) = field.nested_expr {
-        let (left, op, right, _) = &**nested;
+        let (left, op, right, is_par) = &**nested;
 
         let left_type = query_object.get_complex_field_type(left);
         let right_type = query_object.get_complex_field_type(right);
@@ -712,12 +712,19 @@ fn process_filter_field(
 
         // Improved type handling for arithmetic operations
         if left_type != right_type {
-            if (left_type == "f64" || left_type == "i64")
-                && (right_type == "f64" || right_type == "i64")
+            if (left_type == "f64" || left_type == "i64" || left_type == "usize")
+                && (right_type == "f64" || right_type == "i64" || right_type == "usize")
             {
                 // Division always results in f64
                 if op == "/" {
-                    return format!("({} as f64) {} ({} as f64)", left_expr, op, right_expr);
+                    return format!(
+                        "{}({} as f64) {} ({} as f64){}",
+                        if *is_par { "(" } else { "" },
+                        left_expr,
+                        op,
+                        right_expr,
+                        if *is_par { ")" } else { "" }
+                    );
                 }
 
                 // Special handling for power operation (^)
@@ -726,7 +733,7 @@ fn process_filter_field(
                     if left_type == "f64" || right_type == "f64" {
                         return format!(
                             "({}).powf({} as f64)",
-                            if left_type == "i64" {
+                            if left_type == "i64" || left_type == "usize" {
                                 format!("({} as f64)", left_expr)
                             } else {
                                 left_expr
@@ -740,16 +747,37 @@ fn process_filter_field(
                 }
 
                 // Add proper type conversion for other operations
-                if left_type == "i64" && right_type == "f64" {
-                    return format!("({} as f64) {} {}", left_expr, op, right_expr);
-                } else if left_type == "f64" && right_type == "i64" {
-                    return format!("{} {} ({} as f64)", left_expr, op, right_expr);
+                if right_type == "f64" {
+                    return format!(
+                        "{}({} as f64) {} {}{}",
+                        if *is_par { "(" } else { "" },
+                        left_expr,
+                        op,
+                        right_expr,
+                        if *is_par { ")" } else { "" }
+                    );
+                } else if left_type == "f64" {
+                    return format!(
+                        "{}{} {} ({} as f64){}",
+                        if *is_par { "(" } else { "" },
+                        left_expr,
+                        op,
+                        right_expr,
+                        if *is_par { ")" } else { "" }
+                    );
                 }
             }
         } else {
             // Same types
             if op == "/" {
-                return format!("({} as f64) {} ({} as f64)", left_expr, op, right_expr);
+                return format!(
+                    "{}({} as f64) {} ({} as f64){}",
+                    if *is_par { "(" } else { "" },
+                    left_expr,
+                    op,
+                    right_expr,
+                    if *is_par { ")" } else { "" }
+                );
             } else if op == "^" {
                 if left_type == "f64" {
                     return format!("({}).powf({})", left_expr, right_expr);
@@ -759,7 +787,14 @@ fn process_filter_field(
             }
         }
 
-        format!("({} {} {})", left_expr, op, right_expr)
+        format!(
+            "{}{} {} {}{}",
+            if *is_par { "(" } else { "" },
+            left_expr,
+            op,
+            right_expr,
+            if *is_par { ")" } else { "" }
+        )
     } else if let Some(ref col) = field.column_ref {
         //get type
         let as_ref = if query_object.get_type(col) == "String" {

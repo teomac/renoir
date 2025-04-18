@@ -152,6 +152,8 @@ pub fn process_query(
     //ir_ast = manage_subqueries(&ir_ast, &output_path.to_string(), &mut query_object).unwrap();
     let ir_ast = manage_subqueries(&ir_ast, &output_path.to_string(), &mut query_object).unwrap();
 
+    println!("IR AST: {:?}", ir_ast);
+
     query_object = query_object.populate(&ir_ast);
     //println!("Ir AST: {:?}", query_object.ir_ast);
     query_object.collect_projection_aggregates(&ir_ast);

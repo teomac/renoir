@@ -193,7 +193,7 @@ pub fn process_complex_field(
 
     if let Some(ref nested) = field.nested_expr {
         // Handle nested expression (left_field OP right_field)
-        let (left, op, right, _) = &**nested;
+        let (left, op, right, is_par) = &**nested;
 
         let left_type = query_object.get_complex_field_type(left);
         let right_type = query_object.get_complex_field_type(right);
@@ -206,7 +206,8 @@ pub fn process_complex_field(
                 // Division always results in f64
                 if op == "/" {
                     return format!(
-                        "({} as f64) {} ({} as f64)",
+                        "{}({} as f64) {} ({} as f64){}",
+                        if *is_par { "(" } else { "" },
                         process_complex_field(
                             left,
                             stream_name,
@@ -221,7 +222,8 @@ pub fn process_complex_field(
                             query_object,
                             check_list,
                             all_streams
-                        )
+                        ),
+                        if *is_par { ")" } else { "" }
                     );
                 }
 
@@ -284,12 +286,33 @@ pub fn process_complex_field(
 
                 //if left is i64 and right is float or vice versa, convert the i64 to f64
                 if right_type == "f64" {
-                    return format!("({} as f64 {} {})", processed_left, op, processed_right);
+                    return format!(
+                        "{}({} as f64) {} {}{}",
+                        if *is_par { "(" } else { "" },
+                        processed_left,
+                        op,
+                        processed_right,
+                        if *is_par { ")" } else { "" }
+                    );
                 } else if left_type == "f64" {
-                    return format!("({} {} {} as f64)", processed_left, op, processed_right);
+                    return format!(
+                        "{}{} {} ({} as f64){}",
+                        if *is_par { "(" } else { "" },
+                        processed_left,
+                        op,
+                        processed_right,
+                        if *is_par { ")" } else { "" }
+                    );
                 }
 
-                format!("({} {} {})", processed_left, op, processed_right)
+                format!(
+                    "{}{} {} {}{}",
+                    if *is_par { "(" } else { "" },
+                    processed_left,
+                    op,
+                    processed_right,
+                    if *is_par { ")" } else { "" }
+                )
             } else {
                 panic!(
                     "Invalid arithmetic expression - incompatible types: {} and {}",
@@ -316,7 +339,8 @@ pub fn process_complex_field(
             // Division always results in f64
             if op == "/" {
                 return format!(
-                    "({} as f64) {} ({} as f64)",
+                    "{}({} as f64) {} ({} as f64){}",
+                    if *is_par { "(" } else { "" },
                     process_complex_field(left, stream_name, query_object, check_list, all_streams),
                     op,
                     process_complex_field(
@@ -325,7 +349,8 @@ pub fn process_complex_field(
                         query_object,
                         check_list,
                         all_streams
-                    )
+                    ),
+                    if *is_par { ")" } else { "" }
                 );
             }
 
@@ -352,10 +377,13 @@ pub fn process_complex_field(
 
             // Regular arithmetic with same types
             format!(
-                "({} {} {})",
+                "{}{} {} {}{}",
+                if *is_par { "(" } else { "" },
                 process_complex_field(left, stream_name, query_object, check_list, all_streams),
                 op,
-                process_complex_field(right, stream_name, query_object, check_list, all_streams)
+                process_complex_field(right, stream_name, query_object, check_list, all_streams),
+                if *is_par { ")" } else { "" }
+                
             )
         }
     } else if let Some(ref col) = field.column_ref {
@@ -427,11 +455,9 @@ pub fn process_complex_field(
     } else if let Some((ref result, ref result_type)) = field.subquery_vec {
         if result_type == "String" {
             format!("{}.first().unwrap().unwrap().to_string().clone()", result)
-        }
-        else if result_type == "f64" {
+        } else if result_type == "f64" {
             format!("{}.first().unwrap().unwrap().into_inner() as f64", result)
-        }
-        else {
+        } else {
             format!("{}.first().unwrap().unwrap().clone()", result)
         }
     } else {
