@@ -882,7 +882,7 @@ fn process_filter_field(
         match lit {
             IrLiteral::Integer(i) => {
                 if !cast.is_empty() {
-                    format!("{}.0", i.to_string())
+                    format!("{}.0", i)
                 } else {
                     i.to_string()
                 }

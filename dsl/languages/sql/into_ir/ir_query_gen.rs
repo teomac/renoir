@@ -297,14 +297,10 @@ impl SqlToIr {
     fn convert_where_field(field: &WhereField, index: &mut usize, nested_index: usize) -> String {
         if let Some(ref arithmetic) = field.arithmetic {
             match arithmetic {
-                ArithmeticExpr::NestedExpr(_left, _op, _right, is_parenthesized) => {
+                ArithmeticExpr::NestedExpr(_left, _op, _right, _) => {
                     // Add parentheses around binary operations
-                    format!(
-                        "{}{}{}",
-                        if *is_parenthesized { "" } else { "" },
-                        Self::arithmetic_expr_to_string(arithmetic, index, nested_index),
-                        if *is_parenthesized { "" } else { "" }
-                    )
+
+                    Self::arithmetic_expr_to_string(arithmetic, index, nested_index)
                 }
                 _ => Self::arithmetic_expr_to_string(arithmetic, index, nested_index),
             }

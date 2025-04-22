@@ -583,11 +583,8 @@ impl GroupByParser {
                 }
 
                 if is_parenthesized {
-                    match left {
-                        ArithmeticExpr::NestedExpr(l, op, r, _) => {
-                            left = ArithmeticExpr::NestedExpr(l, op, r, true);
-                        }
-                        _ => {}
+                    if let ArithmeticExpr::NestedExpr(l, op, r, _) = left {
+                        left = ArithmeticExpr::NestedExpr(l, op, r, true);
                     }
                 }
 

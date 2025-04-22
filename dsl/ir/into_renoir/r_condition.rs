@@ -214,7 +214,7 @@ fn process_arithmetic_expression(
         match lit {
             IrLiteral::Integer(i) => {
                 if needs_casting {
-                    format!("{}.0", i.to_string())
+                    format!("{}.0", i)
                 } else {
                     i.to_string()
                 }

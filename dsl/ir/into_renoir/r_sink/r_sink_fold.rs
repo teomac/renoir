@@ -681,33 +681,29 @@ fn process_complex_field_for_map(
             if col_type == "f64" {
                 check_list.push("x.0.is_some()".to_string());
                 return "x.0.unwrap().into_inner()".to_string();
+            } else if needs_casting {
+                return format!("(x.0 as {})", cast);
             } else {
-                if needs_casting {
-                    return format!("(x.0 as {})", cast);
-                } else {
-                    return format!("x.0{}", if col_type == "String" { ".clone()" } else { "" });
-                }
+                return format!("x.0{}", if col_type == "String" { ".clone()" } else { "" });
             }
         } else if col_type == "f64" {
             check_list.push(format!("x.0.{}.is_some()", key_position));
             return format!("x.0.{}.unwrap().into_inner()", key_position);
+        } else if needs_casting {
+            return format!("(x.0.{} as {})", key_position, cast);
         } else {
-            if needs_casting {
-                return format!("(x.0.{} as {})", key_position, cast);
-            } else {
-                return format!(
-                    "x.0.{}{}",
-                    key_position,
-                    if col_type == "String" { ".clone()" } else { "" }
-                );
-            }
+            return format!(
+                "x.0.{}{}",
+                key_position,
+                if col_type == "String" { ".clone()" } else { "" }
+            );
         }
     } else if let Some(ref lit) = field.literal {
         // Handle literal values
         match lit {
             IrLiteral::Integer(i) => {
                 if !cast.is_empty() {
-                    format!("({}.0)", i.to_string())
+                    format!("({}.0)", i)
                 } else {
                     i.to_string()
                 }
@@ -849,12 +845,10 @@ fn process_complex_field_for_map(
             format!("{}.first().unwrap().unwrap().to_string().clone()", result)
         } else if result_type == "f64" {
             format!("{}.first().unwrap().unwrap().into_inner()", result)
+        } else if !cast.is_empty() {
+            format!("({}.first().unwrap().unwrap().clone() as {})", result, cast)
         } else {
-            if !cast.is_empty() {
-                format!("({}.first().unwrap().unwrap().clone() as {})", result, cast)
-            } else {
-                format!("{}.first().unwrap().unwrap().clone()", result)
-            }
+            format!("{}.first().unwrap().unwrap().clone()", result)
         }
     } else {
         panic!("Invalid ComplexField - no valid content");

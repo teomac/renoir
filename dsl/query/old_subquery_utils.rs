@@ -249,7 +249,7 @@ fn process_complex_field(
                 column_ref: None,
                 literal: None,
                 aggregate: None,
-                nested_expr: Some(Box::new((processed_left, op.clone(), processed_right, is_par.clone()))),
+                nested_expr: Some(Box::new((processed_left, op.clone(), processed_right, *is_par))),
                 subquery: None,
                 subquery_vec: None,
             })
