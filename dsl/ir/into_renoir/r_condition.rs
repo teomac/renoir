@@ -75,8 +75,11 @@ pub fn process_filter(clause: &FilterClause, query_object: &mut QueryObject) -> 
 fn process_arithmetic_expression(
     field: &ComplexField,
     check_list: &mut Vec<String>,
+    casting_type: &mut String,
     query_object: &QueryObject,
 ) -> String {
+    let needs_casting = !casting_type.is_empty();
+
     if let Some(ref nested) = field.nested_expr {
         let (left, op, right, is_par) = &**nested;
 
@@ -86,94 +89,49 @@ fn process_arithmetic_expression(
         //type checking
         //if types are different: case 1. they are both numeric, case 2. one is numeric and the other is not
         if left_type != right_type {
-            if (left_type == "f64" || left_type == "i64")
-                && (right_type == "f64" || right_type == "i64")
+            //check if they are both numbers
+            if left_type != "f64"
+                && left_type != "i64"
+                && left_type != "usize"
+                && right_type != "f64"
+                && right_type != "i64"
+                && right_type != "usize"
             {
-                // Division always results in f64
-                if op == "/" {
-                    return format!(
-                        "{}({} as f64) {} ({} as f64){}",
-                        if *is_par { "(" } else { "" },
-                        process_arithmetic_expression(left, check_list, query_object),
-                        op,
-                        process_arithmetic_expression(right, check_list, query_object),
-                        if *is_par { ")" } else { "" }
-                    );
-                }
-
-                // Special handling for power operation (^)
-                if op == "^" {
-                    let left_expr = process_arithmetic_expression(left, check_list, query_object);
-                    let right_expr = process_arithmetic_expression(right, check_list, query_object);
-
-                    // If either operand is f64, use powf
-                    if left_type == "f64" || right_type == "f64" {
-                        return format!(
-                            "({}).powf({} as f64)",
-                            if left_type == "i64" {
-                                format!("({} as f64)", left_expr)
-                            } else {
-                                left_expr
-                            },
-                            right_expr
-                        );
-                    } else {
-                        // Both are integers, use pow
-                        return format!("({}).pow({} as i64)", left_expr, right_expr);
-                    }
-                }
-
-                let left_expr = process_arithmetic_expression(left, check_list, query_object);
-                let right_expr = process_arithmetic_expression(right, check_list, query_object);
-
-                // Add as f64 to integer literals when needed
-                let processed_left = if let Some(IrLiteral::Integer(_)) = left.literal {
-                    format!("{} as f64", left_expr)
-                } else {
-                    left_expr
-                };
-
-                let processed_right = if let Some(IrLiteral::Integer(_)) = right.literal {
-                    format!("{} as f64", right_expr)
-                } else {
-                    right_expr
-                };
-
-                //if left is i64 and right is float or vice versa, convert the i64 to f64
-                if left_type == "i64" && right_type == "f64" {
-                    return format!(
-                        "{}({} as f64) {} {}{}",
-                        if *is_par { "(" } else { "" },
-                        processed_left,
-                        op,
-                        processed_right,
-                        if *is_par { ")" } else { "" }
-                    );
-                } else if left_type == "f64" && right_type == "i64" {
-                    return format!(
-                        "{}{} {} ({} as f64){}",
-                        if *is_par { "(" } else { "" },
-                        processed_left,
-                        op,
-                        processed_right,
-                        if *is_par { ")" } else { "" }
-                    );
-                }
-
-                format!(
-                    "{}{} {} {}{}",
-                    if *is_par { "(" } else { "" },
-                    processed_left,
-                    op,
-                    processed_right,
-                    if *is_par { ")" } else { "" }
-                )
-            } else {
                 panic!(
-                    "Invalid arithmetic expression - incompatible types: {} and {}",
+                    "Invalid arithmetic expression - non-numeric types: {} and {}",
                     left_type, right_type
                 );
+            } else {
+                //they are both numbers
+                if left_type == "f64" || right_type == "f64" {
+                    *casting_type = "f64".to_string();
+                }
             }
+
+            let left_expr =
+                process_arithmetic_expression(left, check_list, casting_type, query_object);
+            let right_expr =
+                process_arithmetic_expression(right, check_list, casting_type, query_object);
+
+            // Special handling for power operation (^)
+            if op == "^" {
+                // If either operand is f64, use powf
+                if left_type == "f64" || right_type == "f64" || casting_type == "f64" {
+                    return format!("({}).powf({})", left_expr, right_expr);
+                } else {
+                    // Both are integers, use pow
+                    return format!("({}).pow({})", left_expr, right_expr);
+                }
+            }
+
+            format!(
+                "{}{} {} {}{}",
+                if *is_par { "(" } else { "" },
+                left_expr,
+                op,
+                right_expr,
+                if *is_par { ")" } else { "" }
+            )
         } else {
             //case same type
             //if operation is plus, minus, multiply, division, or power and types are not numeric, panic
@@ -187,25 +145,15 @@ fn process_arithmetic_expression(
                 );
             }
 
-            // Division always results in f64
-            if op == "/" {
-                return format!(
-                    "{}({} as f64) {} ({} as f64){}",
-                    if *is_par { "(" } else { "" },
-                    process_arithmetic_expression(left, check_list, query_object),
-                    op,
-                    process_arithmetic_expression(right, check_list, query_object),
-                    if *is_par { ")" } else { "" }
-                );
-            }
-
             // Special handling for power operation (^)
             if op == "^" {
-                let left_expr = process_arithmetic_expression(left, check_list, query_object);
-                let right_expr = process_arithmetic_expression(right, check_list, query_object);
+                let left_expr =
+                    process_arithmetic_expression(left, check_list, casting_type, query_object);
+                let right_expr =
+                    process_arithmetic_expression(right, check_list, casting_type, query_object);
 
                 // If both are f64, use powf
-                if left_type == "f64" {
+                if left_type == "f64" || casting_type == "f64" {
                     return format!("({}).powf({})", left_expr, right_expr);
                 } else {
                     // Both are integers, use pow
@@ -217,9 +165,9 @@ fn process_arithmetic_expression(
             format!(
                 "{}{} {} {}{}",
                 if *is_par { "(" } else { "" },
-                process_arithmetic_expression(left, check_list, query_object),
+                process_arithmetic_expression(left, check_list, casting_type, query_object),
                 op,
-                process_arithmetic_expression(right, check_list, query_object),
+                process_arithmetic_expression(right, check_list, casting_type, query_object),
                 if *is_par { ")" } else { "" }
             )
         }
@@ -247,15 +195,30 @@ fn process_arithmetic_expression(
             col.column
         ));
 
-        format!(
-            "x{}.{}{}.unwrap()",
-            stream.get_access().get_base_path(),
-            col.column,
-            if c_type == "String" { ".clone()" } else { "" }
-        )
+        if needs_casting && c_type != "f64"{
+            format!(
+                "(x{}.{}.unwrap() as {})",
+                stream.get_access().get_base_path(),
+                col.column,
+                casting_type
+            )
+        } else {
+            format!(
+                "x{}.{}{}.unwrap()",
+                stream.get_access().get_base_path(),
+                col.column,
+                if c_type == "String" { ".clone()" } else { "" }
+            )
+        }
     } else if let Some(ref lit) = field.literal {
         match lit {
-            IrLiteral::Integer(i) => i.to_string(),
+            IrLiteral::Integer(i) => {
+                if needs_casting {
+                    format!("{}.0", i.to_string())
+                } else {
+                    i.to_string()
+                }
+            }
             IrLiteral::Float(f) => format!("{:.2}", f),
             IrLiteral::String(s) => format!("\"{}\"", s),
             IrLiteral::Boolean(b) => b.to_string(),
@@ -554,6 +517,7 @@ fn process_condition(condition: &FilterConditionType, query_object: &QueryObject
                             }
                         }
                     } else if field.nested_expr.is_some() {
+                        let mut cast = String::new();
                         let mut check_list: Vec<String> = Vec::new();
                         //fourth, we have a nested expression
                         let cond: String = if vector_type != "f64" {
@@ -561,14 +525,24 @@ fn process_condition(condition: &FilterConditionType, query_object: &QueryObject
                                 "{}{}.contains(&Some({}))",
                                 if *negated { "!" } else { "" },
                                 vector_name,
-                                process_arithmetic_expression(field, &mut check_list, query_object)
+                                process_arithmetic_expression(
+                                    field,
+                                    &mut check_list,
+                                    &mut cast,
+                                    query_object
+                                )
                             )
                         } else {
                             format!(
                                 "{}{}.contains(&Some(OrderedFloat(({} as f64))))",
                                 if *negated { "!" } else { "" },
                                 vector_name,
-                                process_arithmetic_expression(field, &mut check_list, query_object)
+                                process_arithmetic_expression(
+                                    field,
+                                    &mut check_list,
+                                    &mut cast,
+                                    query_object
+                                )
                             )
                         };
                         format!(
@@ -667,6 +641,7 @@ fn process_null_check_condition(condition: &NullCondition, query_object: &QueryO
 
 /// Process a comparison condition (>, <, =, etc.)
 fn process_comparison_condition(condition: &Condition, query_object: &QueryObject) -> String {
+    let mut cast = String::new();
     let mut check_list: Vec<String> = Vec::new();
     let operator_str = match condition.operator {
         ComparisonOp::GreaterThan => ">",
@@ -684,27 +659,26 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
     let has_left_column = has_column_reference(&condition.left_field);
     let has_right_column = has_column_reference(&condition.right_field);
 
-    // Handle type conversions for comparison
-    let (left_conversion, right_conversion) = if left_type == "f64" && right_type == "i64" {
-        ("", " as f64")
-    } else if left_type == "i64" && right_type == "f64" {
-        (" as f64", "")
-    } else {
-        ("", "")
-    };
-
     //type checking
     //if types are different
     if left_type != right_type {
-        if (left_type == "String" && right_type != "String")
-            || (left_type != "String" && right_type == "String")
+        //check if they are both numbers
+        if left_type != "f64"
+            && left_type != "i64"
+            && left_type != "usize"
+            && right_type != "f64"
+            && right_type != "i64"
+            && right_type != "usize"
         {
-            panic!("Invalid comparison - cannot compare string with other type");
-        }
-        if (left_type == "bool" && right_type != "bool")
-            || (left_type != "bool" && right_type == "bool")
-        {
-            panic!("Invalid comparison - cannot compare boolean with other type");
+            panic!(
+                "Invalid comparison expression - non-numeric types: {} and {}",
+                left_type, right_type
+            );
+        } else {
+            //they are both numbers
+            if left_type == "f64" || right_type == "f64" {
+                cast = "f64".to_string();
+            }
         }
     } else {
         //if operand is plus, minus, multiply, division, or power and types are not numeric, panic
@@ -740,31 +714,39 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
 
             let null_check_str = null_checks.join(" && ");
             format!(
-                "if {} {{ ({}{}) {} ({}{}) }} else {{ false }}",
+                "if {} {{ {} {} {} }} else {{ false }}",
                 null_check_str,
-                process_arithmetic_expression(&condition.left_field, &mut check_list, query_object),
-                left_conversion,
+                process_arithmetic_expression(
+                    &condition.left_field,
+                    &mut check_list,
+                    &mut cast,
+                    query_object
+                ),
                 operator_str,
                 process_arithmetic_expression(
                     &condition.right_field,
                     &mut check_list,
+                    &mut cast,
                     query_object
                 ),
-                right_conversion
             )
         } else {
             // No column references - direct comparison
             format!(
-                "{}{} {} {}{}",
-                process_arithmetic_expression(&condition.left_field, &mut check_list, query_object),
-                left_conversion,
+                "{} {} {}",
+                process_arithmetic_expression(
+                    &condition.left_field,
+                    &mut check_list,
+                    &mut cast,
+                    query_object
+                ),
                 operator_str,
                 process_arithmetic_expression(
                     &condition.right_field,
                     &mut check_list,
+                    &mut cast,
                     query_object
                 ),
-                right_conversion
             )
         }
     } else {
@@ -800,31 +782,39 @@ fn process_comparison_condition(condition: &Condition, query_object: &QueryObjec
 
             let null_check_str = null_checks.join(" && ");
             format!(
-                "if {} {{ ({}{}) {} ({}{}) }} else {{ false }}",
+                "if {} {{ {} {} {} }} else {{ false }}",
                 null_check_str,
-                process_arithmetic_expression(&condition.left_field, &mut check_list, query_object),
-                left_conversion,
+                process_arithmetic_expression(
+                    &condition.left_field,
+                    &mut check_list,
+                    &mut cast,
+                    query_object
+                ),
                 operator_str,
                 process_arithmetic_expression(
                     &condition.right_field,
                     &mut check_list,
+                    &mut cast,
                     query_object
                 ),
-                right_conversion
             )
         } else {
             // No column references - direct comparison
             format!(
-                "{}{} {} {}{}",
-                process_arithmetic_expression(&condition.left_field, &mut check_list, query_object),
-                left_conversion,
+                "{} {} {}",
+                process_arithmetic_expression(
+                    &condition.left_field,
+                    &mut check_list,
+                    &mut cast,
+                    query_object
+                ),
                 operator_str,
                 process_arithmetic_expression(
                     &condition.right_field,
                     &mut check_list,
+                    &mut cast,
                     query_object
                 ),
-                right_conversion
             )
         }
     }

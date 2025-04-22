@@ -173,9 +173,9 @@ impl GroupParser {
 
                 Ok(GroupClause::Base(GroupBaseCondition::Comparison(
                     Condition {
-                        left_field: Self::parse_arithmetic_expr(first, false)?,
+                        left_field: Self::parse_arithmetic_expr(first)?,
                         operator,
-                        right_field: Self::parse_arithmetic_expr(right_expr, false)?,
+                        right_field: Self::parse_arithmetic_expr(right_expr)?,
                     },
                 )))
             }
@@ -199,7 +199,7 @@ impl GroupParser {
                     }
                 } else if first_expr.as_rule() == Rule::arithmetic_expr {
                     // Parse arithmetic expression
-                    Self::parse_arithmetic_expr(first_expr, false)?
+                    Self::parse_arithmetic_expr(first_expr)?
                 } else {
                     return Err(Box::new(IrParseError::InvalidInput(
                         "Invalid expression in IN condition".to_string(),
@@ -287,50 +287,127 @@ impl GroupParser {
         }
     }
 
-    fn parse_arithmetic_expr(pair: Pair<Rule>, is_parenthesized: bool) -> Result<ComplexField, Box<IrParseError>> {
-        let mut inner = pair.into_inner();
-        let first_term = inner
+    fn parse_arithmetic_expr(pair: Pair<Rule>) -> Result<ComplexField, Box<IrParseError>> {
+        let mut inner_pairs = pair.into_inner();
+        
+        // Parse the first operand
+        let first_pair = inner_pairs
             .next()
             .ok_or_else(|| IrParseError::InvalidInput("Empty arithmetic expression".to_string()))?;
-    
-        let mut result = Self::parse_arithmetic_term(first_term)?;
-    
-        // Process any additional operations (symbols and terms)
-        while let Some(op) = inner.next() {
-            if let Some(term) = inner.next() {
-                let next_field = Self::parse_arithmetic_term(term)?;
-                result = ComplexField {
-                    column_ref: None,
-                    literal: None,
-                    aggregate: None,
-                    nested_expr: Some(Box::new((result, op.as_str().to_string(), next_field, is_parenthesized))),
-                    subquery: None,
-                    subquery_vec: None,
-                };
+        
+        // Start with the first operand
+        let mut result = match first_pair.as_rule() {
+            Rule::arithmetic_par => Self::parse_parenthesized_expr(first_pair)?,
+            Rule::arithmetic_factor => Self::parse_arithmetic_factor(first_pair)?,
+            _ => {
+                return Err(Box::new(IrParseError::InvalidInput(format!(
+                    "Expected arithmetic_par or arithmetic_factor, got {:?}",
+                    first_pair.as_rule()
+                ))))
             }
+        };
+        
+        // Process any additional operations
+        while let (Some(op), Some(next_operand)) = (inner_pairs.next(), inner_pairs.next()) {
+            let operator = op.as_str().to_string();
+            
+            let next_field = match next_operand.as_rule() {
+                Rule::arithmetic_par => Self::parse_parenthesized_expr(next_operand)?,
+                Rule::arithmetic_factor => Self::parse_arithmetic_factor(next_operand)?,
+                _ => {
+                    return Err(Box::new(IrParseError::InvalidInput(format!(
+                        "Expected arithmetic_par or arithmetic_factor, got {:?}",
+                        next_operand.as_rule()
+                    ))))
+                }
+            };
+            
+            // Combine into a nested expression
+            result = ComplexField {
+                column_ref: None,
+                literal: None,
+                aggregate: None,
+                nested_expr: Some(Box::new((result, operator, next_field, false))),
+                subquery: None,
+                subquery_vec: None,
+            };
         }
-    
+        
         Ok(result)
     }
 
-    fn parse_arithmetic_term(pair: Pair<Rule>) -> Result<ComplexField, Box<IrParseError>> {
+    // Method to parse parenthesized expressions
+    fn parse_parenthesized_expr(pair: Pair<Rule>) -> Result<ComplexField, Box<IrParseError>> {
+        let mut inner = pair.into_inner();
+        
+        // Skip the left parenthesis
+        inner.next();
+        
+        // Parse the inner expression
+        let expr = inner
+            .next()
+            .ok_or_else(|| IrParseError::InvalidInput("Empty parentheses".to_string()))?;
+        
+        // Create a complex field from the inner expression with parentheses flag set to true
+        let mut field = Self::parse_arithmetic_expr(expr)?;
+        
+        // If the field has a nested expression, mark it as parenthesized
+        if let Some(nested) = field.nested_expr {
+            let (left, op, right, _) = *nested;
+            field.nested_expr = Some(Box::new((left, op, right, true)));
+        }
+        
+        Ok(field)
+    }
+
+    fn parse_arithmetic_factor(pair: Pair<Rule>) -> Result<ComplexField, Box<IrParseError>> {
         let inner = pair
-            .clone()
             .into_inner()
             .next()
-            .ok_or_else(|| IrParseError::InvalidInput("Empty arithmetic term".to_string()))?;
-    
+            .ok_or_else(|| IrParseError::InvalidInput("Empty arithmetic factor".to_string()))?;
+
         match inner.as_rule() {
-            Rule::left_parenthesis => {
-                let expr = pair
-                    .into_inner()
-                    .nth(1) 
-                    .ok_or_else(|| IrParseError::InvalidInput("Empty parentheses".to_string()))?;
-                
-                // Pass true for is_parenthesized when inside parentheses
-                Self::parse_arithmetic_expr(expr, true)
+            Rule::aggregate_expr => {
+                let agg_func = Self::parse_aggregate_function(inner)?;
+                Ok(ComplexField {
+                    column_ref: None,
+                    literal: None,
+                    aggregate: Some(agg_func),
+                    nested_expr: None,
+                    subquery: None,
+                    subquery_vec: None,
+                })
             }
-            Rule::arithmetic_factor => Self::parse_arithmetic_factor(inner),
+            Rule::value => Ok(ComplexField {
+                column_ref: None,
+                literal: Some(Self::parse_literal(inner)?),
+                aggregate: None,
+                nested_expr: None,
+                subquery: None,
+                subquery_vec: None,
+            }),
+            Rule::qualified_column => {
+                let col_ref = Self::parse_column_ref(inner)?;
+                Ok(ComplexField {
+                    column_ref: Some(col_ref),
+                    literal: None,
+                    aggregate: None,
+                    nested_expr: None,
+                    subquery: None,
+                    subquery_vec: None,
+                })
+            }
+            Rule::identifier => Ok(ComplexField {
+                column_ref: Some(ColumnRef {
+                    table: None,
+                    column: inner.as_str().to_string(),
+                }),
+                literal: None,
+                aggregate: None,
+                nested_expr: None,
+                subquery: None,
+                subquery_vec: None,
+            }),
             Rule::subquery => {
                 let subquery = IrParser::parse_subquery(inner)?;
                 Ok(ComplexField {
@@ -343,68 +420,8 @@ impl GroupParser {
                 })
             }
             _ => Err(Box::new(IrParseError::InvalidInput(format!(
-                "Unexpected token in arithmetic term: {:?}",
+                "Invalid arithmetic factor: {:?}",
                 inner.as_rule()
-            ))))
-        }
-    }
-
-    fn parse_arithmetic_factor(pair: Pair<Rule>) -> Result<ComplexField, Box<IrParseError>> {
-        let operand = pair
-            .into_inner()
-            .next()
-            .ok_or_else(|| IrParseError::InvalidInput("Empty operand".to_string()))?;
-
-        match operand.as_rule() {
-            Rule::value => Ok(ComplexField {
-                column_ref: None,
-                literal: Some(Self::parse_literal(operand)?),
-                aggregate: None,
-                nested_expr: None,
-                subquery: None,
-                subquery_vec: None,
-            }),
-            Rule::qualified_column => Ok(ComplexField {
-                column_ref: Some(Self::parse_column_ref(operand)?),
-                literal: None,
-                aggregate: None,
-                nested_expr: None,
-                subquery: None,
-                subquery_vec: None,
-            }),
-            Rule::identifier => Ok(ComplexField {
-                column_ref: Some(ColumnRef {
-                    table: None,
-                    column: operand.as_str().to_string(),
-                }),
-                literal: None,
-                aggregate: None,
-                nested_expr: None,
-                subquery: None,
-                subquery_vec: None,
-            }),
-            Rule::aggregate_expr => {
-                let agg_func = Self::parse_aggregate_function(operand)?;
-                Ok(ComplexField {
-                    column_ref: None,
-                    literal: None,
-                    aggregate: Some(agg_func),
-                    nested_expr: None,
-                    subquery: None,
-                    subquery_vec: None,
-                })
-            }
-            Rule::subquery => Ok(ComplexField {
-                column_ref: None,
-                literal: None,
-                aggregate: None,
-                nested_expr: None,
-                subquery: Some(IrParser::parse_subquery(operand)?),
-                subquery_vec: None,
-            }),
-            _ => Err(Box::new(IrParseError::InvalidInput(format!(
-                "Invalid operand type: {:?}",
-                operand.as_rule()
             )))),
         }
     }

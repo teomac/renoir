@@ -1,5 +1,3 @@
-use core::panic;
-
 use crate::dsl::ir::ir_ast_structure::{
     AggregateType, ComplexField, GroupBaseCondition, GroupClause, NullOp,
 };
@@ -8,6 +6,7 @@ use crate::dsl::ir::r_utils::convert_literal;
 use crate::dsl::ir::{AggregateFunction, BinaryOp, ComparisonOp, InCondition, IrLiteral};
 use crate::dsl::ir::{ColumnRef, QueryObject};
 use crate::dsl::struct_object::utils::check_column_validity;
+use core::panic;
 
 // Function to create the filter operation
 pub fn create_filter_operation(
@@ -40,6 +39,7 @@ fn process_filter_condition(
     acc_info: &GroupAccumulatorInfo,
 ) -> String {
     let mut check_list: Vec<String> = Vec::new();
+    let mut cast = String::new();
     match condition {
         GroupClause::Base(base_condition) => {
             match base_condition {
@@ -57,6 +57,23 @@ fn process_filter_condition(
                     let left_type = query_object.get_complex_field_type(&comp.left_field);
                     let right_type = query_object.get_complex_field_type(&comp.right_field);
 
+                    //check if the types are different
+                    if left_type != right_type {
+                        //check if they are both numeric
+                        if (left_type == "f64" || left_type == "i64" || left_type == "usize")
+                            && (right_type == "f64" || right_type == "i64" || right_type == "usize")
+                        {
+                            if left_type == "f64" || right_type == "f64" {
+                                cast = "f64".to_string();
+                            }
+                        } else {
+                            panic!(
+                                "Invalid comparison - types {} and {} are not compatible",
+                                left_type, right_type
+                            );
+                        }
+                    }
+
                     // Process left and right expressions
                     let left_expr = process_filter_field(
                         &comp.left_field,
@@ -64,6 +81,7 @@ fn process_filter_condition(
                         query_object,
                         acc_info,
                         &mut check_list,
+                        &mut cast,
                     );
                     let right_expr = process_filter_field(
                         &comp.right_field,
@@ -71,60 +89,36 @@ fn process_filter_condition(
                         query_object,
                         acc_info,
                         &mut check_list,
+                        &mut cast,
                     );
 
                     let is_check_list_empty = check_list.is_empty(); // if true there is only one or more count
-                                                                     // Deduplicate and the check list
+
+                    // Deduplicate and the check list
                     check_list.sort();
                     check_list.dedup();
 
                     // Handle type conversions for comparison - improved handling for numeric types
                     if left_type != right_type {
-                        if (left_type == "f64" || left_type == "i64" || left_type == "usize")
-                            && (right_type == "f64" || right_type == "i64" || right_type == "usize")
-                        {
-                            if is_check_list_empty {
-                                format!(
-                                    "({} as f64) {} ({} as f64)",
-                                    left_expr, operator, right_expr
-                                )
-                            } else {
-                                // Cast both to f64
-                                format!(
-                                    "if {} {{({} as f64) {} ({} as f64)}} else {{ false }}",
-                                    check_list.join(" && "),
-                                    left_expr,
-                                    operator,
-                                    right_expr
-                                )
-                            }
-                        } else if is_check_list_empty {
+                        if is_check_list_empty {
                             format!("{} {} {}", left_expr, operator, right_expr)
                         } else {
                             // Different non-numeric types - this should already be caught during validation
                             format!(
-                                "if {} {{({}) {} ({})}} else {{ false }}",
+                                "if {} {{{} {} {}}} else {{ false }}",
                                 check_list.join(" && "),
                                 left_expr,
                                 operator,
                                 right_expr
                             )
                         }
-                    } else if is_check_list_empty {
-                        format!("{} {} {}", left_expr, operator, right_expr)
                     } else {
-                        // Same types
-                        if left_type == "i64" && right_type == "i64" {
-                            format!(
-                                "if {} {{({} as f64) {} ({} as f64)}} else {{ false }}",
-                                check_list.join(" && "),
-                                left_expr,
-                                operator,
-                                right_expr
-                            )
+                        // Same types - no need for casting
+                        if is_check_list_empty {
+                            format!("{} {} {}", left_expr, operator, right_expr)
                         } else {
                             format!(
-                                "if {} {{({}) {} ({})}} else {{ false }}",
+                                "if {} {{{} {} {}}} else {{ false }}",
                                 check_list.join(" && "),
                                 left_expr,
                                 operator,
@@ -612,6 +606,7 @@ fn process_filter_condition(
                                     query_object,
                                     acc_info,
                                     &mut check_list,
+                                    &mut cast,
                                 );
 
                                 // Get the type of the arithmetic expression
@@ -699,7 +694,8 @@ fn process_filter_field(
     keys: &Vec<ColumnRef>,
     query_object: &QueryObject,
     acc_info: &GroupAccumulatorInfo,
-    check_list: &mut Vec<String>, // Added parameter
+    check_list: &mut Vec<String>,
+    cast: &mut String,
 ) -> String {
     if let Some(ref nested) = field.nested_expr {
         let (left, op, right, is_par) = &**nested;
@@ -707,95 +703,80 @@ fn process_filter_field(
         let left_type = query_object.get_complex_field_type(left);
         let right_type = query_object.get_complex_field_type(right);
 
-        let left_expr = process_filter_field(left, keys, query_object, acc_info, check_list);
-        let right_expr = process_filter_field(right, keys, query_object, acc_info, check_list);
+        let left_expr = process_filter_field(left, keys, query_object, acc_info, check_list, cast);
+        let right_expr =
+            process_filter_field(right, keys, query_object, acc_info, check_list, cast);
 
         // Improved type handling for arithmetic operations
         if left_type != right_type {
-            if (left_type == "f64" || left_type == "i64" || left_type == "usize")
-                && (right_type == "f64" || right_type == "i64" || right_type == "usize")
+            if left_type != "f64"
+                && left_type != "i64"
+                && left_type != "usize"
+                && right_type != "f64"
+                && right_type != "i64"
+                && right_type != "usize"
             {
-                // Division always results in f64
-                if op == "/" {
-                    return format!(
-                        "{}({} as f64) {} ({} as f64){}",
-                        if *is_par { "(" } else { "" },
-                        left_expr,
-                        op,
-                        right_expr,
-                        if *is_par { ")" } else { "" }
-                    );
-                }
-
-                // Special handling for power operation (^)
-                if op == "^" {
-                    // If either operand is f64, use powf
-                    if left_type == "f64" || right_type == "f64" {
-                        return format!(
-                            "({}).powf({} as f64)",
-                            if left_type == "i64" || left_type == "usize" {
-                                format!("({} as f64)", left_expr)
-                            } else {
-                                left_expr
-                            },
-                            right_expr
-                        );
-                    } else {
-                        // Both are integers, use pow
-                        return format!("({}).pow({} as u32)", left_expr, right_expr);
-                    }
-                }
-
-                // Add proper type conversion for other operations
-                if right_type == "f64" {
-                    return format!(
-                        "{}({} as f64) {} {}{}",
-                        if *is_par { "(" } else { "" },
-                        left_expr,
-                        op,
-                        right_expr,
-                        if *is_par { ")" } else { "" }
-                    );
-                } else if left_type == "f64" {
-                    return format!(
-                        "{}{} {} ({} as f64){}",
-                        if *is_par { "(" } else { "" },
-                        left_expr,
-                        op,
-                        right_expr,
-                        if *is_par { ")" } else { "" }
-                    );
+                panic!(
+                    "Invalid arithmetic expression - non-numeric types: {} and {}",
+                    left_type, right_type
+                );
+            } else {
+                //they are both numbers
+                if left_type == "f64" || right_type == "f64" {
+                    *cast = "f64".to_string();
                 }
             }
-        } else {
-            // Same types
-            if op == "/" {
-                return format!(
-                    "{}({} as f64) {} ({} as f64){}",
-                    if *is_par { "(" } else { "" },
-                    left_expr,
-                    op,
-                    right_expr,
-                    if *is_par { ")" } else { "" }
-                );
-            } else if op == "^" {
-                if left_type == "f64" {
+            // Special handling for power operation (^)
+            if op == "^" {
+                // If either operand is f64, use powf
+                if left_type == "f64" || right_type == "f64" || cast == "f64" {
                     return format!("({}).powf({})", left_expr, right_expr);
                 } else {
-                    return format!("({}).pow({} as u32)", left_expr, right_expr);
+                    // Both are integers, use pow
+                    return format!("({}).pow({})", left_expr, right_expr);
                 }
             }
-        }
+            format!(
+                "{}{} {} {}{}",
+                if *is_par { "(" } else { "" },
+                left_expr,
+                op,
+                right_expr,
+                if *is_par { ")" } else { "" }
+            )
+        } else {
+            //if operation is plus, minus, multiply, division, or power and types are not numeric, panic
+            if (op == "+" || op == "-" || op == "*" || op == "/" || op == "^")
+                && left_type != "f64"
+                && left_type != "i64"
+                && left_type != "usize"
+            {
+                panic!(
+                    "Invalid arithmetic expression - non-numeric types: {} and {}",
+                    left_type, right_type
+                );
+            }
 
-        format!(
-            "{}{} {} {}{}",
-            if *is_par { "(" } else { "" },
-            left_expr,
-            op,
-            right_expr,
-            if *is_par { ")" } else { "" }
-        )
+            //Special handling for power operation (^)
+            if op == "^" {
+                if left_type == "f64" || cast == "f64" {
+                    return format!("({}).powf({})", left_expr, right_expr);
+                } else {
+                    return format!("({}).pow({})", left_expr, right_expr);
+                }
+            }
+
+            format!(
+                "{}{} {} {}{}",
+                if *is_par { "(" } else { "" },
+                left_expr,
+                op,
+                right_expr,
+                if *is_par { ")" } else { "" }
+            )
+        }
     } else if let Some(ref col) = field.column_ref {
+        let needs_cast = !cast.is_empty();
         //get type
         let as_ref = if query_object.get_type(col) == "String" {
             ".as_ref()"
@@ -808,31 +789,57 @@ fn process_filter_field(
             // It's a key - use its position in the group by tuple
             if keys.len() == 1 {
                 check_list.push(format!("x.0{}.is_some()", as_ref));
-                format!(
-                    "x.0{}.unwrap(){}",
-                    as_ref,
-                    if col_type == "f64" {
-                        ".into_inner()"
-                    } else {
-                        ""
-                    }
-                )
+                if needs_cast {
+                    format!(
+                        "(x.0{}.unwrap(){} as {})",
+                        as_ref,
+                        if col_type == "f64" {
+                            ".into_inner()"
+                        } else {
+                            ""
+                        },
+                        cast
+                    )
+                } else {
+                    format!(
+                        "x.0{}.unwrap(){}",
+                        as_ref,
+                        if col_type == "f64" {
+                            ".into_inner()"
+                        } else {
+                            ""
+                        }
+                    )
+                }
             } else {
                 check_list.push(format!("x.0.{}{}.is_some()", key_position, as_ref));
-                format!(
-                    "x.0.{}{}.unwrap(){}",
-                    key_position,
-                    as_ref,
-                    if col_type == "f64" {
-                        ".into_inner()"
-                    } else {
-                        ""
-                    }
-                )
+                if needs_cast {
+                    format!(
+                        "(x.0.{}{}.unwrap(){} as {})",
+                        key_position,
+                        as_ref,
+                        if col_type == "f64" {
+                            ".into_inner()"
+                        } else {
+                            ""
+                        },
+                        cast
+                    )
+                } else {
+                    format!(
+                        "x.0.{}{}.unwrap(){}",
+                        key_position,
+                        as_ref,
+                        if col_type == "f64" {
+                            ".into_inner()"
+                        } else {
+                            ""
+                        }
+                    )
+                }
             }
         } else {
             // Not a key - use x.1
-
             let stream_name = if col.table.is_some() {
                 query_object
                     .get_stream_from_alias(col.table.as_ref().unwrap())
@@ -854,16 +861,32 @@ fn process_filter_field(
                 as_ref
             ));
 
-            format!(
-                "x.1{}.{}{}.unwrap()",
-                stream.get_access().get_base_path(),
-                col.column,
-                as_ref
-            )
+            if needs_cast {
+                format!(
+                    "(x.1{}.{}{}.unwrap() as {})",
+                    stream.get_access().get_base_path(),
+                    col.column,
+                    as_ref,
+                    cast
+                )
+            } else {
+                format!(
+                    "x.1{}.{}{}.unwrap()",
+                    stream.get_access().get_base_path(),
+                    col.column,
+                    as_ref
+                )
+            }
         }
     } else if let Some(ref lit) = field.literal {
         match lit {
-            IrLiteral::Integer(i) => i.to_string(),
+            IrLiteral::Integer(i) => {
+                if !cast.is_empty() {
+                    format!("{}.0", i.to_string())
+                } else {
+                    i.to_string()
+                }
+            }
             IrLiteral::Float(f) => format!("{:.2}", f),
             IrLiteral::String(s) => format!("\"{}\"", s),
             IrLiteral::Boolean(b) => b.to_string(),
@@ -887,9 +910,19 @@ fn process_filter_field(
         }
 
         match agg.function {
-            AggregateType::Count => col_access.to_string(),
+            AggregateType::Count => {
+                if !cast.is_empty() {
+                    format!("({} as {})", col_access, cast)
+                } else {
+                    col_access.to_string()
+                }
+            }
             AggregateType::Max | AggregateType::Min | AggregateType::Sum => {
-                format!("{}.unwrap()", col_access)
+                if !cast.is_empty() {
+                    format!("({}.unwrap() as {})", col_access, cast)
+                } else {
+                    format!("{}.unwrap()", col_access)
+                }
             }
             AggregateType::Avg => {
                 //get the sum and count positions. Sum position corresponds to the position of the aggregate in the accumulator
@@ -897,7 +930,7 @@ fn process_filter_field(
                     function: AggregateType::Count,
                     column: col.clone(),
                 });
-                format!("{}.unwrap() / x.1.{} as f64", col_access, count_pos)
+                format!("(({}.unwrap() as f64) / (x.1.{} as f64))", col_access, count_pos)
             }
         }
     } else {

@@ -433,12 +433,14 @@ pub fn create_map(
                 }
             }
             ProjectionColumn::ComplexValue(field, _) => {
+                let mut cast = String::new();
                 let temp = process_complex_field_for_map(
                     field,
                     stream_name,
                     acc_info,
                     query_object,
                     &mut check_list,
+                    &mut cast,
                 );
                 check_list.sort();
                 check_list.dedup();
@@ -525,6 +527,7 @@ fn process_complex_field_for_map(
     acc_info: &AccumulatorInfo,
     query_object: &QueryObject,
     check_list: &mut Vec<String>,
+    cast: &mut String,
 ) -> String {
     let stream = query_object.get_stream(stream_name);
     let mut all_streams = Vec::new();
@@ -547,129 +550,61 @@ fn process_complex_field_for_map(
         let left_type = query_object.get_complex_field_type(left);
         let right_type = query_object.get_complex_field_type(right);
 
+        
         // Different types case
         if left_type != right_type {
-            if (left_type == "f64" || left_type == "i64" || left_type == "usize")
-                && (right_type == "f64" || right_type == "i64" || right_type == "usize")
+            if left_type != "f64"
+                && left_type != "i64"
+                && left_type != "usize"
+                && right_type != "f64"
+                && right_type != "i64"
+                && right_type != "usize"
             {
-                // Division always results in f64
-                if op == "/" {
-                    return format!(
-                        "{}({} as f64) {} ({} as f64){}",
-                        if *is_par { "(" } else { "" },
-                        process_complex_field_for_map(
-                            left,
-                            stream_name,
-                            acc_info,
-                            query_object,
-                            check_list
-                        ),
-                        op,
-                        process_complex_field_for_map(
-                            right,
-                            stream_name,
-                            acc_info,
-                            query_object,
-                            check_list
-                        ),
-                        if *is_par { ")" } else { "" }
-                    );
-                }
-
-                // Special handling for power operation (^)
-                if op == "^" {
-                    let left_expr = process_complex_field_for_map(
-                        left,
-                        stream_name,
-                        acc_info,
-                        query_object,
-                        check_list,
-                    );
-                    let right_expr = process_complex_field_for_map(
-                        right,
-                        stream_name,
-                        acc_info,
-                        query_object,
-                        check_list,
-                    );
-
-                    if left_type == "f64" || right_type == "f64" {
-                        return format!(
-                            "({}).powf({} as f64)",
-                            if left_type == "i64" {
-                                format!("({} as f64)", left_expr)
-                            } else {
-                                left_expr
-                            },
-                            right_expr
-                        );
-                    } else {
-                        return format!("({}).pow({} as u32)", left_expr, right_expr);
-                    }
-                }
-
-                let left_expr = process_complex_field_for_map(
-                    left,
-                    stream_name,
-                    acc_info,
-                    query_object,
-                    check_list,
-                );
-                let right_expr = process_complex_field_for_map(
-                    right,
-                    stream_name,
-                    acc_info,
-                    query_object,
-                    check_list,
-                );
-
-                // Add proper type conversions
-                let processed_left = if let Some(IrLiteral::Integer(_)) = left.literal {
-                    format!("{} as f64", left_expr)
-                } else {
-                    left_expr
-                };
-
-                let processed_right = if let Some(IrLiteral::Integer(_)) = right.literal {
-                    format!("{} as f64", right_expr)
-                } else {
-                    right_expr
-                };
-
-                if right_type == "f64" {
-                    return format!(
-                        "{}({} as f64) {} {}{}",
-                        if *is_par { "(" } else { "" },
-                        processed_left,
-                        op,
-                        processed_right,
-                        if *is_par { ")" } else { "" }
-                    );
-                } else if left_type == "f64" {
-                    return format!(
-                        "{}{} {} ({} as f64){}",
-                        if *is_par { "(" } else { "" },
-                        processed_left,
-                        op,
-                        processed_right,
-                        if *is_par { ")" } else { "" }
-                    );
-                }
-
-                format!(
-                    "{}{} {} {}{}",
-                    if *is_par { "(" } else { "" },
-                    processed_left,
-                    op,
-                    processed_right,
-                    if *is_par { ")" } else { "" }
-                )
-            } else {
                 panic!(
-                    "Invalid arithmetic expression - incompatible types: {} and {}",
+                    "Invalid arithmetic expression - non-numeric types: {} and {}",
                     left_type, right_type
                 );
+            } else {
+                //they are both numbers
+                if left_type == "f64" || right_type == "f64" {
+                    *cast = "f64".to_string();
+                }
             }
+
+            let left_expr = process_complex_field_for_map(
+                left,
+                stream_name,
+                acc_info,
+                query_object,
+                check_list,
+                cast,
+            );
+            let right_expr = process_complex_field_for_map(
+                right,
+                stream_name,
+                acc_info,
+                query_object,
+                check_list,
+                cast,
+            );
+
+            // Special handling for power operation (^)
+            if op == "^" {
+                if left_type == "f64" || right_type == "f64" || cast == "f64" {
+                    return format!("({}).powf({})", left_expr, right_expr);
+                } else {
+                    return format!("({}).pow({})", left_expr, right_expr);
+                }
+            }
+
+            format!(
+                "{}{} {} {}{}",
+                if *is_par { "(" } else { "" },
+                left_expr,
+                op,
+                right_expr,
+                if *is_par { ")" } else { "" }
+            )
         } else {
             // Same type case
             if (op == "+" || op == "-" || op == "*" || op == "/" || op == "^")
@@ -686,74 +621,43 @@ fn process_complex_field_for_map(
                 );
             }
 
-            if op == "/" {
-                return format!(
-                    "{}({} as f64) {} ({} as f64){}",
-                    if *is_par { "(" } else { "" },
-                    process_complex_field_for_map(
-                        left,
-                        stream_name,
-                        acc_info,
-                        query_object,
-                        check_list
-                    ),
-                    op,
-                    process_complex_field_for_map(
-                        right,
-                        stream_name,
-                        acc_info,
-                        query_object,
-                        check_list
-                    ),
-                    if *is_par { ")" } else { "" }
-                );
-            }
+            let left_expr = process_complex_field_for_map(
+                left,
+                stream_name,
+                acc_info,
+                query_object,
+                check_list,
+                cast,
+            );
+            let right_expr = process_complex_field_for_map(
+                right,
+                stream_name,
+                acc_info,
+                query_object,
+                check_list,
+                cast,
+            );
 
+            // Special handling for power operation (^)
             if op == "^" {
-                let left_expr = process_complex_field_for_map(
-                    left,
-                    stream_name,
-                    acc_info,
-                    query_object,
-                    check_list,
-                );
-                let right_expr = process_complex_field_for_map(
-                    right,
-                    stream_name,
-                    acc_info,
-                    query_object,
-                    check_list,
-                );
-
-                if left_type == "f64" {
+                if left_type == "f64" || cast == "f64" {
                     return format!("({}).powf({})", left_expr, right_expr);
                 } else {
-                    return format!("({}).pow({} as u32)", left_expr, right_expr);
+                    return format!("({}).pow({})", left_expr, right_expr);
                 }
             }
 
             format!(
                 "{}{} {} {}{}",
                 if *is_par { "(" } else { "" },
-                process_complex_field_for_map(
-                    left,
-                    stream_name,
-                    acc_info,
-                    query_object,
-                    check_list
-                ),
+                left_expr,
                 op,
-                process_complex_field_for_map(
-                    right,
-                    stream_name,
-                    acc_info,
-                    query_object,
-                    check_list
-                ),
+                right_expr,
                 if *is_par { ")" } else { "" }
             )
         }
     } else if let Some(ref col) = field.column_ref {
+        let needs_casting = !cast.is_empty();
         // Handle column reference - must be a key column in grouped context
         // Verify this is a key column
         if !keys.iter().any(|key| key.column == col.column) {
@@ -778,22 +682,36 @@ fn process_complex_field_for_map(
                 check_list.push("x.0.is_some()".to_string());
                 return "x.0.unwrap().into_inner()".to_string();
             } else {
-                return format!("x.0{}", if col_type == "String" { ".clone()" } else { "" });
+                if needs_casting {
+                    return format!("(x.0 as {})", cast);
+                } else {
+                    return format!("x.0{}", if col_type == "String" { ".clone()" } else { "" });
+                }
             }
         } else if col_type == "f64" {
             check_list.push(format!("x.0.{}.is_some()", key_position));
             return format!("x.0.{}.unwrap().into_inner()", key_position);
         } else {
-            return format!(
-                "x.0.{}{}",
-                key_position,
-                if col_type == "String" { ".clone()" } else { "" }
-            );
+            if needs_casting {
+                return format!("(x.0.{} as {})", key_position, cast);
+            } else {
+                return format!(
+                    "x.0.{}{}",
+                    key_position,
+                    if col_type == "String" { ".clone()" } else { "" }
+                );
+            }
         }
     } else if let Some(ref lit) = field.literal {
         // Handle literal values
         match lit {
-            IrLiteral::Integer(i) => i.to_string(),
+            IrLiteral::Integer(i) => {
+                if !cast.is_empty() {
+                    format!("({}.0)", i.to_string())
+                } else {
+                    i.to_string()
+                }
+            }
             IrLiteral::Float(f) => format!("{:.2}", f),
             IrLiteral::String(s) => format!("\"{}\"", s),
             IrLiteral::Boolean(b) => b.to_string(),
@@ -831,7 +749,7 @@ fn process_complex_field_for_map(
                     sum_pos
                 ));
                 format!(
-                    "(x{}{}.unwrap() as f64) / (x{}{} as f64)",
+                    "((x{}{}.unwrap() as f64) / (x{}{} as f64))",
                     if is_keyed { ".1" } else { "" },
                     if is_single_acc {
                         "".to_string()
@@ -856,16 +774,30 @@ fn process_complex_field_for_map(
                     .unwrap()
                     .0;
 
+                if !cast.is_empty() {
+                    format!(
+                        "(x{}{} as {})",
+                        if is_keyed { ".1" } else { "" },
+                        if is_single_acc {
+                            "".to_string()
+                        } else {
+                            format!(".{}", pos)
+                        },
+                        cast
+                    )
+                }
                 // Count doesn't need a safety check as it's always available
-                format!(
-                    "x{}{}",
-                    if is_keyed { ".1" } else { "" },
-                    if is_single_acc {
-                        "".to_string()
-                    } else {
-                        format!(".{}", pos)
-                    }
-                )
+                else {
+                    format!(
+                        "x{}{}",
+                        if is_keyed { ".1" } else { "" },
+                        if is_single_acc {
+                            "".to_string()
+                        } else {
+                            format!(".{}", pos)
+                        }
+                    )
+                }
             }
             _ => {
                 // MAX, MIN, SUM
@@ -887,15 +819,29 @@ fn process_complex_field_for_map(
                         format!(".{}", pos)
                     }
                 ));
-                format!(
-                    "x{}{}.unwrap()",
-                    if is_keyed { ".1" } else { "" },
-                    if is_single_acc {
-                        "".to_string()
-                    } else {
-                        format!(".{}", pos)
-                    }
-                )
+
+                if !cast.is_empty() {
+                    format!(
+                        "(x{}{}.unwrap() as {})",
+                        if is_keyed { ".1" } else { "" },
+                        if is_single_acc {
+                            "".to_string()
+                        } else {
+                            format!(".{}", pos)
+                        },
+                        cast
+                    )
+                } else {
+                    format!(
+                        "x{}{}.unwrap()",
+                        if is_keyed { ".1" } else { "" },
+                        if is_single_acc {
+                            "".to_string()
+                        } else {
+                            format!(".{}", pos)
+                        }
+                    )
+                }
             }
         }
     } else if let Some((ref result, ref result_type)) = field.subquery_vec {
@@ -904,7 +850,11 @@ fn process_complex_field_for_map(
         } else if result_type == "f64" {
             format!("{}.first().unwrap().unwrap().into_inner()", result)
         } else {
-            format!("{}.first().unwrap().unwrap().clone()", result)
+            if !cast.is_empty() {
+                format!("({}.first().unwrap().unwrap().clone() as {})", result, cast)
+            } else {
+                format!("{}.first().unwrap().unwrap().clone()", result)
+            }
         }
     } else {
         panic!("Invalid ComplexField - no valid content");

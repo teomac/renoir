@@ -117,6 +117,7 @@ pub fn create_simple_map(
                     }
                 }
                 ProjectionColumn::ComplexValue(complex_field, alias) => {
+                    let mut cast = String::new();
                     let field_name = alias.as_ref().unwrap_or_else(|| {
                         query_object
                             .result_column_types
@@ -131,6 +132,7 @@ pub fn create_simple_map(
                         query_object,
                         &mut check_list,
                         &all_streams,
+                        &mut cast
                     );
                     // Deduplicate and the check list
                     check_list.sort();
@@ -185,6 +187,7 @@ pub fn process_complex_field(
     query_object: &QueryObject,
     check_list: &mut Vec<String>,
     all_streams: &Vec<String>,
+    cast: &mut String,
 ) -> String {
     let mut keys = Vec::new();
     for stream in all_streams.iter() {
@@ -200,125 +203,59 @@ pub fn process_complex_field(
 
         // Different types case
         if left_type != right_type {
-            if (left_type == "f64" || left_type == "i64" || left_type == "usize")
-                && (right_type == "f64" || right_type == "i64" || right_type == "usize")
+            //check if they are both numbers
+            if left_type != "f64"
+                && left_type != "i64"
+                && left_type != "usize"
+                && right_type != "f64"
+                && right_type != "i64"
+                && right_type != "usize"
             {
-                // Division always results in f64
-                if op == "/" {
-                    return format!(
-                        "{}({} as f64) {} ({} as f64){}",
-                        if *is_par { "(" } else { "" },
-                        process_complex_field(
-                            left,
-                            stream_name,
-                            query_object,
-                            check_list,
-                            all_streams
-                        ),
-                        op,
-                        process_complex_field(
-                            right,
-                            stream_name,
-                            query_object,
-                            check_list,
-                            all_streams
-                        ),
-                        if *is_par { ")" } else { "" }
-                    );
-                }
-
-                // Special handling for power operation (^)
-                if op == "^" {
-                    let left_expr = process_complex_field(
-                        left,
-                        stream_name,
-                        query_object,
-                        check_list,
-                        all_streams,
-                    );
-                    let right_expr = process_complex_field(
-                        right,
-                        stream_name,
-                        query_object,
-                        check_list,
-                        all_streams,
-                    );
-
-                    // If either operand is f64, use powf
-                    if left_type == "f64" || right_type == "f64" {
-                        return format!(
-                            "({}).powf({} as f64)",
-                            if left_type == "i64" {
-                                format!("({} as f64)", left_expr)
-                            } else {
-                                left_expr
-                            },
-                            right_expr
-                        );
-                    } else {
-                        // Both are integers, use pow
-                        return format!("({}).pow({} as u32)", left_expr, right_expr);
-                    }
-                }
-
-                let left_expr =
-                    process_complex_field(left, stream_name, query_object, check_list, all_streams);
-                let right_expr = process_complex_field(
-                    right,
-                    stream_name,
-                    query_object,
-                    check_list,
-                    all_streams,
-                );
-
-                // Add as f64 to integer literals when needed
-                let processed_left = if let Some(IrLiteral::Integer(_)) = left.literal {
-                    format!("{} as f64", left_expr)
-                } else {
-                    left_expr
-                };
-
-                let processed_right = if let Some(IrLiteral::Integer(_)) = right.literal {
-                    format!("{} as f64", right_expr)
-                } else {
-                    right_expr
-                };
-
-                //if left is i64 and right is float or vice versa, convert the i64 to f64
-                if right_type == "f64" {
-                    return format!(
-                        "{}({} as f64) {} {}{}",
-                        if *is_par { "(" } else { "" },
-                        processed_left,
-                        op,
-                        processed_right,
-                        if *is_par { ")" } else { "" }
-                    );
-                } else if left_type == "f64" {
-                    return format!(
-                        "{}{} {} ({} as f64){}",
-                        if *is_par { "(" } else { "" },
-                        processed_left,
-                        op,
-                        processed_right,
-                        if *is_par { ")" } else { "" }
-                    );
-                }
-
-                format!(
-                    "{}{} {} {}{}",
-                    if *is_par { "(" } else { "" },
-                    processed_left,
-                    op,
-                    processed_right,
-                    if *is_par { ")" } else { "" }
-                )
-            } else {
                 panic!(
-                    "Invalid arithmetic expression - incompatible types: {} and {}",
+                    "Invalid arithmetic expression - non-numeric types: {} and {}",
                     left_type, right_type
                 );
+            } else {
+                //they are both numbers
+                if left_type == "f64" || right_type == "f64" {
+                    *cast = "f64".to_string();
+                }
             }
+            let left_expr = process_complex_field(
+                left,
+                stream_name,
+                query_object,
+                check_list,
+                all_streams,
+                cast,
+            );
+            let right_expr = process_complex_field(
+                right,
+                stream_name,
+                query_object,
+                check_list,
+                all_streams,
+                cast,
+            );
+            // Special handling for power operation (^)
+            if op == "^" {
+                // If either operand is f64, use powf
+                if left_type == "f64" || right_type == "f64" || cast == "f64" {
+                    return format!("({}).powf({})", left_expr, right_expr);
+                } else {
+                    // Both are integers, use pow
+                    return format!("({}).pow({})", left_expr, right_expr);
+                }
+            }
+
+            format!(
+                "{}{} {} {}{}",
+                if *is_par { "(" } else { "" },
+                left_expr,
+                op,
+                right_expr,
+                if *is_par { ")" } else { "" }
+            )
         } else {
             //case same type
             //if operation is plus, minus, multiply, division, or power and types are not numeric, panic
@@ -336,57 +273,45 @@ pub fn process_complex_field(
                 );
             }
 
-            // Division always results in f64
-            if op == "/" {
-                return format!(
-                    "{}({} as f64) {} ({} as f64){}",
-                    if *is_par { "(" } else { "" },
-                    process_complex_field(left, stream_name, query_object, check_list, all_streams),
-                    op,
-                    process_complex_field(
-                        right,
-                        stream_name,
-                        query_object,
-                        check_list,
-                        all_streams
-                    ),
-                    if *is_par { ")" } else { "" }
-                );
-            }
+            let left_expr = process_complex_field(
+                left,
+                stream_name,
+                query_object,
+                check_list,
+                all_streams,
+                cast,
+            );
+            let right_expr = process_complex_field(
+                right,
+                stream_name,
+                query_object,
+                check_list,
+                all_streams,
+                cast,
+            );
 
             // Special handling for power operation (^)
             if op == "^" {
-                let left_expr =
-                    process_complex_field(left, stream_name, query_object, check_list, all_streams);
-                let right_expr = process_complex_field(
-                    right,
-                    stream_name,
-                    query_object,
-                    check_list,
-                    all_streams,
-                );
-
                 // If both are f64, use powf
-                if left_type == "f64" {
+                if left_type == "f64" || cast == "f64" {
                     return format!("({}).powf({})", left_expr, right_expr);
                 } else {
                     // Both are integers, use pow
-                    return format!("({}).pow({} as u32)", left_expr, right_expr);
+                    return format!("({}).pow({})", left_expr, right_expr);
                 }
             }
-
             // Regular arithmetic with same types
             format!(
                 "{}{} {} {}{}",
                 if *is_par { "(" } else { "" },
-                process_complex_field(left, stream_name, query_object, check_list, all_streams),
+                left_expr,
                 op,
-                process_complex_field(right, stream_name, query_object, check_list, all_streams),
+                right_expr,
                 if *is_par { ")" } else { "" }
-                
             )
         }
     } else if let Some(ref col) = field.column_ref {
+        let needs_cast = !cast.is_empty();
         // Handle column reference
         let col_stream_name = if col.table.is_some() {
             query_object
@@ -404,7 +329,7 @@ pub fn process_complex_field(
         //if the stream is grouped, check if the column is a key column
         let mut is_key = false;
 
-        if query_object.get_stream(stream_name).is_keyed {
+        if col_stream.is_keyed {
             if !keys.iter().any(|key| key == col) {
                 panic!(
                     "Column {} is not a key column in the grouped stream",
@@ -422,29 +347,55 @@ pub fn process_complex_field(
                     check_list.push("x.0.is_some()".to_string());
                     return "x.0.unwrap().into_inner()".to_string();
                 } else {
-                    return format!("x.0{}", if col_type == "String" { ".clone()" } else { "" });
+                    if needs_cast {
+                        return format!("(x.0 as {})", cast);
+                    } else {
+                        return format!(
+                            "x.0{}",
+                            if col_type == "String" { ".clone()" } else { "" }
+                        );
+                    }
                 }
             } else if col_type == "f64" {
                 check_list.push(format!("x.0.{}.is_some()", key_pos));
                 return format!("x.0.{}.unwrap().into_inner()", key_pos,);
             } else {
-                return format!(
-                    "x.0.{}{}",
-                    key_pos,
-                    if col_type == "String" { ".clone()" } else { "" }
-                );
+                check_list.push(format!("x.0.{}.is_some()", key_pos));
+                if needs_cast {
+                    return format!("(x.0.{}.unwrap() as {})", key_pos, cast);
+                } else {
+                    return format!(
+                        "x.0.{}{}.unwrap()",
+                        key_pos,
+                        if col_type == "String" { ".clone()" } else { "" }
+                    );
+                }
             }
         } else {
             check_list.push(format!(
                 "x{}.{}.is_some()",
                 col_stream.access.base_path, col.column
             ));
-            format!("x{}.{}.unwrap()", col_stream.access.base_path, col.column)
+
+            if needs_cast {
+                format!(
+                    "(x{}.{}.unwrap() as {})",
+                    col_stream.access.base_path, col.column, cast
+                )
+            } else {
+                format!("x{}.{}.unwrap()", col_stream.access.base_path, col.column)
+            }
         }
     } else if let Some(ref lit) = field.literal {
         // Handle literal value
         match lit {
-            IrLiteral::Integer(i) => i.to_string(),
+            IrLiteral::Integer(i) => {
+                if !cast.is_empty() {
+                    format!("{}.0", i.to_string())
+                } else {
+                    i.to_string()
+                }
+            }
             IrLiteral::Float(f) => format!("{:.2}", f),
             IrLiteral::String(s) => format!("\"{}\"", s),
             IrLiteral::Boolean(b) => b.to_string(),
@@ -458,7 +409,11 @@ pub fn process_complex_field(
         } else if result_type == "f64" {
             format!("{}.first().unwrap().unwrap().into_inner() as f64", result)
         } else {
-            format!("{}.first().unwrap().unwrap().clone()", result)
+            if !cast.is_empty() {
+                format!("({}.first().unwrap().unwrap().clone() as {})", result, cast)
+            } else {
+                format!("{}.first().unwrap().unwrap().clone()", result)
+            }
         }
     } else {
         panic!("Invalid ComplexField - no valid content");
