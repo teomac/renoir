@@ -232,7 +232,7 @@ fn process_filter_condition(
                         // Generate the null check based on the expression result
                         match null_check.operator {
                             NullOp::IsNull => format!("!({})", check_list.join(" && ")),
-                            NullOp::IsNotNull => format!("{}", check_list.join(" && ")),
+                            NullOp::IsNotNull => check_list.join(" && ").to_string(),
                         }
                     } else {
                         panic!("Invalid NULL check - must be on a column reference or literal")
@@ -962,12 +962,10 @@ fn process_filter_field(
         if sub_type == "f64" {
             *cast = "f64".to_string();
             format!("{}.first().unwrap().unwrap().into_inner()", sub_name)
+        } else if !cast.is_empty() {
+            format!("({}.first().unwrap().unwrap() as {})", sub_name, cast)
         } else {
-            if !cast.is_empty() {
-                format!("({}.first().unwrap().unwrap() as {})", sub_name, cast)
-            } else {
-                format!("{}.first().unwrap().unwrap()", sub_name)
-            }
+            format!("{}.first().unwrap().unwrap()", sub_name)
         }
     } else {
         panic!("Invalid ComplexField - no valid content")

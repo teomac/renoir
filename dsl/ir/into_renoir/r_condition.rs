@@ -232,15 +232,13 @@ fn process_arithmetic_expression(
         //check if the type is correct
         if sub_type == "f64" {
             format!("{}.first().unwrap().unwrap().into_inner()", sub_name)
+        } else if needs_casting {
+            format!(
+                "({}.first().unwrap().unwrap() as {})",
+                sub_name, casting_type
+            )
         } else {
-            if needs_casting {
-                format!(
-                    "({}.first().unwrap().unwrap() as {})",
-                    sub_name, casting_type
-                )
-            } else {
-                format!("{}.first().unwrap().unwrap()", sub_name)
-            }
+            format!("{}.first().unwrap().unwrap()", sub_name)
         }
     } else {
         panic!("Invalid ComplexField - no valid content");
@@ -662,7 +660,7 @@ fn process_null_check_condition(condition: &NullCondition, query_object: &QueryO
         //now the actual final string is only composed by null checks
         match condition.operator {
             NullOp::IsNull => format!("!({})", null_checks.join(" && ")),
-            NullOp::IsNotNull => format!("{}", null_checks.join(" && ")),
+            NullOp::IsNotNull => null_checks.join(" && ").to_string(),
         }
     }
     //case nested_expr: TODO
