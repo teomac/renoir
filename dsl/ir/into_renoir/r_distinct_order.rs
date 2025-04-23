@@ -163,8 +163,6 @@ fn generate_sort_code(
             }
         };
 
-        println!("field_name: {}", field_name);
-
         let field_type = if final_struct_of.get(&field_name).is_some() {
             final_struct_of.get(&field_name).unwrap()
         } else {

@@ -128,36 +128,59 @@ impl ConditionParser {
                 Ok(FilterClause::Base(FilterConditionType::Boolean(value)))
             }
             Rule::arithmetic_expr => {
-                // Handle comparison condition
+                //two cases for arithmetic_expr: comparison or null check
+
                 let operator_pair = inner
                     .next()
                     .ok_or_else(|| IrParseError::InvalidInput("Missing operator".to_string()))?;
-                let right_expr = inner.next().ok_or_else(|| {
-                    IrParseError::InvalidInput("Missing right expression".to_string())
-                })?;
 
-                let operator = match operator_pair.as_str() {
-                    ">" => ComparisonOp::GreaterThan,
-                    "<" => ComparisonOp::LessThan,
-                    ">=" => ComparisonOp::GreaterThanEquals,
-                    "<=" => ComparisonOp::LessThanEquals,
-                    "==" => ComparisonOp::Equal, // Changed from = to ==
-                    "!=" => ComparisonOp::NotEqual,
-                    op => {
-                        return Err(Box::new(IrParseError::InvalidInput(format!(
-                            "Invalid operator: {}",
-                            op
-                        ))))
-                    }
-                };
+                if operator_pair.as_rule() == Rule::null_op {
+                    let operator = match operator_pair.as_str() {
+                        "is null" => NullOp::IsNull,
+                        "is not null" => NullOp::IsNotNull,
+                        _ => {
+                            return Err(Box::new(IrParseError::InvalidInput(format!(
+                                "Invalid null operator: {}",
+                                operator_pair.as_str()
+                            ))))
+                        }
+                    };
 
-                Ok(FilterClause::Base(FilterConditionType::Comparison(
-                    Condition {
-                        left_field: Self::parse_arithmetic_expr(first)?,
-                        operator,
-                        right_field: Self::parse_arithmetic_expr(right_expr)?,
-                    },
-                )))
+                    Ok(FilterClause::Base(FilterConditionType::NullCheck(
+                        NullCondition {
+                            field: Self::parse_field_reference(first)?,
+                            operator,
+                        },
+                    )))
+                } else {
+                    //handle comparison
+                    let right_expr = inner.next().ok_or_else(|| {
+                        IrParseError::InvalidInput("Missing right expression".to_string())
+                    })?;
+
+                    let operator = match operator_pair.as_str() {
+                        ">" => ComparisonOp::GreaterThan,
+                        "<" => ComparisonOp::LessThan,
+                        ">=" => ComparisonOp::GreaterThanEquals,
+                        "<=" => ComparisonOp::LessThanEquals,
+                        "==" => ComparisonOp::Equal, // Changed from = to ==
+                        "!=" => ComparisonOp::NotEqual,
+                        op => {
+                            return Err(Box::new(IrParseError::InvalidInput(format!(
+                                "Invalid operator: {}",
+                                op
+                            ))))
+                        }
+                    };
+
+                    Ok(FilterClause::Base(FilterConditionType::Comparison(
+                        Condition {
+                            left_field: Self::parse_arithmetic_expr(first)?,
+                            operator,
+                            right_field: Self::parse_arithmetic_expr(right_expr)?,
+                        },
+                    )))
+                }
             }
             Rule::in_expr => {
                 let mut inner = first.into_inner();
@@ -230,36 +253,6 @@ impl ConditionParser {
                     subquery, is_negated,
                 )))
             }
-            Rule::qualified_column | Rule::identifier | Rule::number | Rule::subquery => {
-                // Check if this is a NULL check
-                let operator_pair = inner
-                    .next()
-                    .ok_or_else(|| IrParseError::InvalidInput("Missing operator".to_string()))?;
-
-                if operator_pair.as_rule() == Rule::null_op {
-                    let operator = match operator_pair.as_str() {
-                        "is null" => NullOp::IsNull,
-                        "is not null" => NullOp::IsNotNull,
-                        _ => {
-                            return Err(Box::new(IrParseError::InvalidInput(format!(
-                                "Invalid null operator: {}",
-                                operator_pair.as_str()
-                            ))))
-                        }
-                    };
-
-                    Ok(FilterClause::Base(FilterConditionType::NullCheck(
-                        NullCondition {
-                            field: Self::parse_field_reference(first)?,
-                            operator,
-                        },
-                    )))
-                } else {
-                    Err(Box::new(IrParseError::InvalidInput(
-                        "Expected null operator".to_string(),
-                    )))
-                }
-            }
             _ => Err(Box::new(IrParseError::InvalidInput(format!(
                 "Unexpected token in condition: {:?}",
                 first.as_rule()
@@ -269,12 +262,12 @@ impl ConditionParser {
 
     fn parse_arithmetic_expr(pair: Pair<Rule>) -> Result<ComplexField, Box<IrParseError>> {
         let mut inner_pairs = pair.into_inner();
-        
+
         // Parse the first operand
         let first_pair = inner_pairs
             .next()
             .ok_or_else(|| IrParseError::InvalidInput("Empty arithmetic expression".to_string()))?;
-        
+
         // Start with the first operand
         let mut result = match first_pair.as_rule() {
             Rule::arithmetic_par => Self::parse_parenthesized_expr(first_pair)?,
@@ -286,11 +279,11 @@ impl ConditionParser {
                 ))))
             }
         };
-        
+
         // Process any additional operations
         while let (Some(op), Some(next_operand)) = (inner_pairs.next(), inner_pairs.next()) {
             let operator = op.as_str().to_string();
-            
+
             let next_field = match next_operand.as_rule() {
                 Rule::arithmetic_par => Self::parse_parenthesized_expr(next_operand)?,
                 Rule::arithmetic_factor => Self::parse_arithmetic_factor(next_operand)?,
@@ -301,7 +294,7 @@ impl ConditionParser {
                     ))))
                 }
             };
-            
+
             // Combine into a nested expression
             result = ComplexField {
                 column_ref: None,
@@ -312,31 +305,31 @@ impl ConditionParser {
                 subquery_vec: None,
             };
         }
-        
+
         Ok(result)
     }
 
     // New method to parse parenthesized expressions
     fn parse_parenthesized_expr(pair: Pair<Rule>) -> Result<ComplexField, Box<IrParseError>> {
         let mut inner = pair.into_inner();
-        
+
         // Skip the left parenthesis
         inner.next();
-        
+
         // Parse the inner expression
         let expr = inner
             .next()
             .ok_or_else(|| IrParseError::InvalidInput("Empty parentheses".to_string()))?;
-        
+
         // Create a complex field from the inner expression with parentheses flag set to true
         let mut field = Self::parse_arithmetic_expr(expr)?;
-        
+
         // If the field has a nested expression, mark it as parenthesized
         if let Some(nested) = field.nested_expr {
             let (left, op, right, _) = *nested;
             field.nested_expr = Some(Box::new((left, op, right, true)));
         }
-        
+
         Ok(field)
     }
 
@@ -571,6 +564,10 @@ impl ConditionParser {
                     subquery: Some(subquery),
                     subquery_vec: None,
                 })
+            }
+            Rule::arithmetic_expr => {
+                // Parse the arithmetic expression and return as ComplexField
+                Self::parse_arithmetic_expr(pair)
             }
             _ => Err(Box::new(IrParseError::InvalidInput(format!(
                 "Expected field reference, got {:?}",

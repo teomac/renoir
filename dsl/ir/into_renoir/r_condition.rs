@@ -195,7 +195,7 @@ fn process_arithmetic_expression(
             col.column
         ));
 
-        if needs_casting && c_type != "f64"{
+        if needs_casting && c_type != "f64" {
             format!(
                 "(x{}.{}.unwrap() as {})",
                 stream.get_access().get_base_path(),
@@ -224,6 +224,22 @@ fn process_arithmetic_expression(
             IrLiteral::Boolean(b) => b.to_string(),
             IrLiteral::ColumnRef(_) => {
                 panic!("Invalid ComplexField - column reference not expected here");
+            }
+        }
+    } else if let Some((sub_name, sub_type)) = &field.subquery_vec {
+        //check if the subquery is empty
+        check_list.push(format!("!{}.is_empty()", sub_name));
+        //check if the type is correct
+        if sub_type == "f64" {
+            format!("{}.first().unwrap().unwrap().into_inner()", sub_name)
+        } else {
+            if needs_casting {
+                format!(
+                    "({}.first().unwrap().unwrap() as {})",
+                    sub_name, casting_type
+                )
+            } else {
+                format!("{}.first().unwrap().unwrap()", sub_name)
             }
         }
     } else {
@@ -632,6 +648,22 @@ fn process_null_check_condition(condition: &NullCondition, query_object: &QueryO
                 panic!("Invalid null check condition - missing field")
             }
         }
+    } else if let Some((sub_name, _)) = &field.subquery_vec {
+        match condition.operator {
+            NullOp::IsNull => format!("{}.is_empty()", sub_name),
+            NullOp::IsNotNull => format!("!{}.is_empty()", sub_name),
+        }
+    } else if field.nested_expr.is_some() {
+        //case nested expression
+        //collect column null checks
+        let mut null_checks = Vec::new();
+        collect_column_null_checks(field, query_object, &mut null_checks);
+
+        //now the actual final string is only composed by null checks
+        match condition.operator {
+            NullOp::IsNull => format!("!({})", null_checks.join(" && ")),
+            NullOp::IsNotNull => format!("{}", null_checks.join(" && ")),
+        }
     }
     //case nested_expr: TODO
     else {
@@ -920,5 +952,9 @@ fn collect_column_null_checks(
             stream.get_access().get_base_path(),
             agg.column.column
         ));
+    }
+    if let Some((sub_name, _)) = &field.subquery_vec {
+        //check if the subquery is empty
+        checks.push(format!("!{}.is_empty()", sub_name));
     }
 }

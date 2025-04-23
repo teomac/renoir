@@ -169,9 +169,12 @@ impl ProjectionParser {
         })
     }
 
-    fn parse_complex_operation(pair: Pair<Rule>, alias: Option<String>) -> Result<ProjectionColumn, Box<IrParseError>> {
+    fn parse_complex_operation(
+        pair: Pair<Rule>,
+        alias: Option<String>,
+    ) -> Result<ProjectionColumn, Box<IrParseError>> {
         let mut pairs = pair.into_inner().peekable();
-    
+
         // Parse first operand
         let mut left_field = match pairs.next() {
             Some(first) => match first.as_rule() {
@@ -190,14 +193,14 @@ impl ProjectionParser {
                 )))
             }
         };
-    
+
         // Process operators and operands in pairs
         while pairs.peek().is_some() {
             let op = pairs
                 .next()
                 .map(|p| p.as_str().to_string())
                 .ok_or_else(|| IrParseError::InvalidInput("Expected operator".to_string()))?;
-    
+
             let right_field = match pairs.next() {
                 Some(right_pair) => match right_pair.as_rule() {
                     Rule::parenthesized_expr => Self::parse_parenthesized_expr(right_pair)?,
@@ -215,7 +218,7 @@ impl ProjectionParser {
                     )))
                 }
             };
-    
+
             left_field = ComplexField {
                 column_ref: None,
                 literal: None,
@@ -225,27 +228,27 @@ impl ProjectionParser {
                 subquery_vec: None,
             };
         }
-    
+
         Ok(ProjectionColumn::ComplexValue(left_field, alias))
     }
 
     fn parse_parenthesized_expr(pair: Pair<Rule>) -> Result<ComplexField, Box<IrParseError>> {
         let mut inner = pair.into_inner();
-    
+
         // Skip left parenthesis
         inner.next();
-    
+
         let expr = inner
             .next()
             .ok_or_else(|| IrParseError::InvalidInput("Empty parentheses".to_string()))?;
-    
+
         match expr.as_rule() {
             Rule::projection_expr => {
                 let inner_expr = expr
                     .into_inner()
                     .next()
                     .ok_or_else(|| IrParseError::InvalidInput("Empty expression".to_string()))?;
-    
+
                 match inner_expr.as_rule() {
                     Rule::complex_op => {
                         if let ProjectionColumn::ComplexValue(mut field, _) =

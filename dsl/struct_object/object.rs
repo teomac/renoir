@@ -100,8 +100,7 @@ impl QueryObject {
         if !alias.is_empty() {
             self.alias_to_stream
                 .insert(alias.to_owned(), stream_name.clone());
-        }
-        else{
+        } else {
             //if the alias is empty, we have to insert the table name
             self.alias_to_stream
                 .insert(source_table.clone(), stream_name.clone());
@@ -795,7 +794,10 @@ impl QueryObject {
         } else if let Some((_, ref result_type)) = field.subquery_vec {
             result_type.to_string()
         } else {
-            panic!("Invalid complex field - no valid content")
+            panic!(
+                "Invalid complex field - no valid content. ComplexField: {:?}",
+                field
+            );
         }
     }
 

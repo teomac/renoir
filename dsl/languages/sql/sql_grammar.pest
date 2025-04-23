@@ -63,7 +63,8 @@ arithmetic_factor = {
     variable |
     number |
     string_literal |
-    boolean 
+    boolean |
+    subquery_expr
 }
 
 exists_expr = { exists_keyword ~ subquery_expr }
@@ -74,7 +75,7 @@ condition = {
     exists_expr |
     in_expr |
     arithmetic_expr ~ operator ~ arithmetic_expr | 
-    (table_column | subquery_expr | variable | number ) ~ null_operator |
+    arithmetic_expr ~ null_operator |
     boolean
 }
 

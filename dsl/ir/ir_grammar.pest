@@ -95,12 +95,11 @@ arithmetic_factor = {
 
 in_expr = { (arithmetic_expr | subquery) ~ "not"? ~ in_keyword ~ subquery }
 
-// Conditions for FILTER clause
 condition = {
     exists_keyword ~ subquery |
     in_expr |
     arithmetic_expr ~ comparison_op ~ arithmetic_expr | 
-    (qualified_column | subquery | identifier | number) ~ null_op |
+    arithmetic_expr ~ null_op |
     boolean_keyword
 }
 

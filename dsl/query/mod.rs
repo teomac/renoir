@@ -83,16 +83,16 @@ pub fn query(
     process_query(ir_ast, output_path, input_tables)
 }
 
-pub fn query_ir_input(query_ir: &str,
+pub fn query_ir_input(
+    query_ir: &str,
     output_path: &String,
     input_tables: &IndexMap<String, (String, String)>, // key: table name, value: (csv_path, user_defined types)
 ) -> io::Result<String> {
-
     let ir_ast = query_ir_to_ast(query_ir);
     //println!("IR AST: {:?}", ir_ast);
 
     process_query(ir_ast, output_path, input_tables)
-} 
+}
 
 pub fn process_query(
     ir_ast: Arc<IrPlan>,

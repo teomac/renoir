@@ -349,10 +349,7 @@ pub fn process_complex_field(
                 } else if needs_cast {
                     return format!("(x.0 as {})", cast);
                 } else {
-                    return format!(
-                        "x.0{}",
-                        if col_type == "String" { ".clone()" } else { "" }
-                    );
+                    return format!("x.0{}", if col_type == "String" { ".clone()" } else { "" });
                 }
             } else if col_type == "f64" {
                 check_list.push(format!("x.0.{}.is_some()", key_pos));

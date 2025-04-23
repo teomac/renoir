@@ -7,8 +7,7 @@ impl LiteralParser {
     pub fn parse(val: &str) -> Result<SqlLiteral, Box<SqlParseError>> {
         if let Ok(int_val) = val.parse::<i64>() {
             Ok(SqlLiteral::Integer(int_val))
-        } 
-        else if let Ok(float_val) = val.parse::<f64>() {
+        } else if let Ok(float_val) = val.parse::<f64>() {
             Ok(SqlLiteral::Float(float_val))
         } else if let Ok(bool_val) = val.parse::<bool>() {
             Ok(SqlLiteral::Boolean(bool_val))

@@ -552,7 +552,6 @@ fn process_complex_field_for_map(
         let left_type = query_object.get_complex_field_type(left);
         let right_type = query_object.get_complex_field_type(right);
 
-        
         // Different types case
         if left_type != right_type {
             if left_type != "f64"

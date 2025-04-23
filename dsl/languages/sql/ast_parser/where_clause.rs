@@ -286,18 +286,20 @@ impl ConditionParser {
         }
     }
 
-
-    fn parse_arithmetic_expr(pair: Pair<Rule>, is_parenthesized: bool) -> Result<ArithmeticExpr, Box<SqlParseError>> {
+    fn parse_arithmetic_expr(
+        pair: Pair<Rule>,
+        is_parenthesized: bool,
+    ) -> Result<ArithmeticExpr, Box<SqlParseError>> {
         match pair.as_rule() {
             Rule::arithmetic_expr => {
                 let mut pairs = pair.clone().into_inner().peekable();
-    
+
                 let first_term = pairs
                     .next()
                     .ok_or_else(|| SqlParseError::InvalidInput("Missing first term".to_string()))?;
-                    
+
                 let mut left = Self::parse_arithmetic_term(first_term)?;
-    
+
                 // Process any subsequent operations
                 while let Some(op) = pairs.next() {
                     if let Some(next_term) = pairs.next() {
@@ -306,26 +308,26 @@ impl ConditionParser {
                             Box::new(left),
                             op.as_str().to_string(),
                             Box::new(right),
-                            false // Intermediate operations are not parenthesized
+                            false, // Intermediate operations are not parenthesized
                         );
                     }
                 }
-    
+
                 if is_parenthesized {
                     if let ArithmeticExpr::NestedExpr(l, op, r, _) = left {
                         left = ArithmeticExpr::NestedExpr(l, op, r, true);
                     }
                 }
-    
+
                 Ok(left)
             }
             _ => Err(Box::new(SqlParseError::InvalidInput(format!(
                 "Expected arithmetic expression, got {:?}",
                 pair.as_rule()
-            ))))
+            )))),
         }
     }
-    
+
     fn parse_arithmetic_term(pair: Pair<Rule>) -> Result<ArithmeticExpr, Box<SqlParseError>> {
         match pair.as_rule() {
             Rule::arithmetic_term => {
@@ -333,17 +335,17 @@ impl ConditionParser {
                 let first = inner.next().ok_or_else(|| {
                     SqlParseError::InvalidInput("Empty arithmetic term".to_string())
                 })?;
-    
+
                 match first.as_rule() {
                     Rule::l_paren => {
                         // For parenthesized expressions, create a new expression
                         let expr = inner.next().ok_or_else(|| {
                             SqlParseError::InvalidInput("Empty parentheses".to_string())
                         })?;
-                        
+
                         // Parse the inner expression
                         let result = Self::parse_arithmetic_expr(expr, true)?;
-                        
+
                         // Return the parenthesized expression
                         Ok(result)
                     }

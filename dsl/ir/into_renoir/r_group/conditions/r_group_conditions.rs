@@ -150,7 +150,7 @@ fn collect_field_aggregates(
                         left_type
                     );
                 }
-                if right_type != "f64" && right_type != "i64"  && right_type != "usize" {
+                if right_type != "f64" && right_type != "i64" && right_type != "usize" {
                     panic!(
                         "Invalid arithmetic operation on non-numeric type: {}",
                         right_type
@@ -162,6 +162,12 @@ fn collect_field_aggregates(
             literal: Some(_), ..
         } => {
             // Literals don't need special processing for aggregates
+        }
+        ComplexField {
+            subquery_vec: Some(_),
+            ..
+        } => {
+            // Subquery vectors don't need special processing for aggregates
         }
         _ => panic!("Invalid ComplexField - no valid content"),
     }

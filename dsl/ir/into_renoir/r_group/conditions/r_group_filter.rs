@@ -213,6 +213,27 @@ fn process_filter_condition(
                             NullOp::IsNull => "false".to_string(),
                             NullOp::IsNotNull => "true".to_string(),
                         }
+                    } else if let Some((sub_name, _)) = &null_check.field.subquery_vec {
+                        match null_check.operator {
+                            NullOp::IsNull => format!("{}.is_empty()", sub_name),
+                            NullOp::IsNotNull => format!("!{}.is_empty()", sub_name),
+                        }
+                    } else if null_check.field.nested_expr.is_some() {
+                        // Process the nested expression
+                        let _expr_result = process_filter_field(
+                            &null_check.field,
+                            keys,
+                            query_object,
+                            acc_info,
+                            &mut check_list,
+                            &mut cast,
+                        );
+
+                        // Generate the null check based on the expression result
+                        match null_check.operator {
+                            NullOp::IsNull => format!("!({})", check_list.join(" && ")),
+                            NullOp::IsNotNull => format!("{}", check_list.join(" && ")),
+                        }
                     } else {
                         panic!("Invalid NULL check - must be on a column reference or literal")
                     }
@@ -312,8 +333,6 @@ fn process_filter_condition(
                                         panic!("Invalid InCondition - column type {} does not match vector type {}", field_type, vector_type);
                                     }
                                 } else {
-                                    //standard case
-
                                     // Generate the final string
                                     format!(
                                         "{}{}.contains({}.first().unwrap())",
@@ -703,6 +722,10 @@ fn process_filter_field(
         let left_type = query_object.get_complex_field_type(left);
         let right_type = query_object.get_complex_field_type(right);
 
+        if left_type == "f64" || right_type == "f64" {
+            *cast = "f64".to_string();
+        }
+
         let left_expr = process_filter_field(left, keys, query_object, acc_info, check_list, cast);
         let right_expr =
             process_filter_field(right, keys, query_object, acc_info, check_list, cast);
@@ -720,12 +743,8 @@ fn process_filter_field(
                     "Invalid arithmetic expression - non-numeric types: {} and {}",
                     left_type, right_type
                 );
-            } else {
-                //they are both numbers
-                if left_type == "f64" || right_type == "f64" {
-                    *cast = "f64".to_string();
-                }
             }
+
             // Special handling for power operation (^)
             if op == "^" {
                 // If either operand is f64, use powf
@@ -930,7 +949,24 @@ fn process_filter_field(
                     function: AggregateType::Count,
                     column: col.clone(),
                 });
-                format!("(({}.unwrap() as f64) / (x.1.{} as f64))", col_access, count_pos)
+                format!(
+                    "(({}.unwrap() as f64) / (x.1.{} as f64))",
+                    col_access, count_pos
+                )
+            }
+        }
+    } else if let Some((sub_name, sub_type)) = &field.subquery_vec {
+        //push into checklist
+        check_list.push(format!("!{}.is_empty()", sub_name));
+
+        if sub_type == "f64" {
+            *cast = "f64".to_string();
+            format!("{}.first().unwrap().unwrap().into_inner()", sub_name)
+        } else {
+            if !cast.is_empty() {
+                format!("({}.first().unwrap().unwrap() as {})", sub_name, cast)
+            } else {
+                format!("{}.first().unwrap().unwrap()", sub_name)
             }
         }
     } else {

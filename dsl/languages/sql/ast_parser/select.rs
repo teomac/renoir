@@ -154,12 +154,12 @@ impl SelectParser {
         match pair.as_rule() {
             Rule::select_expr => {
                 let mut pairs = pair.into_inner().peekable();
-    
+
                 // Get first operand
-                let first = pairs
-                    .next()
-                    .ok_or_else(|| SqlParseError::InvalidInput("Missing first operand".to_string()))?;
-    
+                let first = pairs.next().ok_or_else(|| {
+                    SqlParseError::InvalidInput("Missing first operand".to_string())
+                })?;
+
                 let mut left_expr = match first.as_rule() {
                     Rule::parenthesized_expr => Self::parse_parenthesized_expr(first)?,
                     Rule::column_operand => Self::parse_operand(first)?,
@@ -170,15 +170,15 @@ impl SelectParser {
                         ))))
                     }
                 };
-    
+
                 // Process any subsequent operations
                 while let Some(op) = pairs.next() {
                     let symbol = op.as_str().to_string();
-    
-                    let right = pairs
-                        .next()
-                        .ok_or_else(|| SqlParseError::InvalidInput("Missing right operand".to_string()))?;
-    
+
+                    let right = pairs.next().ok_or_else(|| {
+                        SqlParseError::InvalidInput("Missing right operand".to_string())
+                    })?;
+
                     let right_expr = match right.as_rule() {
                         Rule::parenthesized_expr => Self::parse_parenthesized_expr(right)?,
                         Rule::column_operand => Self::parse_operand(right)?,
@@ -189,15 +189,15 @@ impl SelectParser {
                             ))))
                         }
                     };
-    
+
                     left_expr = ArithmeticExpr::NestedExpr(
                         Box::new(left_expr),
                         symbol,
                         Box::new(right_expr),
-                        false,  // Not parenthesized by default
+                        false, // Not parenthesized by default
                     );
                 }
-    
+
                 Ok(SelectType::ArithmeticExpr(left_expr))
             }
             _ => Err(Box::new(SqlParseError::InvalidInput(format!(
@@ -206,18 +206,18 @@ impl SelectParser {
             )))),
         }
     }
-    
+
     fn parse_parenthesized_expr(pair: Pair<Rule>) -> Result<ArithmeticExpr, Box<SqlParseError>> {
         let mut inner = pair.into_inner();
-        
+
         // Skip left parenthesis
         inner.next();
-    
+
         // Get the inner expression
         let expr = inner
             .next()
             .ok_or_else(|| SqlParseError::InvalidInput("Empty parentheses".to_string()))?;
-    
+
         match Self::parse_complex_expression(expr)? {
             SelectType::ArithmeticExpr(expr) => {
                 // If the expression is already nested, mark it as parenthesized
@@ -225,7 +225,7 @@ impl SelectParser {
                     ArithmeticExpr::NestedExpr(left, op, right, _) => {
                         Ok(ArithmeticExpr::NestedExpr(left, op, right, true))
                     }
-                    _ => Ok(expr) // Return as is if not nested
+                    _ => Ok(expr), // Return as is if not nested
                 }
             }
             _ => Err(Box::new(SqlParseError::InvalidInput(
@@ -239,11 +239,11 @@ impl SelectParser {
             .into_inner()
             .next()
             .ok_or_else(|| SqlParseError::InvalidInput("Empty operand".to_string()))?;
-    
+
         match inner.as_rule() {
-            Rule::number => Ok(ArithmeticExpr::Literal(
-                LiteralParser::parse(inner.as_str())?
-            )),
+            Rule::number => Ok(ArithmeticExpr::Literal(LiteralParser::parse(
+                inner.as_str(),
+            )?)),
             Rule::table_column => Ok(ArithmeticExpr::Column(Self::parse_column_ref(inner)?)),
             Rule::variable => Ok(ArithmeticExpr::Column(ColumnRef {
                 table: None,

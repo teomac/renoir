@@ -215,7 +215,12 @@ fn process_complex_field(
                 column_ref: None,
                 literal: None,
                 aggregate: None,
-                nested_expr: Some(Box::new((processed_left, op.clone(), processed_right, *is_par))),
+                nested_expr: Some(Box::new((
+                    processed_left,
+                    op.clone(),
+                    processed_right,
+                    *is_par,
+                ))),
                 subquery: None,
                 subquery_vec: None,
             })
@@ -353,6 +358,9 @@ fn process_filter_condition(
                                 )))
                             } else {
                                 //second: the field is either a column_ref or a complex_expr
+                                //process complex_expr
+                                let processed_field =
+                                    process_complex_field(field, output_path, query_object)?;
                                 // Process the subquery
                                 let processed_subquery =
                                     manage_subqueries(subquery, output_path, query_object)?;
@@ -371,7 +379,7 @@ fn process_filter_condition(
 
                                 Ok(FilterClause::Base(FilterConditionType::In(
                                     InCondition::InVec {
-                                        field: field.clone(),
+                                        field: processed_field,
                                         vector_name: result,
                                         vector_type: result_type,
                                         negated: *negated,
@@ -551,6 +559,9 @@ fn process_group_condition(
                                 )))
                             } else {
                                 //second, field is a complex_expr, a column_ref or an aggregate
+                                //Process complex_expr
+                                let processed_field =
+                                    process_complex_field(field, output_path, query_object)?;
                                 // Process the subquery
                                 let processed_subquery =
                                     manage_subqueries(subquery, output_path, query_object)?;
@@ -569,7 +580,7 @@ fn process_group_condition(
 
                                 Ok(GroupClause::Base(GroupBaseCondition::In(
                                     InCondition::InVec {
-                                        field: field.clone(),
+                                        field: processed_field,
                                         vector_name: result,
                                         vector_type: result_type,
                                         negated: *negated,
