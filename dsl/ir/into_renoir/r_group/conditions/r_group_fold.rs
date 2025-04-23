@@ -222,11 +222,11 @@ pub fn create_fold_operation(
                             AggregateType::Max => {
                                 update_code.push_str(&format!(
                                     "if let Some({}val) = {} {{ {}acc{} = Some(match {}acc{} {{
-                                            Some(current_max) => current_max.max({}val),
+                                            Some(current_max) => current_max.max(val),
                                             None => val
                                         }});
                                     }}\n",
-                                    if !single_agg || col_type != "f64" {
+                                    if !single_agg || col_type != "i64" {
                                         String::from("")
                                     } else {
                                         String::from("mut ")
@@ -252,11 +252,6 @@ pub fn create_fold_operation(
                                     } else {
                                         format!(".{}", pos)
                                     },
-                                    if !single_agg || col_type != "f64" {
-                                        String::from("")
-                                    } else {
-                                        String::from("&mut ")
-                                    }
                                 ));
                                 global_update_code.push_str(&format!(
                                     "    if let Some(val) = local_acc{} {{ {}{} = Some({}.unwrap_or(val).max(val)); }}\n",
@@ -288,11 +283,11 @@ pub fn create_fold_operation(
                             AggregateType::Min => {
                                 update_code.push_str(&format!(
                                     "if let Some({}val) = {} {{{}acc{} = Some(match {}acc{} {{
-                                            Some(current_min) => current_min.min({}val),
+                                            Some(current_min) => current_min.min(val),
                                             None => val
                                         }});
                                     }}\n",
-                                    if !single_agg || col_type != "f64" {
+                                    if !single_agg || col_type != "i64" {
                                         String::from("")
                                     } else {
                                         String::from("mut ")
@@ -318,11 +313,6 @@ pub fn create_fold_operation(
                                     } else {
                                         format!(".{}", pos)
                                     },
-                                    if !single_agg || col_type != "f64" {
-                                        String::from("")
-                                    } else {
-                                        String::from("&mut ")
-                                    }
                                 ));
 
                                 global_update_code.push_str(&format!(

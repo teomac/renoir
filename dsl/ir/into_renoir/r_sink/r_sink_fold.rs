@@ -259,7 +259,7 @@ fn create_fold(
                                     None => val
                                 }});
                             }}\n",
-                            if asterisk.is_empty() || col_type != "f64" {
+                            if asterisk.is_empty() || col_type != "i64" {
                                 ""
                             } else {
                                 "mut "
@@ -273,7 +273,7 @@ fn create_fold(
                             } else {
                                 "".to_string()
                             },
-                            if asterisk.is_empty() || col_type != "f64" {
+                            if asterisk.is_empty() || col_type != "i64" {
                                 ""
                             } else {
                                 "&mut "
@@ -288,7 +288,7 @@ fn create_fold(
                                     None => val
                                 }});
                             }}\n",
-                            if asterisk.is_empty() || col_type != "f64" {
+                            if asterisk.is_empty() || col_type != "i64" {
                                 ""
                             } else {
                                 "mut "
@@ -302,7 +302,7 @@ fn create_fold(
                             } else {
                                 "".to_string()
                             },
-                            if asterisk.is_empty() || col_type != "f64" {
+                            if asterisk.is_empty() || col_type != "i64" {
                                 ""
                             } else {
                                 "&mut "
@@ -365,6 +365,7 @@ pub fn create_map(
 
     for (i, clause) in projection_clauses.iter().enumerate() {
         let field_name = query_object.result_column_types.get_index(i).unwrap().0;
+        let field_type = query_object.result_column_types.get_index(i).unwrap().1;
         let value = match clause {
             ProjectionColumn::Aggregate(agg, _) => {
                 match agg.function {
@@ -445,12 +446,13 @@ pub fn create_map(
                 check_list.sort();
                 check_list.dedup();
                 if check_list.is_empty() {
-                    format!("Some({})", temp)
+                    format!("Some(({}) as {})", temp, field_type)
                 } else {
                     format!(
-                        "if {} {{ Some({}) }} else {{ None }}",
+                        "if {} {{ Some(({}) as {}) }} else {{ None }}",
                         check_list.join(" && "),
-                        temp
+                        temp,
+                        field_type
                     )
                 }
             }
