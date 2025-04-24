@@ -22,7 +22,7 @@ r_paren = @{ ")" }
 
 boolean = { "true" | "false"}
 
-variable = @{ ('a'..'z' | 'A'..'Z'| "_") ~ ('a'..'z' | 'A'..'Z'| '0'..'9' | "_")* }
+variable = @{ ('a'..'z' | 'A'..'Z'| "_") ~ (('a'..'z' | 'A'..'Z'| '0'..'9' | "_"))* }
 number = @{ ("-")? ~
     ('0'..'9')+ // Integer part
     ~ ("." ~ ('0'..'9')+)? // Optional decimal part
@@ -45,7 +45,7 @@ table_column = {
     variable ~ "." ~ variable
 }
 
-string_literal = @{ "'" ~ variable ~ "'" }
+string_literal = @{ "'" ~ (variable | number) ~ "'" }
 
 // Arithmetic expression components
 arithmetic_expr = {

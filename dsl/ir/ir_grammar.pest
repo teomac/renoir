@@ -2,17 +2,17 @@ WHITESPACE = _{ " " | "\t" | "\r" | "\n" }
 COMMENT = _{ "//" ~ (!"\n" ~ ANY)* }
 
 // Basic building blocks
-identifier = @{ ('a'..'z' | 'A'..'Z'| "_") ~ ('a'..'z' | 'A'..'Z'| '0'..'9' | "_")* }
+identifier = @{ ('a'..'z' | 'A'..'Z'| "_") ~ (('a'..'z' | 'A'..'Z'| '0'..'9' | "_"))* }
 number = @{ ("-")? ~
     ('0'..'9')+ // Integer part
     ~ ("." ~ ('0'..'9')+)? // Optional decimal part
 }
 boolean_keyword = @{ ^"true" | ^"false" }
 symbol = @{ ("^"| "+" | "-" | "*" | "/")}
-string = @{ "'" ~ ('a'..'z' | 'A'..'Z'| "_")* ~ "'" }
+string = @{ "'" ~ (identifier | number) ~ "'" }
 value = { boolean_keyword | number | string }
 
-as_keyword = { "as" }
+as_keyword = @{ "as" }
 in_keyword = @{ ^"not in" | ^"in" }
 exists_keyword = @{ ^"not exists" | ^"exists" }
 join = { "join" }
@@ -130,7 +130,7 @@ column_list = {
 }
 
 column_item = {
-    (aggregate_expr | qualified_column | identifier | string | subquery | complex_op ) ~
+    (aggregate_expr | qualified_column | identifier | string | complex_op | subquery ) ~
     (as_keyword ~ identifier)?
 }
 

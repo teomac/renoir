@@ -485,8 +485,7 @@ pub fn create_map(
                         "if x.0.is_some() { x.0.unwrap().into_inner() } else { None }".to_string()
                     } else {
                         format!(
-                            "{}x.0{}",
-                            if col_type == "bool" { "*" } else { "" },
+                            "x.0{}",
                             if col_type == "String" { ".clone()" } else { "" }
                         )
                     }
@@ -497,8 +496,7 @@ pub fn create_map(
                     )
                 } else {
                     format!(
-                        "{}x.0.{}{}",
-                        if col_type == "bool" { "*" } else { "" },
+                        "x.0.{}{}",
                         key_position,
                         if col_type == "String" { ".clone()" } else { "" }
                     )
@@ -569,6 +567,9 @@ fn process_complex_field_for_map(
                 //they are both numbers
                 if left_type == "f64" || right_type == "f64" {
                     *cast = "f64".to_string();
+                }
+                else if left_type == "i64" || right_type == "i64" {
+                    *cast = "i64".to_string();
                 }
             }
 
@@ -807,6 +808,8 @@ fn process_complex_field_for_map(
                     .unwrap()
                     .0;
 
+                let acc_type = query_object.get_type(&agg.column);
+
                 check_list.push(format!(
                     "x{}{}.is_some()",
                     if is_keyed { ".1" } else { "" },
@@ -817,7 +820,7 @@ fn process_complex_field_for_map(
                     }
                 ));
 
-                if !cast.is_empty() {
+                if !cast.is_empty() && *cast != acc_type {
                     format!(
                         "(x{}{}.unwrap() as {})",
                         if is_keyed { ".1" } else { "" },
