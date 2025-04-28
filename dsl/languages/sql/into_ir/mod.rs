@@ -1,1 +1,1 @@
-pub mod ir_query_gen;
+pub(crate) mod ir_query_gen;

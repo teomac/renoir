@@ -1,1 +1,1 @@
-pub mod csv_parsers;
+pub(crate) mod csv_parsers;

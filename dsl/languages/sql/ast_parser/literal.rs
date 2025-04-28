@@ -4,7 +4,7 @@ use super::sql_ast_structure::SqlLiteral;
 pub struct LiteralParser;
 
 impl LiteralParser {
-    pub fn parse(val: &str) -> Result<SqlLiteral, Box<SqlParseError>> {
+    pub(crate) fn parse(val: &str) -> Result<SqlLiteral, Box<SqlParseError>> {
         if let Ok(int_val) = val.parse::<i64>() {
             Ok(SqlLiteral::Integer(int_val))
         } else if let Ok(float_val) = val.parse::<f64>() {

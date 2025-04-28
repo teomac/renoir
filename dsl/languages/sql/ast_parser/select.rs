@@ -7,7 +7,7 @@ use pest::iterators::Pair;
 pub struct SelectParser;
 
 impl SelectParser {
-    pub fn parse(pair: Pair<Rule>) -> Result<SelectType, Box<SqlParseError>> {
+    pub(crate) fn parse(pair: Pair<Rule>) -> Result<SelectType, Box<SqlParseError>> {
         // First, handle the column_with_alias rule
         match pair.as_rule() {
             Rule::asterisk => Ok(SelectType::Simple(ColumnRef {

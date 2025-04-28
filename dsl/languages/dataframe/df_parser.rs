@@ -12,7 +12,7 @@ use super::df_builder::DataFrameASTBuilder;
 pub struct DataFrameParser;
 
 impl DataFrameParser {
-    pub fn parse_query(input: &str) -> Result<Arc<IrPlan>, Box<IrParseError>> {
+    pub(crate) fn parse_query(input: &str) -> Result<Arc<IrPlan>, Box<IrParseError>> {
         let pairs = Self::parse(Rule::query, input).map_err(|e| {
             Box::new(IrParseError::InvalidInput(format!(
                 "Failed to parse query: {}",

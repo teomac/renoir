@@ -4,10 +4,8 @@ use indexmap::IndexMap;
 
 // struct to store the accumulator value
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum AccumulatorValue {
-    Aggregate(AggregateType, ColumnRef),
-    Column(ColumnRef),
-    Literal(String),
+pub(crate) enum AccumulatorValue {
+    Aggregate(AggregateType, ColumnRef)
 }
 
 #[derive(Debug)]
@@ -22,13 +20,13 @@ impl Default for AccumulatorInfo {
 }
 
 impl AccumulatorInfo {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         AccumulatorInfo {
             value_positions: IndexMap::new(),
         }
     }
 
-    pub fn add_value(&mut self, value: AccumulatorValue, val_type: String) -> usize {
+    pub(crate) fn add_value(&mut self, value: AccumulatorValue, val_type: String) -> usize {
         if let Some((pos, _)) = self.value_positions.get(&value) {
             *pos
         } else {
@@ -38,7 +36,7 @@ impl AccumulatorInfo {
         }
     }
 
-    pub fn add_avg(&mut self, column: ColumnRef, val_type: String) -> (usize, usize) {
+    pub(crate) fn add_avg(&mut self, column: ColumnRef, val_type: String) -> (usize, usize) {
         let sum_pos = self.add_value(
             AccumulatorValue::Aggregate(AggregateType::Sum, column.clone()),
             val_type,
@@ -52,7 +50,7 @@ impl AccumulatorInfo {
 }
 
 // Recursive function to check for aggregates in ComplexField
-pub fn has_aggregate_in_complex_field(field: &ComplexField) -> bool {
+pub(crate) fn has_aggregate_in_complex_field(field: &ComplexField) -> bool {
     // Check if this field has an aggregate
     if field.aggregate.is_some() {
         return true;

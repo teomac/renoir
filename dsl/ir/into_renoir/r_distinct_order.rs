@@ -2,7 +2,7 @@ use indexmap::IndexMap;
 
 use crate::dsl::ir::{ColumnRef, QueryObject};
 
-pub fn process_distinct_order(stream_name: &String, query_object: &mut QueryObject) {
+pub(crate) fn process_distinct_order(stream_name: &String, query_object: &mut QueryObject) {
     let stream = query_object.streams.get(stream_name).unwrap();
 
     //if the stream has no distinct, nor order_by, nor limit, return

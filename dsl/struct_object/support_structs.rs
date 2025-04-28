@@ -23,27 +23,15 @@ pub struct StreamInfo {
 
 #[derive(Debug, Clone)]
 pub struct AccessPath {
-    pub base_path: String,         // Base tuple access (e.g., ".0.1")
-    pub null_check_required: bool, // Whether code needs to check is_some() first
+    pub base_path: String, // Base tuple access (e.g., ".0.1")
 }
 
 impl AccessPath {
-    pub fn new(base_path: String, null_check_required: bool) -> Self {
-        AccessPath {
-            base_path,
-            null_check_required,
-        }
-    }
-
-    pub fn get_base_path(&self) -> String {
+    pub(crate) fn get_base_path(&self) -> String {
         self.base_path.clone()
     }
 
-    pub fn is_null_check_required(&self) -> bool {
-        self.null_check_required
-    }
-
-    pub fn update_base_path(&mut self, new_path: String) {
+    pub(crate) fn update_base_path(&mut self, new_path: String) {
         // Prepend .0 to the existing path if it exists
         if !self.base_path.is_empty() {
             self.base_path = format!(".0{}", self.base_path);
@@ -54,7 +42,7 @@ impl AccessPath {
 }
 
 impl StreamInfo {
-    pub fn new(id: String, source_table: String, alias: String) -> Self {
+    pub(crate) fn new(id: String, source_table: String, alias: String) -> Self {
         StreamInfo {
             id,
             source_table,
@@ -62,7 +50,6 @@ impl StreamInfo {
             initial_columns: IndexMap::new(),
             access: AccessPath {
                 base_path: String::new(),
-                null_check_required: false,
             },
             is_keyed: false,
             key_columns: Vec::new(),
@@ -77,39 +64,39 @@ impl StreamInfo {
         }
     }
 
-    pub fn update_columns(&mut self, columns: IndexMap<String, String>) {
+    pub(crate) fn update_columns(&mut self, columns: IndexMap<String, String>) {
         self.initial_columns = columns;
     }
 
-    pub fn insert_op(&mut self, op: String) {
+    pub(crate) fn insert_op(&mut self, op: String) {
         self.op_chain.push(op);
     }
 
-    pub fn equals(&self, other: &StreamInfo) -> bool {
+    pub(crate) fn equals(&self, other: &StreamInfo) -> bool {
         self.id == other.id
     }
 
-    pub fn source_equals(&self, other: &StreamInfo) -> bool {
+    pub(crate) fn source_equals(&self, other: &StreamInfo) -> bool {
         self.source_table == other.source_table && self.alias == other.alias
     }
 
-    pub fn get_access(&self) -> AccessPath {
+    pub(crate) fn get_access(&self) -> AccessPath {
         self.access.clone()
     }
 
-    pub fn check_if_column_exists(&self, column: &String) -> bool {
+    pub(crate) fn check_if_column_exists(&self, column: &String) -> bool {
         self.initial_columns.get(column).is_some()
     }
 
-    pub fn get_field_type(&self, field: &String) -> String {
+    pub(crate) fn get_field_type(&self, field: &String) -> String {
         self.initial_columns.get(field).unwrap().clone()
     }
 
-    pub fn update_agg_position(&mut self, agg: IndexMap<AggregateFunction, String>) {
+    pub(crate) fn update_agg_position(&mut self, agg: IndexMap<AggregateFunction, String>) {
         self.agg_position = agg;
     }
 
-    pub fn get_initial_struct_name(&self) -> String {
+    pub(crate) fn get_initial_struct_name(&self) -> String {
         if self.final_struct_name.len() > 1 {
             self.final_struct_name.first().unwrap().clone()
         } else {
@@ -117,7 +104,7 @@ impl StreamInfo {
         }
     }
 
-    pub fn get_second_struct_name(&self, query_object: &QueryObject) -> String {
+    pub(crate) fn get_second_struct_name(&self, query_object: &QueryObject) -> String {
         // Get the immediate right child stream from the join tree
         if let Some(ref join_tree) = self.join_tree {
             match join_tree {
@@ -147,7 +134,7 @@ impl StreamInfo {
         }
     }
 
-    pub fn generate_nested_default(&self, query_object: &QueryObject) -> String {
+    pub(crate) fn generate_nested_default(&self, query_object: &QueryObject) -> String {
         if self.join_tree.is_none() {
             return format!(
                 "{}::default()",
@@ -205,7 +192,7 @@ pub enum JoinTree {
 
 impl JoinTree {
     // Helper method to get all streams involved in this join tree
-    pub fn get_involved_streams(&self) -> Vec<String> {
+    pub(crate) fn get_involved_streams(&self) -> Vec<String> {
         match self {
             JoinTree::Leaf(stream) => vec![stream.clone()],
             JoinTree::Join { left, right, .. } => {
@@ -217,7 +204,7 @@ impl JoinTree {
     }
 
     // Helper method to update access paths based on the join tree
-    pub fn update_access_paths(&self, query_object: &mut QueryObject) {
+    pub(crate) fn update_access_paths(&self, query_object: &mut QueryObject) {
         match self {
             JoinTree::Leaf(_) => {}
             JoinTree::Join { left, right, .. } => {
@@ -273,7 +260,7 @@ impl JoinTree {
         }
     }
 
-    pub fn get_nesting_level(&self) -> usize {
+    pub(crate) fn get_nesting_level(&self) -> usize {
         match self {
             JoinTree::Leaf(_) => 0,
             JoinTree::Join { left, right, .. } => {

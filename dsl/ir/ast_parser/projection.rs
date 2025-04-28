@@ -7,7 +7,7 @@ use pest::iterators::Pair;
 pub struct ProjectionParser;
 
 impl ProjectionParser {
-    pub fn parse(pair: Pair<Rule>) -> Result<(Vec<ProjectionColumn>, bool), Box<IrParseError>> {
+    pub(crate) fn parse(pair: Pair<Rule>) -> Result<(Vec<ProjectionColumn>, bool), Box<IrParseError>> {
         let mut inner = pair.into_inner();
         let mut distinct = false;
 

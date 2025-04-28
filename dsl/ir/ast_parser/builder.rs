@@ -11,7 +11,7 @@ use std::sync::Arc;
 pub struct IrASTBuilder;
 
 impl IrASTBuilder {
-    pub fn build_ast_from_pairs(pairs: Pairs<Rule>) -> Result<Arc<IrPlan>, Box<IrParseError>> {
+    pub(crate) fn build_ast_from_pairs(pairs: Pairs<Rule>) -> Result<Arc<IrPlan>, Box<IrParseError>> {
         let mut current_plan: Option<Arc<IrPlan>> = None;
 
         // Process each clause in the query

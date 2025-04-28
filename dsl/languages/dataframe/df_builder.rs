@@ -8,7 +8,7 @@ use crate::dsl::languages::dataframe::df_parser::Rule;
 pub struct DataFrameASTBuilder;
 
 impl DataFrameASTBuilder {
-    pub fn build_ast_from_pairs(pairs: Pairs<Rule>) -> Result<Arc<IrPlan>, Box<IrParseError>> {
+    pub(crate) fn build_ast_from_pairs(pairs: Pairs<Rule>) -> Result<Arc<IrPlan>, Box<IrParseError>> {
         let mut current_plan: Option<Arc<IrPlan>> = None;
 
         for pair in pairs {

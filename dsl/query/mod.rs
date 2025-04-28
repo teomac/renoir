@@ -14,8 +14,9 @@ use core::panic;
 use std::io;
 use std::sync::Arc;
 
-pub mod old_subquery_utils;
-pub mod subquery_utils;
+
+pub(crate) mod old_subquery_utils;
+pub(crate) mod subquery_utils;
 
 /// Executes a query on CSV files and generates a Rust binary to process the query.
 ///
@@ -94,7 +95,7 @@ pub fn query_ir_input(
     process_query(ir_ast, output_path, input_tables)
 }
 
-pub fn process_query(
+pub(crate) fn process_query(
     ir_ast: Arc<IrPlan>,
     output_path: &String,
     input_tables: &IndexMap<String, (String, String)>, // key: table name, value: (csv_path, user_defined_types)
@@ -135,8 +136,8 @@ pub fn process_query(
 
     for (key, (csv, type_list)) in input_tables.iter() {
         tables_csv.insert(key.to_string(), csv.to_string());
-        let user_types = parse_type_string(type_list).unwrap();
-        let csv_columns = get_csv_columns(csv);
+        let user_types: Vec<String> = parse_type_string(type_list).unwrap();
+        let csv_columns: Vec<String> = get_csv_columns(csv);
         let temp: IndexMap<String, String> = csv_columns
             .into_iter()
             .zip(user_types.into_iter())
@@ -186,7 +187,7 @@ pub fn process_query(
 }
 
 //method that appends the generated substream to the unique main.rs file
-pub fn subquery_csv(
+pub(crate) fn subquery_csv(
     ir_ast: Arc<IrPlan>,
     output_path: &String,
     tables_info: IndexMap<String, IndexMap<String, String>>,
@@ -232,7 +233,7 @@ pub fn subquery_csv(
 }
 
 //old method that executes an entire different main.rs file for each subquery
-pub fn old_subquery_csv(
+pub(crate) fn old_subquery_csv(
     ir_ast: Arc<IrPlan>,
     output_path: &String,
     tables_info: IndexMap<String, IndexMap<String, String>>,
@@ -290,7 +291,7 @@ pub fn old_subquery_csv(
 
 //method that creates a stream that has no sink, that will be used for scan operations
 //method that appends the generated substream to the unique main.rs file
-pub fn subquery_sink(
+pub(crate) fn subquery_sink(
     ir_ast: Arc<IrPlan>,
     output_path: &String,
     tables_info: IndexMap<String, IndexMap<String, String>>,

@@ -6,7 +6,7 @@ use pest::iterators::Pair;
 pub struct OrderParser;
 
 impl OrderParser {
-    pub fn parse(pair: Pair<Rule>) -> Result<OrderByClause, Box<SqlParseError>> {
+    pub(crate) fn parse(pair: Pair<Rule>) -> Result<OrderByClause, Box<SqlParseError>> {
         let mut inner = pair.into_inner();
 
         inner

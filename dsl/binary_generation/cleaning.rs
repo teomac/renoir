@@ -5,7 +5,7 @@ use std::io;
 use std::path::Path;
 
 /// Preprocesses the Rust code to remove unused struct definitions
-pub fn preprocess_rust_code(project_path: &Path) -> io::Result<()> {
+pub(crate) fn preprocess_rust_code(project_path: &Path) -> io::Result<()> {
     let main_rs_path = project_path.join("src").join("main.rs");
     let content = fs::read_to_string(&main_rs_path)?;
 

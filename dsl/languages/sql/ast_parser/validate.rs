@@ -1,7 +1,7 @@
 use super::error::SqlParseError;
 use super::sql_ast_structure::*;
 
-pub fn validate_ast(ast: &SqlAST) -> Result<(), Box<SqlParseError>> {
+pub(crate) fn validate_ast(ast: &SqlAST) -> Result<(), Box<SqlParseError>> {
     validate_limit_offset(&ast.limit)?;
     validate_no_aggregates_in_where(&ast.filter)?;
     validate_having_columns_in_group_by(ast)?;

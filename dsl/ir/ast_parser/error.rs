@@ -7,7 +7,6 @@ use std::fmt::{self, Display};
 pub enum IrParseError {
     PestError(Box<PestError<Rule>>),
     InvalidInput(String),
-    InvalidType(String),
 }
 
 impl Display for IrParseError {
@@ -15,7 +14,6 @@ impl Display for IrParseError {
         match self {
             IrParseError::PestError(e) => write!(f, "Parse error: {}", e),
             IrParseError::InvalidInput(msg) => write!(f, "Invalid input: {}", msg),
-            IrParseError::InvalidType(msg) => write!(f, "Invalid type: {}", msg),
         }
     }
 }

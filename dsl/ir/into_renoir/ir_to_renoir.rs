@@ -13,7 +13,7 @@ use std::sync::Arc;
 pub struct IrToRenoir;
 
 impl IrToRenoir {
-    pub fn convert(
+    pub(crate) fn convert(
         ast: &Arc<IrPlan>,
         query_object: &mut QueryObject,
     ) -> Result<String, Box<dyn std::error::Error>> {

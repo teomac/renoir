@@ -4,7 +4,7 @@ use std::fs;
 use std::io;
 use std::process::Command;
 
-pub fn binary_execution(
+pub(crate) fn binary_execution(
     output_path: &str,
     rust_project: creation::RustProject,
 ) -> io::Result<String> {

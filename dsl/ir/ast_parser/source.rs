@@ -6,7 +6,7 @@ use std::sync::Arc;
 pub struct SourceParser;
 
 impl SourceParser {
-    pub fn parse(pair: Pair<Rule>) -> Result<Arc<IrPlan>, Box<IrParseError>> {
+    pub(crate) fn parse(pair: Pair<Rule>) -> Result<Arc<IrPlan>, Box<IrParseError>> {
         let has_join = pair.as_str().contains("join");
 
         let mut inner = pair.into_inner();

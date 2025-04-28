@@ -13,7 +13,7 @@ use crate::dsl::{
 
 use super::old_subquery_csv;
 
-pub fn old_manage_subqueries(
+pub(crate) fn old_manage_subqueries(
     ir_ast: &Arc<IrPlan>,
     output_path: &String,
     query_object: &mut QueryObject,
@@ -332,7 +332,7 @@ fn process_filter_condition(
                 )),
                 FilterConditionType::In(in_condition) => {
                     match in_condition {
-                        InCondition::InSubquery {
+                        InCondition::Subquery {
                             field,
                             subquery,
                             negated,
@@ -417,7 +417,7 @@ fn process_filter_condition(
                                 }
 
                                 Ok(FilterClause::Base(FilterConditionType::In(
-                                    InCondition::InOldVersion {
+                                    InCondition::OldVersion {
                                         field: ComplexField {
                                             column_ref: None,
                                             literal: Some(ir_complex_literals[0].clone()),
@@ -467,7 +467,7 @@ fn process_filter_condition(
                                 }
 
                                 Ok(FilterClause::Base(FilterConditionType::In(
-                                    InCondition::InOldVersion {
+                                    InCondition::OldVersion {
                                         field: field.clone(),
                                         values: ir_literals,
                                         negated: *negated,
@@ -564,7 +564,7 @@ fn process_group_condition(
                 )),
                 GroupBaseCondition::In(in_condition) => {
                     match in_condition {
-                        InCondition::InSubquery {
+                        InCondition::Subquery {
                             field,
                             subquery,
                             negated,
@@ -647,7 +647,7 @@ fn process_group_condition(
                                 }
 
                                 Ok(GroupClause::Base(GroupBaseCondition::In(
-                                    InCondition::InOldVersion {
+                                    InCondition::OldVersion {
                                         field: ComplexField {
                                             column_ref: None,
                                             literal: Some(ir_complex_literals[0].clone()),
@@ -696,7 +696,7 @@ fn process_group_condition(
                                 }
 
                                 Ok(GroupClause::Base(GroupBaseCondition::In(
-                                    InCondition::InOldVersion {
+                                    InCondition::OldVersion {
                                         field: field.clone(),
                                         values: ir_literals,
                                         negated: *negated,

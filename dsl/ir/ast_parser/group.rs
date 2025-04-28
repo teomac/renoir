@@ -6,7 +6,7 @@ use pest::iterators::Pair;
 pub struct GroupParser;
 
 impl GroupParser {
-    pub fn parse(
+    pub(crate) fn parse(
         pair: Pair<Rule>,
     ) -> Result<(Vec<ColumnRef>, Option<GroupClause>), Box<IrParseError>> {
         let mut inner = pair.into_inner();
@@ -250,7 +250,7 @@ impl GroupParser {
                 let subquery_plan = IrParser::parse_subquery(subquery)?;
 
                 Ok(GroupClause::Base(GroupBaseCondition::In(
-                    InCondition::InSubquery {
+                    InCondition::Subquery {
                         field,
                         subquery: subquery_plan,
                         negated: is_negated,

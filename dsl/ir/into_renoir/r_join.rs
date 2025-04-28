@@ -3,7 +3,7 @@ use crate::dsl::ir::QueryObject;
 use crate::dsl::struct_object::support_structs::JoinTree;
 use crate::dsl::struct_object::utils::*;
 
-pub fn process_join(
+pub(crate) fn process_join(
     left_stream: &String,
     right_stream: &String,
     conditions: &Vec<JoinCondition>,

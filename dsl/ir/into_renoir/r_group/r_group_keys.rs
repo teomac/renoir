@@ -30,7 +30,7 @@ impl GroupAccumulatorInfo {
         }
     }
 
-    pub fn add_aggregate(&mut self, value: GroupAccumulatorValue, val_type: String) -> usize {
+    pub(crate) fn add_aggregate(&mut self, value: GroupAccumulatorValue, val_type: String) -> usize {
         if let Some((pos, _)) = self.agg_positions.get(&value) {
             *pos
         } else {
@@ -41,7 +41,7 @@ impl GroupAccumulatorInfo {
     }
 
     // Special handling for AVG which needs both sum and count
-    pub fn add_avg(&mut self, column: ColumnRef, val_type: String) -> (usize, usize) {
+    pub(crate) fn add_avg(&mut self, column: ColumnRef, val_type: String) -> (usize, usize) {
         let sum_pos = self.add_aggregate(
             GroupAccumulatorValue::Aggregate(AggregateType::Sum, column.clone()),
             val_type,
@@ -53,7 +53,7 @@ impl GroupAccumulatorInfo {
         (sum_pos, count_pos)
     }
 
-    pub fn get_agg_position(&self, agg: &AggregateFunction) -> usize {
+    pub(crate) fn get_agg_position(&self, agg: &AggregateFunction) -> usize {
         let col = &agg.column;
         let agg_value = GroupAccumulatorValue::Aggregate(agg.function.clone(), col.clone());
         if agg.function == AggregateType::Avg {
@@ -81,7 +81,7 @@ impl GroupAccumulatorInfo {
 /// # Returns
 ///
 /// A String containing the Renoir operator chain for the group by operation
-pub fn process_group_by(
+pub(crate) fn process_group_by(
     keys: &Vec<ColumnRef>,
     group_condition: &Option<GroupClause>,
     stream_name: &String,

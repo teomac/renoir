@@ -1,7 +1,7 @@
 use crate::dsl::ir::ColumnRef;
 use crate::dsl::struct_object::object::QueryObject;
 
-pub fn check_column_validity(
+pub(crate) fn check_column_validity(
     col_ref: &ColumnRef,
     stream_name: &String,
     query_object: &QueryObject,

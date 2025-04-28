@@ -6,7 +6,7 @@ use pest::iterators::Pair;
 pub struct FromParser;
 
 impl FromParser {
-    pub fn parse(pair: Pair<Rule>) -> Result<FromClause, Box<SqlParseError>> {
+    pub(crate) fn parse(pair: Pair<Rule>) -> Result<FromClause, Box<SqlParseError>> {
         let mut inner = pair.into_inner();
         inner.next(); // Skip FROM keyword
 

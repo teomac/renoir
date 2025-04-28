@@ -5,7 +5,7 @@ use pest::iterators::Pair;
 pub struct LimitParser;
 
 impl LimitParser {
-    pub fn parse(pair: Pair<Rule>) -> Result<LimitClause, Box<SqlParseError>> {
+    pub(crate) fn parse(pair: Pair<Rule>) -> Result<LimitClause, Box<SqlParseError>> {
         let mut inner = pair.into_inner();
 
         // Parse LIMIT clause

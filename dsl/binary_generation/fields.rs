@@ -23,7 +23,7 @@ impl Default for Fields {
 }
 
 impl Fields {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         Fields {
             imports: {
                 r#"#![allow(non_camel_case_types)]
@@ -47,7 +47,7 @@ impl Fields {
         }
     }
 
-    pub fn fill_main(&mut self) {
+    pub(crate) fn fill_main(&mut self) {
         self.main.push_str(&self.imports);
         self.main.push_str("\n\n");
         self.main
@@ -100,7 +100,7 @@ impl Fields {
         self.main.push_str("}}");
     }
 
-    pub fn fill(
+    pub(crate) fn fill(
         &mut self,
         structs: IndexMap<String, IndexMap<String, String>>,
         streams: IndexMap<String, StreamInfo>,
@@ -121,7 +121,7 @@ impl Fields {
         }
     }
 
-    pub fn generate_struct_declarations(
+    pub(crate) fn generate_struct_declarations(
         structs: IndexMap<String, IndexMap<String, String>>,
     ) -> String {
         //Part1: generate struct definitions for input tables
@@ -163,7 +163,7 @@ impl Fields {
         result
     }
 
-    pub fn fill_subquery_main(&mut self, result_column_types: IndexMap<String, String>) {
+    pub(crate) fn fill_subquery_main(&mut self, result_column_types: IndexMap<String, String>) {
         self.main.push_str(&self.imports);
         self.main.push_str("\n\n");
         self.main
@@ -223,7 +223,7 @@ impl Fields {
         self.main.push('}');
     }
 
-    pub fn collect_subquery_result(&mut self, is_single_result: bool) -> (String, String) {
+    pub(crate) fn collect_subquery_result(&mut self, is_single_result: bool) -> (String, String) {
         let stream_name = self.streams.first().unwrap().0.clone();
         let new_result = format!("{}_result", stream_name);
         let stream = self.streams.get_mut(&stream_name).unwrap();

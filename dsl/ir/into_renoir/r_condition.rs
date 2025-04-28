@@ -10,7 +10,7 @@ use crate::dsl::ir::{ComparisonOp, Condition};
 use crate::dsl::struct_object::utils::*;
 use core::panic;
 
-pub fn process_filter_clause(
+pub(crate) fn process_filter_clause(
     clause: &FilterClause,
     stream_name: &String,
     query_object: &mut QueryObject,
@@ -25,7 +25,7 @@ pub fn process_filter_clause(
     Ok(())
 }
 
-pub fn process_filter(clause: &FilterClause, query_object: &mut QueryObject) -> String {
+pub(crate) fn process_filter(clause: &FilterClause, query_object: &mut QueryObject) -> String {
     match clause {
         FilterClause::Base(condition) => process_condition(condition, query_object),
         FilterClause::Expression {
@@ -256,7 +256,7 @@ fn process_condition(condition: &FilterConditionType, query_object: &QueryObject
         }
         FilterConditionType::In(in_condition) => {
             match in_condition {
-                InCondition::InOldVersion {
+                InCondition::OldVersion {
                     field,
                     values,
                     negated,
@@ -320,8 +320,8 @@ fn process_condition(condition: &FilterConditionType, query_object: &QueryObject
                         condition_str
                     )
                 }
-                InCondition::InSubquery { .. } => panic!("We should not have InSubquery here"),
-                InCondition::InVec {
+                InCondition::Subquery { .. } => panic!("We should not have InSubquery here"),
+                InCondition::Vec {
                     field,
                     vector_name,
                     vector_type,

@@ -4,7 +4,7 @@ use crate::dsl::ir::{AggregateFunction, QueryObject};
 use indexmap::IndexMap;
 
 // Function to create fold operation if needed
-pub fn create_fold_operation(
+pub(crate) fn create_fold_operation(
     acc_info: &GroupAccumulatorInfo,
     stream_name: &String,
     keys: &String,

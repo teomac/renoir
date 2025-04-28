@@ -4,7 +4,7 @@ pub struct SqlToIr;
 
 // index is used to propagate the stream number to the subqueries
 impl SqlToIr {
-    pub fn convert(sql_ast: &SqlAST, index: &mut usize, nested_index: usize) -> String {
+    pub(crate) fn convert(sql_ast: &SqlAST, index: &mut usize, nested_index: usize) -> String {
         let mut parts = Vec::new();
 
         // FROM clause
@@ -221,7 +221,7 @@ impl SqlToIr {
                     }
                 }
                 WhereBaseCondition::In(condition) => match condition {
-                    InCondition::InWhere(field, subquery, negated) => {
+                    InCondition::Where(field, subquery, negated) => {
                         let field_str = Self::convert_where_field(field, index, nested_index);
                         let subquery_str = Self::convert(subquery, index, nested_index + 1);
                         if *negated {
@@ -231,7 +231,7 @@ impl SqlToIr {
                         }
                     }
 
-                    InCondition::InSubquery(column, subquery, negated) => {
+                    InCondition::Subquery(column, subquery, negated) => {
                         let subquery_in = Self::convert(column, index, nested_index + 1);
                         let subquery_str = Self::convert(subquery, index, nested_index + 1);
                         if *negated {
@@ -240,7 +240,7 @@ impl SqlToIr {
                             format!("({}) in ({})", subquery_in, subquery_str)
                         }
                     }
-                    InCondition::InHaving(..) => {
+                    InCondition::Having(..) => {
                         // Handle InHaving condition if needed
                         panic!("We cannot have InHaving condition in the WHERE clause")
                     }
@@ -491,7 +491,7 @@ impl SqlToIr {
                     }
                 }
                 HavingBaseCondition::In(condition) => match condition {
-                    InCondition::InSubquery(in_subquery, subquery, negated) => {
+                    InCondition::Subquery(in_subquery, subquery, negated) => {
                         let in_subquery_str = Self::convert(in_subquery, index, nested_index + 1);
                         let subquery_str = Self::convert(subquery, index, nested_index + 1);
                         if *negated {
@@ -500,7 +500,7 @@ impl SqlToIr {
                             format!("({}) in ({})", in_subquery_str, subquery_str)
                         }
                     }
-                    InCondition::InHaving(field, subquery, negated) => {
+                    InCondition::Having(field, subquery, negated) => {
                         let field_str = if let Some(ref arithmetic) = field.arithmetic {
                             Self::arithmetic_expr_to_string(arithmetic, index, nested_index)
                         } else if let Some(ref column) = field.column {
@@ -531,7 +531,7 @@ impl SqlToIr {
                             format!("{} in ({})", field_str, subquery_str)
                         }
                     }
-                    InCondition::InWhere(..) => {
+                    InCondition::Where(..) => {
                         panic!("We cannot have InWhere condition in the HAVING clause")
                     }
                 },

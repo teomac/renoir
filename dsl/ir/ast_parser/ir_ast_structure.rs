@@ -182,17 +182,17 @@ pub struct NullCondition {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum InCondition {
-    InOldVersion {
+    OldVersion {
         field: ComplexField,
         values: Vec<IrLiteral>,
         negated: bool,
     },
-    InSubquery {
+    Subquery {
         field: ComplexField,
         subquery: Arc<IrPlan>,
         negated: bool,
     },
-    InVec {
+    Vec {
         field: ComplexField,
         vector_name: String,
         vector_type: String,
@@ -224,22 +224,13 @@ pub enum BinaryOp {
 
 // Implementation of helper methods for the new structure
 impl IrPlan {
-    // Convenience method to create a scan operation
-    pub fn scan(stream_name: String, alias: Option<String>, input_source: Arc<IrPlan>) -> Self {
-        IrPlan::Scan {
-            stream_name,
-            alias,
-            input: input_source,
-        }
-    }
-
     // Convenience method to create a filter operation
-    pub fn filter(input: Arc<IrPlan>, predicate: FilterClause) -> Self {
+    pub(crate) fn filter(input: Arc<IrPlan>, predicate: FilterClause) -> Self {
         IrPlan::Filter { input, predicate }
     }
 
     // Convenience method to create a project operation
-    pub fn project(input: Arc<IrPlan>, columns: Vec<ProjectionColumn>, distinct: bool) -> Self {
+    pub(crate) fn project(input: Arc<IrPlan>, columns: Vec<ProjectionColumn>, distinct: bool) -> Self {
         IrPlan::Project {
             input,
             columns,
@@ -248,7 +239,7 @@ impl IrPlan {
     }
 
     // Similar convenience methods for other operations
-    pub fn group_by(
+    pub(crate) fn group_by(
         input: Arc<IrPlan>,
         keys: Vec<ColumnRef>,
         group_condition: Option<GroupClause>,
@@ -260,29 +251,15 @@ impl IrPlan {
         }
     }
 
-    pub fn order_by(input: Arc<IrPlan>, items: Vec<OrderByItem>) -> Self {
+    pub(crate) fn order_by(input: Arc<IrPlan>, items: Vec<OrderByItem>) -> Self {
         IrPlan::OrderBy { input, items }
     }
 
-    pub fn limit(input: Arc<IrPlan>, limit: i64, offset: Option<i64>) -> Self {
+    pub(crate) fn limit(input: Arc<IrPlan>, limit: i64, offset: Option<i64>) -> Self {
         IrPlan::Limit {
             input,
             limit,
             offset,
-        }
-    }
-
-    pub fn join(
-        left: Arc<IrPlan>,
-        right: Arc<IrPlan>,
-        condition: Vec<JoinCondition>,
-        join_type: JoinType,
-    ) -> Self {
-        IrPlan::Join {
-            left,
-            right,
-            condition,
-            join_type,
         }
     }
 }
@@ -295,25 +272,6 @@ impl std::fmt::Display for ColumnRef {
         } else {
             write!(f, "{}", self.column)
         }
-    }
-}
-
-impl AggregateFunction {
-    pub fn equals(&self, other: &AggregateFunction) -> bool {
-        self.function.equals(&other.function) && self.column == other.column
-    }
-}
-
-impl AggregateType {
-    pub fn equals(&self, other: &AggregateType) -> bool {
-        matches!(
-            (self, other),
-            (AggregateType::Max, AggregateType::Max)
-                | (AggregateType::Min, AggregateType::Min)
-                | (AggregateType::Avg, AggregateType::Avg)
-                | (AggregateType::Sum, AggregateType::Sum)
-                | (AggregateType::Count, AggregateType::Count)
-        )
     }
 }
 

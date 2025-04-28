@@ -13,7 +13,7 @@ use crate::dsl::{
 
 use super::{subquery_csv, subquery_sink};
 
-pub fn manage_subqueries(
+pub(crate) fn manage_subqueries(
     ir_ast: &Arc<IrPlan>,
     output_path: &String,
     query_object: &mut QueryObject,
@@ -295,7 +295,7 @@ fn process_filter_condition(
                 )),
                 FilterConditionType::In(in_condition) => {
                     match in_condition {
-                        InCondition::InSubquery {
+                        InCondition::Subquery {
                             field,
                             subquery,
                             negated,
@@ -342,7 +342,7 @@ fn process_filter_condition(
                                 temp_fields.fill(fields.structs.clone(), fields.streams.clone());
 
                                 Ok(FilterClause::Base(FilterConditionType::In(
-                                    InCondition::InVec {
+                                    InCondition::Vec {
                                         field: ComplexField {
                                             subquery_vec: Some((in_result, in_result_type)),
                                             subquery: None,
@@ -378,7 +378,7 @@ fn process_filter_condition(
                                 temp_fields.fill(fields.structs.clone(), fields.streams.clone());
 
                                 Ok(FilterClause::Base(FilterConditionType::In(
-                                    InCondition::InVec {
+                                    InCondition::Vec {
                                         field: processed_field,
                                         vector_name: result,
                                         vector_type: result_type,
@@ -387,7 +387,7 @@ fn process_filter_condition(
                                 )))
                             }
                         }
-                        InCondition::InVec {
+                        InCondition::Vec {
                             field,
                             vector_name,
                             vector_type,
@@ -398,7 +398,7 @@ fn process_filter_condition(
                                 process_complex_field(field, output_path, query_object)?;
 
                             Ok(FilterClause::Base(FilterConditionType::In(
-                                InCondition::InVec {
+                                InCondition::Vec {
                                     field: processed_field,
                                     vector_name: vector_name.clone(),
                                     vector_type: vector_type.clone(),
@@ -496,7 +496,7 @@ fn process_group_condition(
                 )),
                 GroupBaseCondition::In(in_condition) => {
                     match in_condition {
-                        InCondition::InSubquery {
+                        InCondition::Subquery {
                             field,
                             subquery,
                             negated,
@@ -543,7 +543,7 @@ fn process_group_condition(
                                 temp_fields.fill(fields.structs.clone(), fields.streams.clone());
 
                                 Ok(GroupClause::Base(GroupBaseCondition::In(
-                                    InCondition::InVec {
+                                    InCondition::Vec {
                                         field: ComplexField {
                                             subquery_vec: Some((in_result, in_result_type)),
                                             subquery: None,
@@ -579,7 +579,7 @@ fn process_group_condition(
                                 temp_fields.fill(fields.structs.clone(), fields.streams.clone());
 
                                 Ok(GroupClause::Base(GroupBaseCondition::In(
-                                    InCondition::InVec {
+                                    InCondition::Vec {
                                         field: processed_field,
                                         vector_name: result,
                                         vector_type: result_type,
@@ -588,7 +588,7 @@ fn process_group_condition(
                                 )))
                             }
                         }
-                        InCondition::InVec {
+                        InCondition::Vec {
                             field,
                             vector_name,
                             vector_type,
@@ -599,7 +599,7 @@ fn process_group_condition(
                                 process_complex_field(field, output_path, query_object)?;
 
                             Ok(GroupClause::Base(GroupBaseCondition::In(
-                                InCondition::InVec {
+                                InCondition::Vec {
                                     field: processed_field,
                                     vector_name: vector_name.clone(),
                                     vector_type: vector_type.clone(),

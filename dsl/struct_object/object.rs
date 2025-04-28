@@ -64,7 +64,7 @@ impl Default for QueryObject {
 }
 
 impl QueryObject {
-    pub fn new() -> Self {
+    pub(crate) fn new() -> Self {
         QueryObject {
             streams: IndexMap::new(),
             alias_to_stream: IndexMap::new(),
@@ -82,12 +82,12 @@ impl QueryObject {
     }
 
     //getter and setter methods for tables_info
-    pub fn set_tables_info(&mut self, tables_info: IndexMap<String, IndexMap<String, String>>) {
+    pub(crate) fn set_tables_info(&mut self, tables_info: IndexMap<String, IndexMap<String, String>>) {
         self.tables_info = tables_info;
     }
 
     //method to create a new stream
-    pub fn create_new_stream(&mut self, stream_name: &String, source_table: &String, alias: &str) {
+    pub(crate) fn create_new_stream(&mut self, stream_name: &String, source_table: &String, alias: &str) {
         //create the StreamInfo object
         let mut stream =
             StreamInfo::new(stream_name.clone(), source_table.clone(), alias.to_owned());
@@ -115,64 +115,41 @@ impl QueryObject {
         self.streams.insert(stream_name.clone(), stream);
     }
 
-    //method to insert a new stream operator in the chain
-    pub fn insert_stream_op_chain(&mut self, stream_name: &String, op: &str) {
-        self.streams
-            .get_mut(stream_name)
-            .unwrap()
-            .insert_op(op.to_owned());
-    }
-
-    //method to check the validity of an alias
-    pub fn is_alias_valid(&self, alias: &String) -> bool {
-        //first check if the alias is already in the list of aliases
-        if self.alias_to_stream.get(alias).is_some() {
-            return false;
-        }
-
-        true
-    }
-
     //setter method for output_path
-    pub fn set_output_path(&mut self, output_path: &str) {
+    pub(crate) fn set_output_path(&mut self, output_path: &str) {
         self.output_path = output_path.to_string();
     }
 
     //setter method for table_to_csv
-    pub fn set_table_to_csv(&mut self, table_to_csv: IndexMap<String, String>) {
+    pub(crate) fn set_table_to_csv(&mut self, table_to_csv: IndexMap<String, String>) {
         self.table_to_csv = table_to_csv;
     }
 
     // setter for ir_ast
-    pub fn set_ir_ast(&mut self, ir_ast: &Arc<IrPlan>) {
+    pub(crate) fn set_ir_ast(&mut self, ir_ast: &Arc<IrPlan>) {
         self.ir_ast = Some(ir_ast.clone());
     }
 
-    //getter for result_column_types
-    pub fn get_result_column_types(&self) -> &IndexMap<String, String> {
-        &self.result_column_types
-    }
-
     //getter for single stream
-    pub fn get_stream(&self, stream_name: &String) -> &StreamInfo {
+    pub(crate) fn get_stream(&self, stream_name: &String) -> &StreamInfo {
         self.streams
             .get(stream_name)
             .unwrap_or_else(|| panic!("Stream {} does not exist.", stream_name))
     }
 
     //getter for single stream mutable
-    pub fn get_mut_stream(&mut self, stream_name: &String) -> &mut StreamInfo {
+    pub(crate) fn get_mut_stream(&mut self, stream_name: &String) -> &mut StreamInfo {
         self.streams
             .get_mut(stream_name)
             .unwrap_or_else(|| panic!("Stream {} does not exist.", stream_name))
     }
 
-    pub fn get_mut_fields(&mut self) -> &mut Fields {
+    pub(crate) fn get_mut_fields(&mut self) -> &mut Fields {
         &mut self.fields
     }
 
     //method to check if a stream already exists
-    pub fn check_stream(&self, stream: &StreamInfo) -> bool {
+    pub(crate) fn check_stream(&self, stream: &StreamInfo) -> bool {
         let mut exists = false;
 
         for (_, s) in self.streams.iter() {
@@ -186,48 +163,27 @@ impl QueryObject {
     }
 
     //get stream from alias
-    pub fn get_stream_from_alias(&self, alias: &str) -> Option<&String> {
+    pub(crate) fn get_stream_from_alias(&self, alias: &str) -> Option<&String> {
         self.alias_to_stream.get(alias)
     }
 
-    //method to insert final result columns types
-    pub fn insert_final_result_col(&mut self, result_col: &str, result_type: &str) {
-        self.result_column_types
-            .insert(result_col.to_string(), result_type.to_string());
-    }
-
-    //get csv from table
-    pub fn get_csv(&self, table: &str) -> Option<&String> {
-        self.table_to_csv.get(table)
-    }
-
     //get struct from table
-    pub fn get_struct(&self, table: &str) -> Option<&IndexMap<String, String>> {
+    pub(crate) fn get_struct(&self, table: &str) -> Option<&IndexMap<String, String>> {
         self.tables_info.get(table)
     }
 
     //get field from struct
-    pub fn get_struct_field(&self, table: &str, field: &str) -> Option<&String> {
+    pub(crate) fn get_struct_field(&self, table: &str, field: &str) -> Option<&String> {
         self.tables_info.get(table).and_then(|s| s.get(field))
     }
 
-    //get struct name from table
-    pub fn get_struct_name(&self, table: &str) -> Option<&String> {
-        self.table_to_struct_name.get(&(table.to_string()))
-    }
-
-    //method to get all the structs
-    pub fn get_all_structs(&self) -> Vec<String> {
-        self.table_to_struct_name.values().cloned().collect()
-    }
-
     //method to get all the table names
-    pub fn get_all_table_names(&self) -> Vec<String> {
+    pub(crate) fn get_all_table_names(&self) -> Vec<String> {
         self.tables_info.keys().cloned().collect()
     }
 
     //method to get the type of a column ref
-    pub fn get_type(&self, column: &ColumnRef) -> String {
+    pub(crate) fn get_type(&self, column: &ColumnRef) -> String {
         let stream_name: String = if column.table.is_some() {
             self.get_stream_from_alias(column.table.as_ref().unwrap())
                 .unwrap()
@@ -256,14 +212,8 @@ impl QueryObject {
         str
     }
 
-    //method to insert the result column and its type in the result_column_types
-    pub fn insert_result_col(&mut self, result_col: &str, result_type: &str) {
-        self.result_column_types
-            .insert(result_col.to_string(), result_type.to_string());
-    }
-
     //method to populate the QueryObject with the necessary information
-    pub fn populate(mut self, ir_ast: &Arc<IrPlan>) -> Self {
+    pub(crate) fn populate(mut self, ir_ast: &Arc<IrPlan>) -> Self {
         // empty result_col_types, projection_agg, has_join, order_by, limit, distinct
         self.result_column_types.clear();
         self.projection_agg.clear();
@@ -465,7 +415,7 @@ impl QueryObject {
     /// Collects ONLY aggregates from the final projection
     /// This is Phase 1 of result mapping population, focusing only on gathering aggregates
     /// before AST parsing for GROUP BY processing
-    pub fn collect_projection_aggregates(&mut self, ir_ast: &Arc<IrPlan>) {
+    pub(crate) fn collect_projection_aggregates(&mut self, ir_ast: &Arc<IrPlan>) {
         match &**ir_ast {
             IrPlan::Project { columns, .. } => {
                 self.projection_agg.clear(); // Ensure we start with empty vec
@@ -525,7 +475,7 @@ impl QueryObject {
         }
     }
 
-    pub fn populate_result_mappings(
+    pub(crate) fn populate_result_mappings(
         &mut self,
         columns: &Vec<ProjectionColumn>,
         stream_name: &String,
@@ -733,7 +683,7 @@ impl QueryObject {
         name
     }
 
-    pub fn get_complex_field_type(&self, field: &ComplexField) -> String {
+    pub(crate) fn get_complex_field_type(&self, field: &ComplexField) -> String {
         if let Some(ref col) = field.column_ref {
             let stream_name = if col.table.is_some() {
                 self.get_stream_from_alias(col.table.as_ref().unwrap())

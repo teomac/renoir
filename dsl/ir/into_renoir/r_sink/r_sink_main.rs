@@ -7,7 +7,7 @@ use crate::dsl::struct_object::object::QueryObject;
 
 use super::r_sink_agg::create_aggregate_map_from_previous;
 
-pub fn process_projections(
+pub(crate) fn process_projections(
     projections: &[ProjectionColumn],
     stream_name: &String,
     query_object: &mut QueryObject,

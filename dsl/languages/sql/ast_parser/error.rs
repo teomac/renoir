@@ -7,7 +7,6 @@ use std::fmt::{self, Display};
 pub enum SqlParseError {
     PestError(Box<PestError<Rule>>),
     InvalidInput(String),
-    InvalidType(String),
     // Add other error types as needed
 }
 
@@ -16,7 +15,6 @@ impl Display for SqlParseError {
         match self {
             SqlParseError::PestError(e) => write!(f, "Parse error: {}", e),
             SqlParseError::InvalidInput(msg) => write!(f, "Invalid input: {}", msg),
-            SqlParseError::InvalidType(msg) => write!(f, "Invalid type: {}", msg),
         }
     }
 }

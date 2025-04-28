@@ -14,7 +14,7 @@ use crate::dsl::struct_object::object::QueryObject;
 use core::panic;
 
 //initial function
-pub fn create_aggregate_map(
+pub(crate) fn create_aggregate_map(
     projection_clauses: &[ProjectionColumn],
     stream_name: &String,
     query_object: &QueryObject,
@@ -132,7 +132,6 @@ fn create_fold(
 ) -> String {
     let mut result = String::new();
     let stream = query_object.get_stream(stream_name);
-    let is_grouped = stream.is_keyed;
     let mut keys = Vec::new();
     let mut all_streams = Vec::new();
     if stream.join_tree.is_some() {
@@ -170,12 +169,6 @@ fn create_fold(
                         tuple_types.push("Option<f64>".to_string());
                     }
                 }
-            }
-            AccumulatorValue::Column(_) => {
-                // No need to add columns to the accumulator
-            }
-            AccumulatorValue::Literal(_) => {
-                // String literals are constant, no update needed
             }
         }
     }
@@ -312,17 +305,6 @@ fn create_fold(
                     AggregateType::Avg => {} // Handled through Sum and Count
                 }
             }
-            AccumulatorValue::Column(col) => {
-                //check if the column is a key column
-                if !is_grouped {
-                    panic!("Cannot use column in projection clause in non-grouped query");
-                } else if !keys.contains(col) {
-                    panic!("Cannot use column in projection clause in grouped query that is not a key column");
-                }
-            }
-            AccumulatorValue::Literal(_) => {
-                // String literals are constant, no update needed
-            }
         }
     }
 
@@ -333,7 +315,7 @@ fn create_fold(
 }
 
 //function used to create the .map() operation
-pub fn create_map(
+pub(crate) fn create_map(
     projection_clauses: &[ProjectionColumn],
     acc_info: &AccumulatorInfo,
     stream_name: &String,

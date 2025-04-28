@@ -1,7 +1,7 @@
 use crate::dsl::struct_object::object::QueryObject;
 use core::panic;
 
-pub fn create_star_map(stream_name: &String, query_object: &QueryObject) -> String {
+pub(crate) fn create_star_map(stream_name: &String, query_object: &QueryObject) -> String {
     let stream = query_object.get_stream(stream_name);
     let mut result = format!(".map(|x| {} {{ ", stream.final_struct_name.last().unwrap());
 

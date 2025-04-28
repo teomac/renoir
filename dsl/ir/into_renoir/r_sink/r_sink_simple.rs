@@ -3,7 +3,7 @@ use crate::dsl::ir::IrLiteral;
 use crate::dsl::struct_object::object::QueryObject;
 use core::panic;
 
-pub fn create_simple_map(
+pub(crate) fn create_simple_map(
     projection_clauses: &[ProjectionColumn],
     stream_name: &String,
     query_object: &QueryObject,
@@ -179,7 +179,7 @@ pub fn create_simple_map(
     map_string
 }
 
-pub fn process_complex_field(
+pub(crate) fn process_complex_field(
     field: &ComplexField,
     stream_name: &String,
     query_object: &QueryObject,

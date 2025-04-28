@@ -6,7 +6,7 @@ use pest::iterators::Pair;
 pub struct ConditionParser;
 
 impl ConditionParser {
-    pub fn parse(pair: Pair<Rule>) -> Result<WhereClause, Box<SqlParseError>> {
+    pub(crate) fn parse(pair: Pair<Rule>) -> Result<WhereClause, Box<SqlParseError>> {
         let mut inner = pair.into_inner();
         inner.next(); // Skip WHERE keyword
 
@@ -203,7 +203,7 @@ impl ConditionParser {
 
                 if let Some(in_subquery) = in_subquery {
                     return Ok(WhereClause::Base(WhereBaseCondition::In(
-                        InCondition::InSubquery(
+                        InCondition::Subquery(
                             Box::new(in_subquery),
                             Box::new(subquery),
                             is_negated,
@@ -211,7 +211,7 @@ impl ConditionParser {
                     )));
                 } else {
                     return Ok(WhereClause::Base(WhereBaseCondition::In(
-                        InCondition::InWhere(
+                        InCondition::Where(
                             complex_field.unwrap(),
                             Box::new(subquery),
                             is_negated,

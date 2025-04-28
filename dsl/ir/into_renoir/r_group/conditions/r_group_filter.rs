@@ -9,7 +9,7 @@ use crate::dsl::struct_object::utils::check_column_validity;
 use core::panic;
 
 // Function to create the filter operation
-pub fn create_filter_operation(
+pub(crate) fn create_filter_operation(
     condition: &GroupClause,
     keys: &Vec<ColumnRef>,
     query_object: &QueryObject,
@@ -239,7 +239,7 @@ fn process_filter_condition(
                     }
                 }
                 GroupBaseCondition::In(in_condition) => match in_condition {
-                    InCondition::InOldVersion {
+                    InCondition::OldVersion {
                         field,
                         values,
                         negated,
@@ -300,8 +300,8 @@ fn process_filter_condition(
                                 if c_type == "String" { ".as_str()" } else { "" }
                                                             )
                     }
-                    InCondition::InSubquery { .. } => panic!("We should not have InSubquery here"),
-                    InCondition::InVec {
+                    InCondition::Subquery { .. } => panic!("We should not have InSubquery here"),
+                    InCondition::Vec {
                         field,
                         vector_name,
                         vector_type,

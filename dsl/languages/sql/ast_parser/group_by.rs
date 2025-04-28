@@ -6,7 +6,7 @@ use pest::iterators::Pair;
 pub struct GroupByParser;
 
 impl GroupByParser {
-    pub fn parse(pair: Pair<Rule>) -> Result<GroupByClause, Box<SqlParseError>> {
+    pub(crate) fn parse(pair: Pair<Rule>) -> Result<GroupByClause, Box<SqlParseError>> {
         let mut inner = pair.into_inner();
 
         inner
@@ -278,7 +278,7 @@ impl GroupByParser {
 
                 if let Some(in_subquery) = in_subquery {
                     return Ok(HavingClause::Base(HavingBaseCondition::In(
-                        InCondition::InSubquery(
+                        InCondition::Subquery(
                             Box::new(in_subquery),
                             Box::new(subquery),
                             is_negated,
@@ -286,7 +286,7 @@ impl GroupByParser {
                     )));
                 } else {
                     return Ok(HavingClause::Base(HavingBaseCondition::In(
-                        InCondition::InHaving(
+                        InCondition::Having(
                             having_field.unwrap(),
                             Box::new(subquery),
                             is_negated,

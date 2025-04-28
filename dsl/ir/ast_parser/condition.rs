@@ -7,7 +7,7 @@ use pest::iterators::Pair;
 pub struct ConditionParser;
 
 impl ConditionParser {
-    pub fn parse(pair: Pair<Rule>) -> Result<FilterClause, Box<IrParseError>> {
+    pub(crate) fn parse(pair: Pair<Rule>) -> Result<FilterClause, Box<IrParseError>> {
         let mut inner = pair.into_inner();
 
         // Skip 'where' keyword if present
@@ -22,7 +22,7 @@ impl ConditionParser {
         Self::parse_conditions(conditions)
     }
 
-    pub fn parse_conditions(
+    pub(crate) fn parse_conditions(
         conditions_pair: Pair<Rule>,
     ) -> Result<FilterClause, Box<IrParseError>> {
         let mut pairs = conditions_pair.into_inner().peekable();
@@ -230,7 +230,7 @@ impl ConditionParser {
                 let subquery_plan = IrParser::parse_subquery(subquery)?;
 
                 Ok(FilterClause::Base(FilterConditionType::In(
-                    InCondition::InSubquery {
+                    InCondition::Subquery {
                         field,
                         subquery: subquery_plan,
                         negated: is_negated,

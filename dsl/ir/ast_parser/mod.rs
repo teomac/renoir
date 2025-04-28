@@ -1,13 +1,13 @@
-pub mod builder;
-pub mod condition;
-pub mod error;
-pub mod group;
-pub mod ir_ast_structure;
-pub mod limit;
-pub mod literal;
-pub mod order;
-pub mod projection;
-pub mod source;
+pub(crate) mod builder;
+pub(crate) mod condition;
+pub(crate) mod error;
+pub(crate) mod group;
+pub(crate) mod ir_ast_structure;
+pub(crate) mod limit;
+pub(crate) mod literal;
+pub(crate) mod order;
+pub(crate) mod projection;
+pub(crate) mod source;
 
 pub use ir_ast_structure::*;
 use pest::iterators::Pair;
@@ -24,7 +24,7 @@ use std::sync::Arc;
 pub struct IrParser;
 
 impl IrParser {
-    pub fn parse_query(input: &str) -> Result<Arc<IrPlan>, Box<IrParseError>> {
+    pub(crate) fn parse_query(input: &str) -> Result<Arc<IrPlan>, Box<IrParseError>> {
         let pairs = Self::parse(Rule::query, input).map_err(|e| Box::new(IrParseError::from(e)))?;
 
         let ast = IrASTBuilder::build_ast_from_pairs(pairs)?;
@@ -32,7 +32,7 @@ impl IrParser {
         Ok(ast)
     }
 
-    pub fn parse_subquery(pair: Pair<Rule>) -> Result<Arc<IrPlan>, Box<IrParseError>> {
+    pub(crate) fn parse_subquery(pair: Pair<Rule>) -> Result<Arc<IrPlan>, Box<IrParseError>> {
         if pair.as_rule() != Rule::subquery {
             return Err(Box::new(IrParseError::InvalidInput(format!(
                 "Expected subquery expression, got {:?}",

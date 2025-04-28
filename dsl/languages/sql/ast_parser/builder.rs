@@ -12,7 +12,7 @@ use pest::iterators::Pairs;
 pub struct SqlASTBuilder;
 
 impl SqlASTBuilder {
-    pub fn build_ast_from_pairs(pairs: Pairs<Rule>) -> Result<SqlAST, Box<SqlParseError>> {
+    pub(crate) fn build_ast_from_pairs(pairs: Pairs<Rule>) -> Result<SqlAST, Box<SqlParseError>> {
         let mut pairs = pairs.clone();
         if let Some(pair) = pairs.next() {
             match pair.as_rule() {

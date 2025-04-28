@@ -5,7 +5,7 @@ use crate::dsl::ir::r_group::r_group_keys::{GroupAccumulatorInfo, GroupAccumulat
 use crate::dsl::ir::{ColumnRef, InCondition, QueryObject};
 
 // Function to parse group conditions and collect necessary information
-pub fn parse_group_conditions(
+pub(crate) fn parse_group_conditions(
     condition: &GroupClause,
     query_object: &QueryObject,
     acc_info: &mut GroupAccumulatorInfo,
@@ -42,7 +42,7 @@ pub fn parse_group_conditions(
                 }
                 GroupBaseCondition::In(in_cond) => {
                     match in_cond {
-                        InCondition::InOldVersion {
+                        InCondition::OldVersion {
                             field,
                             values: _,
                             negated: _,
@@ -50,7 +50,7 @@ pub fn parse_group_conditions(
                             // Process the field for aggregates
                             collect_field_aggregates(field, acc_info, query_object, keys);
                         }
-                        InCondition::InSubquery {
+                        InCondition::Subquery {
                             field,
                             subquery: _,
                             negated: _,
@@ -58,7 +58,7 @@ pub fn parse_group_conditions(
                             // Process the field for aggregates
                             collect_field_aggregates(field, acc_info, query_object, keys);
                         }
-                        InCondition::InVec {
+                        InCondition::Vec {
                             field,
                             vector_name: _,
                             vector_type: _,

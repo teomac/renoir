@@ -1,19 +1,16 @@
-pub mod builder;
-pub mod error;
-pub mod from;
-pub mod group_by;
-pub mod limit;
-pub mod literal;
-pub mod order;
-pub mod select;
-pub mod sql_ast_structure;
-pub mod validate;
-pub mod where_clause;
+pub(crate) mod builder;
+pub(crate) mod error;
+pub(crate) mod from;
+pub(crate) mod group_by;
+pub(crate) mod limit;
+pub(crate) mod literal;
+pub(crate) mod order;
+pub(crate) mod select;
+pub(crate) mod sql_ast_structure;
+pub(crate) mod validate;
+pub(crate) mod where_clause;
 use pest::iterators::Pair;
-pub use sql_ast_structure::{
-    AggregateFunction, ComparisonOp as SqlOperator, FromClause, SelectColumn, SelectType, SqlAST,
-    WhereClause, WhereCondition,
-};
+pub use sql_ast_structure::SqlAST;
 
 use crate::dsl::languages::sql::ast_parser::builder::SqlASTBuilder;
 use crate::dsl::languages::sql::ast_parser::error::SqlParseError;
@@ -26,14 +23,14 @@ use pest_derive::Parser;
 pub struct SqlParser;
 
 impl SqlParser {
-    pub fn parse_query(input: &str) -> Result<SqlAST, Box<SqlParseError>> {
+    pub(crate) fn parse_query(input: &str) -> Result<SqlAST, Box<SqlParseError>> {
         let pairs =
             Self::parse(Rule::query, input).map_err(|e| Box::new(SqlParseError::from(e)))?;
 
         SqlASTBuilder::build_ast_from_pairs(pairs)
     }
 
-    pub fn parse_subquery(pair: Pair<Rule>) -> Result<SqlAST, Box<SqlParseError>> {
+    pub(crate) fn parse_subquery(pair: Pair<Rule>) -> Result<SqlAST, Box<SqlParseError>> {
         if pair.as_rule() != Rule::subquery_expr {
             return Err(Box::new(SqlParseError::InvalidInput(format!(
                 "Expected subquery expression, got {:?}",

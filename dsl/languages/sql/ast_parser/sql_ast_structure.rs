@@ -155,9 +155,9 @@ pub struct HavingNullCondition {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum InCondition {
-    InWhere(WhereField, Box<SqlAST>, bool), // WhereField, subquery, negated
-    InHaving(HavingField, Box<SqlAST>, bool), // HavingField, subquery, negated
-    InSubquery(Box<SqlAST>, Box<SqlAST>, bool), // subquery, Subquery, negated
+    Where(WhereField, Box<SqlAST>, bool), // WhereField, subquery, negated
+    Having(HavingField, Box<SqlAST>, bool), // HavingField, subquery, negated
+    Subquery(Box<SqlAST>, Box<SqlAST>, bool), // subquery, Subquery, negated
 }
 
 #[derive(Debug, PartialEq, Clone)]
