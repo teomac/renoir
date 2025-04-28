@@ -694,8 +694,7 @@ fn process_complex_field_for_map(
             }
             IrLiteral::Float(f) => format!("{:.2}", f),
             IrLiteral::String(s) => format!("\"{}\"", s),
-            IrLiteral::Boolean(b) => b.to_string(),
-            IrLiteral::ColumnRef(_) => panic!("Column ref should have been handled earlier"),
+            IrLiteral::Boolean(b) => b.to_string()
         }
     } else if let Some(ref agg) = field.aggregate {
         // Handle aggregate access

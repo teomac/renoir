@@ -1,4 +1,4 @@
-use crate::dsl::ir::{AggregateFunction, ColumnRef, JoinType};
+use crate::dsl::ir::{AggregateFunction, ColumnRef};
 use crate::dsl::struct_object::object::QueryObject;
 use indexmap::IndexMap;
 
@@ -186,7 +186,6 @@ pub enum JoinTree {
     Join {
         left: Box<JoinTree>,
         right: Box<JoinTree>,
-        join_type: JoinType,
     },
 }
 

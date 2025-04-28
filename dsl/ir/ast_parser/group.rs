@@ -259,7 +259,7 @@ impl GroupParser {
             }
             Rule::exists_keyword => {
                 // Check if this is "not exists" or just "exists"
-                let is_negated = first.as_str().to_lowercase().starts_with("not");
+                let negated = first.as_str().to_lowercase().starts_with("not");
 
                 // Get the subquery expression
                 let subquery_expr = inner.next().ok_or_else(|| {
@@ -270,7 +270,7 @@ impl GroupParser {
                 let subquery = IrParser::parse_subquery(subquery_expr)?;
 
                 Ok(GroupClause::Base(GroupBaseCondition::Exists(
-                    subquery, is_negated,
+                    ExistsCondition::Subquery { subquery, negated },
                 )))
             }
             Rule::qualified_column | Rule::identifier | Rule::subquery => {

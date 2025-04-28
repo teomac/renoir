@@ -194,7 +194,6 @@ pub(crate) fn process_join(
             Some(tree) => tree.clone(),
             None => JoinTree::Leaf(right_stream.clone()),
         }),
-        join_type: join_type.clone(),
     };
 
     // Store join tree and update access paths

@@ -42,14 +42,6 @@ pub(crate) fn parse_group_conditions(
                 }
                 GroupBaseCondition::In(in_cond) => {
                     match in_cond {
-                        InCondition::OldVersion {
-                            field,
-                            values: _,
-                            negated: _,
-                        } => {
-                            // Process the field for aggregates
-                            collect_field_aggregates(field, acc_info, query_object, keys);
-                        }
                         InCondition::Subquery {
                             field,
                             subquery: _,
@@ -69,9 +61,8 @@ pub(crate) fn parse_group_conditions(
                         }
                     }
                 }
-                GroupBaseCondition::Exists(_, _) => (),
+                GroupBaseCondition::Exists(..) => (),
                 GroupBaseCondition::Boolean(_) => (),
-                GroupBaseCondition::ExistsVec(_, _) => (),
             }
         }
         GroupClause::Expression { left, op: _, right } => {

@@ -7,8 +7,7 @@ pub(crate) fn convert_literal(literal: &IrLiteral) -> String {
         IrLiteral::Integer(val) => format!("{}", val),
         IrLiteral::Float(val) => format!("{:.2}", val),
         IrLiteral::String(val) => format!("\"{}\"", val),
-        IrLiteral::Boolean(val) => format!("{}", val),
-        IrLiteral::ColumnRef(_val) => "".to_string(),
+        IrLiteral::Boolean(val) => format!("{}", val)
     }
 }
 

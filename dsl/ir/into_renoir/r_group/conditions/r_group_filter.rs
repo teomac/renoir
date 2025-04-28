@@ -3,7 +3,9 @@ use crate::dsl::ir::ir_ast_structure::{
 };
 use crate::dsl::ir::r_group::r_group_keys::GroupAccumulatorInfo;
 use crate::dsl::ir::r_utils::convert_literal;
-use crate::dsl::ir::{AggregateFunction, BinaryOp, ComparisonOp, InCondition, IrLiteral};
+use crate::dsl::ir::{
+    AggregateFunction, BinaryOp, ComparisonOp, ExistsCondition, InCondition, IrLiteral,
+};
 use crate::dsl::ir::{ColumnRef, QueryObject};
 use crate::dsl::struct_object::utils::check_column_validity;
 use core::panic;
@@ -204,9 +206,6 @@ fn process_filter_condition(
                                 NullOp::IsNull => format!("{}", string.is_empty()),
                                 NullOp::IsNotNull => format!("{}", !string.is_empty()),
                             },
-                            IrLiteral::ColumnRef(_) => {
-                                panic!("We should not be here.")
-                            }
                         }
                     } else if null_check.field.aggregate.is_some() {
                         match null_check.operator {
@@ -239,68 +238,7 @@ fn process_filter_condition(
                     }
                 }
                 GroupBaseCondition::In(in_condition) => match in_condition {
-                    InCondition::OldVersion {
-                        field,
-                        values,
-                        negated,
-                    } => {
-                        // Get the values
-                        let values_str = values
-                            .iter()
-                            .map(|value| match value {
-                                IrLiteral::Integer(i) => i.to_string(),
-                                IrLiteral::Float(f) => format!("{:.2}", f),
-                                IrLiteral::String(s) => format!("\"{}\"", s),
-                                IrLiteral::Boolean(b) => b.to_string(),
-                                IrLiteral::ColumnRef(_) => {
-                                    panic!(
-                                        "Invalid InCondition - column reference not expected here"
-                                    )
-                                }
-                            })
-                            .collect::<Vec<String>>()
-                            .join(", ");
-
-                        let col_ref = if field.column_ref.is_some() {
-                            field.column_ref.as_ref().unwrap()
-                        } else {
-                            panic!("IN condition must be on a column reference")
-                        };
-
-                        let is_key = keys.iter().any(|k| k.column == col_ref.column);
-                        let key_position = if is_key {
-                            keys.iter()
-                                .position(|k| k.column == col_ref.column)
-                                .unwrap()
-                        } else {
-                            panic!("Field in IN condition must be a group by key")
-                        };
-
-                        // Generate the condition with correct tuple access
-                        let single_key = keys.len() == 1;
-                        let c_type = query_object.get_type(col_ref);
-
-                        let access_str = if single_key {
-                            format!("x.0{}", if c_type == "String" { ".as_ref()" } else { "" })
-                        } else {
-                            format!(
-                                "x.0.{}{}",
-                                key_position,
-                                if c_type == "String" { ".as_ref()" } else { "" }
-                            )
-                        };
-
-                        // Generate the final string with proper null checks
-                        format!(
-                                "if {}.is_some() {{{}vec![{}].contains(&{}.unwrap(){})}} else {{false}}",
-                                access_str,
-                                if *negated { "!" } else { "" },
-                                values_str,
-                                access_str,
-                                if c_type == "String" { ".as_str()" } else { "" }
-                                                            )
-                    }
-                    InCondition::Subquery { .. } => panic!("We should not have InSubquery here"),
+                    InCondition::Subquery { .. } => panic!("We should not have Subquery here"),
                     InCondition::Vec {
                         field,
                         vector_name,
@@ -525,9 +463,6 @@ fn process_filter_condition(
                                             string
                                         )
                                     }
-                                    _ => {
-                                        panic!("Invalid InCondition - missing field")
-                                    }
                                 }
                             }
                             //fourth - aggregate case
@@ -682,13 +617,22 @@ fn process_filter_condition(
                         }
                     }
                 },
-                GroupBaseCondition::Exists(_, _) => {
-                    panic!("Exists condition should be already parsed")
-                }
+                GroupBaseCondition::Exists(exists) => match exists {
+                    ExistsCondition::Vec {
+                        vector_name,
+                        negated,
+                    } => {
+                        format!(
+                            " {}{}.is_empty()",
+                            if *negated { "" } else { "!" },
+                            vector_name
+                        )
+                    }
+                    ExistsCondition::Subquery { .. } => {
+                        panic!("Subuery in exists condition should be already handled")
+                    }
+                },
                 GroupBaseCondition::Boolean(boolean) => boolean.to_string(),
-                GroupBaseCondition::ExistsVec(vec, negated) => {
-                    format!(" {}{}.is_empty()", if *negated { "" } else { "!" }, vec)
-                }
             }
         }
         GroupClause::Expression { left, op, right } => {
@@ -909,9 +853,6 @@ fn process_filter_field(
             IrLiteral::Float(f) => format!("{:.2}", f),
             IrLiteral::String(s) => format!("\"{}\"", s),
             IrLiteral::Boolean(b) => b.to_string(),
-            IrLiteral::ColumnRef(_) => {
-                panic!("ColumnRef should have been handled earlier")
-            }
         }
     } else if let Some(ref agg) = field.aggregate {
         //retrive aggregate position from the accumulator

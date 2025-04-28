@@ -1,5 +1,6 @@
+pub(crate) mod subquery_utils;
+
 use indexmap::IndexMap;
-use old_subquery_utils::old_manage_subqueries;
 use subquery_utils::manage_subqueries;
 
 use super::binary_generation::creation;
@@ -7,16 +8,11 @@ use super::binary_generation::fields::Fields;
 use crate::dsl::binary_generation::execution::*;
 use crate::dsl::csv_utils::csv_parsers::*;
 use crate::dsl::ir::*;
-use crate::dsl::languages::dataframe::dataframe_to_ir;
 use crate::dsl::languages::sql::sql_parser::sql_to_ir;
 use crate::dsl::struct_object::object::*;
 use core::panic;
 use std::io;
 use std::sync::Arc;
-
-
-pub(crate) mod old_subquery_utils;
-pub(crate) mod subquery_utils;
 
 /// Executes a query on CSV files and generates a Rust binary to process the query.
 ///
@@ -52,39 +48,27 @@ pub(crate) mod subquery_utils;
 /// 4. Convert the Ir AST to a valid Renoir query.
 /// 5. Generate the main.rs file and update it in the Rust project.
 /// 6. Compile the binary and save it to the specified output path.
-pub fn query(
-    query_str: &str,
+pub fn renoir_sql(
+    sql_query: &str,
     output_path: &String,
     input_tables: &IndexMap<String, (String, String)>, // key: table name, value: (csv_path, user_defined_types)
 ) -> io::Result<String> {
-    // Determine query type based on syntax
-    let is_sql_query =
-        query_str.to_uppercase().contains("SELECT") && query_str.to_uppercase().contains("FROM");
+    //check if the sql_query is valid
+    // For simplicity, we will just check if the query contains "SELECT" and "FROM"
+    if !sql_query.to_uppercase().contains("SELECT") && sql_query.to_uppercase().contains("FROM") {
+        panic!("Invalid SQL query syntax");
+    }
 
-    let ir_ast = if !is_sql_query && query_str.contains('.') {
-        // Parse as DataFrame query
-        println!("Detected DataFrame query syntax");
-        match dataframe_to_ir(query_str) {
-            Ok(ast) => ast,
-            Err(e) => {
-                return Err(io::Error::new(
-                    io::ErrorKind::Other,
-                    format!("Error parsing DataFrame query: {}", e),
-                ))
-            }
-        }
-    } else {
-        // Parse as SQL query
-        println!("Detected SQL query syntax");
-        let ir_query = sql_to_ir(query_str);
-        query_ir_to_ast(&ir_query)
-    };
+    // Parse the SQL query to IR
+    let ir_query = sql_to_ir(sql_query);
 
-    // Common processing logic for both query types
-    process_query(ir_ast, output_path, input_tables)
+    let ir_ast = query_ir_to_ast(&ir_query);
+
+    //process the ast
+    process_ir_ast(ir_ast, output_path, input_tables)
 }
 
-pub fn query_ir_input(
+pub fn renoir_ir(
     query_ir: &str,
     output_path: &String,
     input_tables: &IndexMap<String, (String, String)>, // key: table name, value: (csv_path, user_defined types)
@@ -92,10 +76,10 @@ pub fn query_ir_input(
     let ir_ast = query_ir_to_ast(query_ir);
     //println!("IR AST: {:?}", ir_ast);
 
-    process_query(ir_ast, output_path, input_tables)
+    process_ir_ast(ir_ast, output_path, input_tables)
 }
 
-pub(crate) fn process_query(
+pub(crate) fn process_ir_ast(
     ir_ast: Arc<IrPlan>,
     output_path: &String,
     input_tables: &IndexMap<String, (String, String)>, // key: table name, value: (csv_path, user_defined_types)
@@ -230,63 +214,6 @@ pub(crate) fn subquery_csv(
 
     // return the name of the result vec
     (subquery_result, subquery_result_type, fields.clone())
-}
-
-//old method that executes an entire different main.rs file for each subquery
-pub(crate) fn old_subquery_csv(
-    ir_ast: Arc<IrPlan>,
-    output_path: &String,
-    tables_info: IndexMap<String, IndexMap<String, String>>,
-    tables_csv: IndexMap<String, String>,
-) -> String {
-    // step 1: create query_object
-    let mut query_object = QueryObject::new();
-    query_object.set_output_path(output_path);
-    query_object.set_tables_info(tables_info);
-    query_object.set_table_to_csv(tables_csv);
-
-    // step2: create new temporary project
-    let rust_project = creation::RustProject::create_empty_project(output_path).unwrap();
-
-    // step 3: check if there is a subquery
-    let ir_ast =
-        old_manage_subqueries(&ir_ast, &output_path.to_string(), &mut query_object).unwrap();
-
-    // step 3.5: populate query_object with ir_ast
-    query_object = query_object.populate(&ir_ast);
-    query_object.collect_projection_aggregates(&ir_ast);
-
-    // step 4: convert Ir AST to renoir string
-    let result = ir_ast_to_renoir(&mut query_object);
-    if result.is_err() {
-        panic!("Error converting IR AST to Renoir");
-    }
-
-    let structs = query_object.structs.clone();
-    let streams = query_object.streams.clone();
-    let result_columns = query_object.result_column_types.clone();
-
-    //step 4.5: update fields
-    let fields = query_object.get_mut_fields();
-    fields.output_path = output_path.clone();
-    fields.fill(structs, streams);
-    fields.fill_subquery_main(result_columns);
-
-    // step 5: generate main.rs and update it in the Rust project
-    let main = fields.main.clone();
-    let _ = rust_project.update_main_rs(&main);
-
-    fields.main.clear();
-    fields.streams.clear();
-    fields.structs.clear();
-
-    // step 6: compile the binary and return the output as string
-    let output = binary_execution(output_path, rust_project);
-    if let Ok(output) = output {
-        output
-    } else {
-        panic!("Error compiling the binary");
-    }
 }
 
 //method that creates a stream that has no sink, that will be used for scan operations

@@ -163,66 +163,6 @@ impl Fields {
         result
     }
 
-    pub(crate) fn fill_subquery_main(&mut self, result_column_types: IndexMap<String, String>) {
-        self.main.push_str(&self.imports);
-        self.main.push_str("\n\n");
-        self.main
-            .push_str(&Self::generate_struct_declarations(self.structs.clone()));
-        self.main.push_str("\n\n");
-
-        self.main.push_str(
-            r#" fn main() {
-            let config = ConfigBuilder::new_local(1).unwrap();
-
-            let ctx = StreamContext::new(config.clone());
-            "#,
-        );
-
-        let mut streams = self.streams.clone();
-        streams.reverse();
-
-        for (i, (stream_name, stream)) in streams.iter().enumerate() {
-            self.main.push_str(&format!(
-                r#"let {} = {}{};
-             "#,
-                stream_name,
-                stream.op_chain.concat(),
-                if i == self.streams.len() - 1 {
-                    ".collect_vec()"
-                } else {
-                    ""
-                }
-            ));
-            self.main.push_str("\n\n");
-
-            if i == streams.len() - 1 {
-                self.main.push_str("ctx.execute_blocking();\n");
-
-                self.main.push_str(&format!(
-                    r#"let result = {}.get();
-                    if let Some(values) = result {{
-                let values: Vec<_> = values
-                    .iter()
-                    .filter_map(|record| record.{}.clone())
-                    .collect();
-                
-                if !values.is_empty() {{
-                    println!("{{:?}}", values);
-                    }} else {{
-                    println!("");
-                    }}
-                    }} else {{
-                println!("");
-                    }}"#,
-                    stream_name,
-                    result_column_types.first().unwrap().0,
-                ));
-            }
-        }
-
-        self.main.push('}');
-    }
-
     pub(crate) fn collect_subquery_result(&mut self, is_single_result: bool) -> (String, String) {
         let stream_name = self.streams.first().unwrap().0.clone();
         let new_result = format!("{}_result", stream_name);

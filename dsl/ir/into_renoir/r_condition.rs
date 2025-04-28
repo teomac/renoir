@@ -3,10 +3,10 @@ use crate::dsl::ir::ir_ast_structure::{
     ColumnRef, FilterConditionType, IrLiteral, NullCondition, NullOp,
 };
 use crate::dsl::ir::r_utils::convert_literal;
-use crate::dsl::ir::FilterClause;
 use crate::dsl::ir::QueryObject;
 use crate::dsl::ir::{BinaryOp, InCondition};
 use crate::dsl::ir::{ComparisonOp, Condition};
+use crate::dsl::ir::{ExistsCondition, FilterClause};
 use crate::dsl::struct_object::utils::*;
 use core::panic;
 
@@ -222,9 +222,6 @@ fn process_arithmetic_expression(
             IrLiteral::Float(f) => format!("{:.2}", f),
             IrLiteral::String(s) => format!("\"{}\"", s),
             IrLiteral::Boolean(b) => b.to_string(),
-            IrLiteral::ColumnRef(_) => {
-                panic!("Invalid ComplexField - column reference not expected here");
-            }
         }
     } else if let Some((sub_name, sub_type)) = &field.subquery_vec {
         //check if the subquery is empty
@@ -256,71 +253,7 @@ fn process_condition(condition: &FilterConditionType, query_object: &QueryObject
         }
         FilterConditionType::In(in_condition) => {
             match in_condition {
-                InCondition::OldVersion {
-                    field,
-                    values,
-                    negated,
-                } => {
-                    // Get the values
-                    let values_str = values
-                        .iter()
-                        .map(|value| match value {
-                            IrLiteral::Integer(i) => i.to_string(),
-                            IrLiteral::Float(f) => format!("{:.2}", f),
-                            IrLiteral::String(s) => format!("\"{}\"", s),
-                            IrLiteral::Boolean(b) => b.to_string(),
-                            IrLiteral::ColumnRef(_) => {
-                                panic!("Invalid InCondition - column reference not expected here")
-                            }
-                        })
-                        .collect::<Vec<String>>()
-                        .join(", ");
-
-                    //check if the complex field is a column reference
-                    let col_ref = if field.column_ref.is_some() {
-                        field.column_ref.as_ref().unwrap()
-                    } else {
-                        panic!("Invalid InCondition - missing column reference")
-                    };
-
-                    // Check if the field is a column reference
-                    let stream_name = if col_ref.table.is_some() {
-                        query_object
-                            .get_stream_from_alias(col_ref.table.as_ref().unwrap())
-                            .unwrap()
-                    } else {
-                        let all_streams = &query_object.streams;
-                        if all_streams.len() > 1 {
-                            panic!("Invalid column reference - missing table name");
-                        }
-                        all_streams.first().unwrap().0
-                    };
-
-                    // Validate column
-                    check_column_validity(col_ref, stream_name, query_object);
-
-                    let stream = query_object.get_stream(stream_name);
-                    let c_type = query_object.get_type(col_ref);
-
-                    // Generate the condition
-                    let condition_str = format!(
-                        "x{}.{}.as_ref().unwrap(){}",
-                        stream.get_access().get_base_path(),
-                        col_ref.column,
-                        if c_type == "String" { ".as_str()" } else { "" }
-                    );
-
-                    // Generate the final string
-                    format!(
-                        "if x{}.{}.as_ref().is_some() {{{}vec![{}].contains(&{})}} else {{false}}",
-                        stream.get_access().get_base_path(),
-                        col_ref.column,
-                        if *negated { "!" } else { "" },
-                        values_str,
-                        condition_str
-                    )
-                }
-                InCondition::Subquery { .. } => panic!("We should not have InSubquery here"),
+                InCondition::Subquery { .. } => panic!("We should not have Subquery here"),
                 InCondition::Vec {
                     field,
                     vector_name,
@@ -526,9 +459,6 @@ fn process_condition(condition: &FilterConditionType, query_object: &QueryObject
                                     string
                                 )
                             }
-                            _ => {
-                                panic!("Invalid InCondition - missing field")
-                            }
                         }
                     } else if field.nested_expr.is_some() {
                         let mut cast = String::new();
@@ -572,11 +502,22 @@ fn process_condition(condition: &FilterConditionType, query_object: &QueryObject
                 }
             }
         }
-        FilterConditionType::Exists(_, _) => panic!("Exists condition should be already parsed"),
+        FilterConditionType::Exists(exists) => match exists {
+            ExistsCondition::Subquery { .. } => {
+                panic!("Subquery in exists condition should be already handled")
+            }
+            ExistsCondition::Vec {
+                vector_name,
+                negated,
+            } => {
+                format!(
+                    "{}{}.is_empty()",
+                    if *negated { "" } else { "!" },
+                    vector_name
+                )
+            }
+        },
         FilterConditionType::Boolean(boolean) => boolean.to_string(),
-        FilterConditionType::ExistsVec(vec, bool) => {
-            format!(" {}{}.is_empty()", if *bool { "" } else { "!" }, vec)
-        }
     }
 }
 
@@ -641,10 +582,6 @@ fn process_null_check_condition(condition: &NullCondition, query_object: &QueryO
                 NullOp::IsNull => format!("{}", string.is_empty()),
                 NullOp::IsNotNull => format!("{}", !string.is_empty()),
             },
-
-            _ => {
-                panic!("Invalid null check condition - missing field")
-            }
         }
     } else if let Some((sub_name, _)) = &field.subquery_vec {
         match condition.operator {
@@ -859,9 +796,6 @@ fn has_column_reference(field: &ComplexField) -> bool {
         let (left, _, right, _) = &**nested;
         return has_column_reference(left) || has_column_reference(right);
     }
-    if let Some(IrLiteral::ColumnRef(_)) = field.literal {
-        return true;
-    }
     if let Some(ref _agg) = field.aggregate {
         return true;
     }
@@ -879,9 +813,6 @@ fn collect_columns(field: &ComplexField) -> Vec<ColumnRef> {
         let (left, _, right, _) = &**nested;
         columns.extend(collect_columns(left));
         columns.extend(collect_columns(right));
-    }
-    if let Some(IrLiteral::ColumnRef(col)) = field.literal.as_ref() {
-        columns.push(col.clone());
     }
     if let Some(ref agg) = field.aggregate {
         columns.push(agg.column.clone());

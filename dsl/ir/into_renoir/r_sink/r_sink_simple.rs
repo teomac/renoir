@@ -391,10 +391,7 @@ pub(crate) fn process_complex_field(
             }
             IrLiteral::Float(f) => format!("{:.2}", f),
             IrLiteral::String(s) => format!("\"{}\"", s),
-            IrLiteral::Boolean(b) => b.to_string(),
-            IrLiteral::ColumnRef(_) => {
-                panic!("Column ref should have been handled earlier");
-            }
+            IrLiteral::Boolean(b) => b.to_string()
         }
     } else if let Some((ref result, ref result_type)) = field.subquery_vec {
         if result_type == "String" {

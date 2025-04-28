@@ -2,7 +2,7 @@ use core::panic;
 use std::{io, sync::Arc};
 
 use crate::dsl::ir::ast_parser::ir_ast_structure::ComplexField;
-use crate::dsl::ir::InCondition;
+use crate::dsl::ir::{ExistsCondition, InCondition};
 use crate::dsl::{
     ir::{
         Condition, FilterClause, FilterConditionType, GroupBaseCondition, GroupClause, IrPlan,
@@ -265,34 +265,46 @@ fn process_filter_condition(
                         },
                     )))
                 }
-                FilterConditionType::Exists(exists_subquery, is_negated) => {
-                    // Process the nested subqueries first
-                    let processed_subquery =
-                        manage_subqueries(exists_subquery, output_path, query_object)?;
+                FilterConditionType::Exists(exists) => {
+                    match exists {
+                        ExistsCondition::Subquery { subquery, negated } => {
+                            // Process the nested subqueries first
+                            let processed_subquery =
+                                manage_subqueries(subquery, output_path, query_object)?;
 
-                    // Execute the subquery
-                    let (result, _, fields) = subquery_csv(
-                        processed_subquery,
-                        output_path,
-                        query_object.tables_info.clone(),
-                        query_object.table_to_csv.clone(),
-                        false,
-                    );
+                            // Execute the subquery
+                            let (result, _, fields) = subquery_csv(
+                                processed_subquery,
+                                output_path,
+                                query_object.tables_info.clone(),
+                                query_object.table_to_csv.clone(),
+                                false,
+                            );
 
-                    let temp_fields = query_object.get_mut_fields();
-                    temp_fields.fill(fields.structs.clone(), fields.streams.clone());
+                            let temp_fields = query_object.get_mut_fields();
+                            temp_fields.fill(fields.structs.clone(), fields.streams.clone());
 
-                    Ok(FilterClause::Base(FilterConditionType::ExistsVec(
-                        result.clone(),
-                        *is_negated,
-                    )))
+                            Ok(FilterClause::Base(FilterConditionType::Exists(
+                                ExistsCondition::Vec {
+                                    vector_name: result.clone(),
+                                    negated: *negated,
+                                },
+                            )))
+                        }
+                        ExistsCondition::Vec {
+                            vector_name,
+                            negated,
+                        } => Ok(FilterClause::Base(FilterConditionType::Exists(
+                            ExistsCondition::Vec {
+                                vector_name: vector_name.clone(),
+                                negated: *negated,
+                            },
+                        ))),
+                    }
                 }
                 FilterConditionType::Boolean(boolean) => {
                     Ok(FilterClause::Base(FilterConditionType::Boolean(*boolean)))
                 }
-                FilterConditionType::ExistsVec(vec, negated) => Ok(FilterClause::Base(
-                    FilterConditionType::ExistsVec(vec.clone(), *negated),
-                )),
                 FilterConditionType::In(in_condition) => {
                     match in_condition {
                         InCondition::Subquery {
@@ -406,10 +418,6 @@ fn process_filter_condition(
                                 },
                             )))
                         }
-                        _ => panic!(
-                            "Invalid IN condition while parsing the subqueries. Condition: {:?}",
-                            in_condition
-                        ),
                     }
                 }
             }
@@ -467,33 +475,46 @@ fn process_group_condition(
                         },
                     )))
                 }
-                GroupBaseCondition::Exists(ir_plan, is_negated) => {
-                    // Process the subquery
-                    let processed_subquery = manage_subqueries(ir_plan, output_path, query_object)?;
+                GroupBaseCondition::Exists(exists) => {
+                    match exists {
+                        ExistsCondition::Subquery { subquery, negated } => {
+                            // Process the subquery
+                            let processed_subquery =
+                                manage_subqueries(subquery, output_path, query_object)?;
 
-                    // Execute the subquery
-                    let (result, _, fields) = subquery_csv(
-                        processed_subquery,
-                        output_path,
-                        query_object.tables_info.clone(),
-                        query_object.table_to_csv.clone(),
-                        false,
-                    );
+                            // Execute the subquery
+                            let (result, _, fields) = subquery_csv(
+                                processed_subquery,
+                                output_path,
+                                query_object.tables_info.clone(),
+                                query_object.table_to_csv.clone(),
+                                false,
+                            );
 
-                    let temp_fields = query_object.get_mut_fields();
-                    temp_fields.fill(fields.structs.clone(), fields.streams.clone());
+                            let temp_fields = query_object.get_mut_fields();
+                            temp_fields.fill(fields.structs.clone(), fields.streams.clone());
 
-                    Ok(GroupClause::Base(GroupBaseCondition::ExistsVec(
-                        result.clone(),
-                        *is_negated,
-                    )))
+                            Ok(GroupClause::Base(GroupBaseCondition::Exists(
+                                ExistsCondition::Vec {
+                                    vector_name: result.clone(),
+                                    negated: *negated,
+                                },
+                            )))
+                        }
+                        ExistsCondition::Vec {
+                            vector_name,
+                            negated,
+                        } => Ok(GroupClause::Base(GroupBaseCondition::Exists(
+                            ExistsCondition::Vec {
+                                vector_name: vector_name.clone(),
+                                negated: *negated,
+                            },
+                        ))),
+                    }
                 }
                 GroupBaseCondition::Boolean(boolean) => {
                     Ok(GroupClause::Base(GroupBaseCondition::Boolean(*boolean)))
                 }
-                GroupBaseCondition::ExistsVec(vec, negated) => Ok(GroupClause::Base(
-                    GroupBaseCondition::ExistsVec(vec.clone(), *negated),
-                )),
                 GroupBaseCondition::In(in_condition) => {
                     match in_condition {
                         InCondition::Subquery {
@@ -607,7 +628,6 @@ fn process_group_condition(
                                 },
                             )))
                         }
-                        _ => panic!("Invalid IN condition in group clause for subquery_utils. Condition: {:?}", in_condition),
                     }
                 }
             }

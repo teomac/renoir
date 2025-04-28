@@ -66,9 +66,8 @@ pub enum FilterConditionType {
     Comparison(Condition),
     NullCheck(NullCondition),
     In(InCondition),
-    Exists(Arc<IrPlan>, bool), // true if is negated
+    Exists(ExistsCondition),
     Boolean(bool),
-    ExistsVec(String, bool), // (vector name, true if negated)
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -86,9 +85,8 @@ pub enum GroupBaseCondition {
     Comparison(Condition),
     NullCheck(NullCondition),
     In(InCondition),
-    Exists(Arc<IrPlan>, bool), // true if is negated
+    Exists(ExistsCondition),
     Boolean(bool),
-    ExistsVec(String, bool), // (vector name, true if negated)
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -151,7 +149,6 @@ pub enum IrLiteral {
     Float(f64),
     String(String),
     Boolean(bool),
-    ColumnRef(ColumnRef),
 }
 
 #[derive(Debug, PartialEq, Clone)]
@@ -182,11 +179,6 @@ pub struct NullCondition {
 
 #[derive(Debug, PartialEq, Clone)]
 pub enum InCondition {
-    OldVersion {
-        field: ComplexField,
-        values: Vec<IrLiteral>,
-        negated: bool,
-    },
     Subquery {
         field: ComplexField,
         subquery: Arc<IrPlan>,
@@ -196,6 +188,18 @@ pub enum InCondition {
         field: ComplexField,
         vector_name: String,
         vector_type: String,
+        negated: bool,
+    },
+}
+
+#[derive(Debug, PartialEq, Clone)]
+pub enum ExistsCondition {
+    Subquery {
+        subquery: Arc<IrPlan>,
+        negated: bool,
+    },
+    Vec {
+        vector_name: String,
         negated: bool,
     },
 }
@@ -230,7 +234,11 @@ impl IrPlan {
     }
 
     // Convenience method to create a project operation
-    pub(crate) fn project(input: Arc<IrPlan>, columns: Vec<ProjectionColumn>, distinct: bool) -> Self {
+    pub(crate) fn project(
+        input: Arc<IrPlan>,
+        columns: Vec<ProjectionColumn>,
+        distinct: bool,
+    ) -> Self {
         IrPlan::Project {
             input,
             columns,
@@ -302,7 +310,6 @@ impl std::fmt::Display for ComplexField {
                 IrLiteral::Float(fl) => write!(f, "{:.2}", fl),
                 IrLiteral::String(s) => write!(f, "{}", s.clone()),
                 IrLiteral::Boolean(b) => write!(f, "{}", b),
-                IrLiteral::ColumnRef(cr) => write!(f, "{}", cr),
             }
         } else if let Some(ref agg) = self.aggregate {
             write!(

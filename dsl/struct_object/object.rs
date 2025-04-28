@@ -705,8 +705,7 @@ impl QueryObject {
                 IrLiteral::Integer(_) => "i64".to_string(),
                 IrLiteral::Float(_) => "f64".to_string(),
                 IrLiteral::String(_) => "String".to_string(),
-                IrLiteral::Boolean(_) => "bool".to_string(),
-                IrLiteral::ColumnRef(col) => self.get_type(col),
+                IrLiteral::Boolean(_) => "bool".to_string()
             }
         } else if let Some(ref nested) = field.nested_expr {
             let (left, op, right, _) = &**nested;
