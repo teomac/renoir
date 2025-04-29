@@ -24,6 +24,7 @@ use std::sync::Arc;
 pub struct IrParser;
 
 impl IrParser {
+    /// Parses an IR string into an IR AST.
     pub(crate) fn parse_query(input: &str) -> Result<Arc<IrPlan>, Box<IrParseError>> {
         let pairs = Self::parse(Rule::query, input).map_err(|e| Box::new(IrParseError::from(e)))?;
 
@@ -32,6 +33,7 @@ impl IrParser {
         Ok(ast)
     }
 
+    /// Parses a subquery expression into an IR AST.
     pub(crate) fn parse_subquery(pair: Pair<Rule>) -> Result<Arc<IrPlan>, Box<IrParseError>> {
         if pair.as_rule() != Rule::subquery {
             return Err(Box::new(IrParseError::InvalidInput(format!(

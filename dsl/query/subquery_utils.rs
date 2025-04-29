@@ -1,8 +1,6 @@
-use core::panic;
-use std::{io, sync::Arc};
-
 use crate::dsl::ir::ast_parser::ir_ast_structure::ComplexField;
 use crate::dsl::ir::{ExistsCondition, InCondition};
+use crate::dsl::query::subquery_process::*;
 use crate::dsl::{
     ir::{
         Condition, FilterClause, FilterConditionType, GroupBaseCondition, GroupClause, IrPlan,
@@ -10,12 +8,23 @@ use crate::dsl::{
     },
     struct_object::object::QueryObject,
 };
+use core::panic;
+use std::{io, sync::Arc};
 
-use super::{subquery_csv, subquery_sink};
-
+// Processes all the IR AST nodes in order to find and handle any subqueries in the main query.
+// This function is called recursively to ensure that all nested subqueries are processed correctly.
+//
+// # Arguments
+//
+// * `ir_ast` - An `Arc<IrPlan>` that holds the intermediate representation of the query.
+// * `query_object` - A mutable reference to a `QueryObject` that holds the query information.
+//
+// # Returns
+//
+// * `io::Result<Arc<IrPlan>>` - Returns an `Ok` variant with the processed IR AST if successful,
+//   or an `Err` variant with an `io::Error` if an error occurs.
 pub(crate) fn manage_subqueries(
     ir_ast: &Arc<IrPlan>,
-    output_path: &String,
     query_object: &mut QueryObject,
 ) -> io::Result<Arc<IrPlan>> {
     match &**ir_ast {
@@ -25,7 +34,7 @@ pub(crate) fn manage_subqueries(
             distinct,
         } => {
             // First recursively process any subqueries in the input
-            let processed_input = manage_subqueries(input, output_path, query_object)?;
+            let processed_input = manage_subqueries(input, query_object)?;
 
             // Process columns to find and replace subqueries
             let processed_columns = columns
@@ -34,13 +43,12 @@ pub(crate) fn manage_subqueries(
                     match col {
                         ProjectionColumn::Subquery(subquery, alias) => {
                             // Recursively process nested subqueries within this subquery
-                            let processed_subquery =
-                                manage_subqueries(subquery, output_path, query_object)
-                                    .expect("Failed to process nested subquery");
+                            let processed_subquery = manage_subqueries(subquery, query_object)
+                                .expect("Failed to process nested subquery");
 
-                            let (result, _, fields) = subquery_csv(
+                            let (result, _, fields) = subquery_result(
                                 processed_subquery,
-                                output_path,
+                                &query_object.output_path,
                                 query_object.tables_info.clone(),
                                 query_object.table_to_csv.clone(),
                                 true,
@@ -53,7 +61,7 @@ pub(crate) fn manage_subqueries(
                         }
                         // Add handling for complex values that might contain subqueries
                         ProjectionColumn::ComplexValue(complex_field, alias) => {
-                            match process_complex_field(complex_field, output_path, query_object) {
+                            match process_complex_field(complex_field, query_object) {
                                 Ok(processed_field) => {
                                     ProjectionColumn::ComplexValue(processed_field, alias.clone())
                                 }
@@ -76,11 +84,10 @@ pub(crate) fn manage_subqueries(
         // Recursively process other node types
         IrPlan::Filter { input, predicate } => {
             // Process input first
-            let processed_input = manage_subqueries(input, output_path, query_object)?;
+            let processed_input = manage_subqueries(input, query_object)?;
 
             // Process the predicate to handle any subqueries
-            let processed_predicate =
-                process_filter_condition(predicate, output_path, query_object)?;
+            let processed_predicate = process_filter_condition(predicate, query_object)?;
 
             Ok(Arc::new(IrPlan::Filter {
                 input: processed_input,
@@ -92,15 +99,11 @@ pub(crate) fn manage_subqueries(
             keys,
             group_condition,
         } => {
-            let processed_input = manage_subqueries(input, output_path, query_object)?;
+            let processed_input = manage_subqueries(input, query_object)?;
 
             // Process the group condition if it exists
             let processed_condition = if let Some(condition) = group_condition {
-                Some(process_group_condition(
-                    condition,
-                    output_path,
-                    query_object,
-                )?)
+                Some(process_group_condition(condition, query_object)?)
             } else {
                 None
             };
@@ -117,8 +120,8 @@ pub(crate) fn manage_subqueries(
             condition,
             join_type,
         } => {
-            let processed_left = manage_subqueries(left, output_path, query_object)?;
-            let processed_right = manage_subqueries(right, output_path, query_object)?;
+            let processed_left = manage_subqueries(left, query_object)?;
+            let processed_right = manage_subqueries(right, query_object)?;
             Ok(Arc::new(IrPlan::Join {
                 left: processed_left,
                 right: processed_right,
@@ -127,7 +130,7 @@ pub(crate) fn manage_subqueries(
             }))
         }
         IrPlan::OrderBy { input, items } => {
-            let processed_input = manage_subqueries(input, output_path, query_object)?;
+            let processed_input = manage_subqueries(input, query_object)?;
             Ok(Arc::new(IrPlan::OrderBy {
                 input: processed_input,
                 items: items.clone(),
@@ -138,7 +141,7 @@ pub(crate) fn manage_subqueries(
             limit,
             offset,
         } => {
-            let processed_input = manage_subqueries(input, output_path, query_object)?;
+            let processed_input = manage_subqueries(input, query_object)?;
             Ok(Arc::new(IrPlan::Limit {
                 input: processed_input,
                 limit: *limit,
@@ -153,7 +156,7 @@ pub(crate) fn manage_subqueries(
             if matches!(&**input, IrPlan::Table { table_name: _ }) {
                 Ok(ir_ast.clone())
             } else {
-                let processed_input = process_scan(input, output_path, query_object);
+                let processed_input = process_scan(input, query_object);
                 Ok(Arc::new(IrPlan::Scan {
                     input: processed_input,
                     stream_name: stream_name.clone(),
@@ -166,9 +169,9 @@ pub(crate) fn manage_subqueries(
     }
 }
 
+//Processes complex fields in a recursive manner
 fn process_complex_field(
     field: &ComplexField,
-    output_path: &String,
     query_object: &mut QueryObject,
 ) -> io::Result<ComplexField> {
     match field {
@@ -177,12 +180,12 @@ fn process_complex_field(
             ..
         } => {
             // Process the subquery itself first in case it contains nested subqueries
-            let processed_subquery = manage_subqueries(subquery, output_path, query_object)?;
+            let processed_subquery = manage_subqueries(subquery, query_object)?;
 
             // Execute the subquery to get result
-            let (result, result_type, fields) = subquery_csv(
+            let (result, result_type, fields) = subquery_result(
                 processed_subquery,
-                output_path,
+                &query_object.output_path,
                 query_object.tables_info.clone(),
                 query_object.table_to_csv.clone(),
                 true,
@@ -208,8 +211,8 @@ fn process_complex_field(
             let (left, op, right, is_par) = &**box_expr;
 
             // Recursively process both sides of the expression
-            let processed_left = process_complex_field(left, output_path, query_object)?;
-            let processed_right = process_complex_field(right, output_path, query_object)?;
+            let processed_left = process_complex_field(left, query_object)?;
+            let processed_right = process_complex_field(right, query_object)?;
 
             Ok(ComplexField {
                 column_ref: None,
@@ -230,9 +233,9 @@ fn process_complex_field(
     }
 }
 
+// Processes filter conditions, including subqueries and complex expressions
 fn process_filter_condition(
     condition: &FilterClause,
-    output_path: &String,
     query_object: &mut QueryObject,
 ) -> io::Result<FilterClause> {
     match condition {
@@ -241,9 +244,9 @@ fn process_filter_condition(
                 FilterConditionType::Comparison(comparison) => {
                     // Process both left and right fields for subqueries
                     let processed_left =
-                        process_complex_field(&comparison.left_field, output_path, query_object)?;
+                        process_complex_field(&comparison.left_field, query_object)?;
                     let processed_right =
-                        process_complex_field(&comparison.right_field, output_path, query_object)?;
+                        process_complex_field(&comparison.right_field, query_object)?;
 
                     Ok(FilterClause::Base(FilterConditionType::Comparison(
                         Condition {
@@ -255,8 +258,7 @@ fn process_filter_condition(
                 }
                 FilterConditionType::NullCheck(null_check) => {
                     // Process the field for subqueries
-                    let processed_field =
-                        process_complex_field(&null_check.field, output_path, query_object)?;
+                    let processed_field = process_complex_field(&null_check.field, query_object)?;
 
                     Ok(FilterClause::Base(FilterConditionType::NullCheck(
                         NullCondition {
@@ -269,13 +271,12 @@ fn process_filter_condition(
                     match exists {
                         ExistsCondition::Subquery { subquery, negated } => {
                             // Process the nested subqueries first
-                            let processed_subquery =
-                                manage_subqueries(subquery, output_path, query_object)?;
+                            let processed_subquery = manage_subqueries(subquery, query_object)?;
 
                             // Execute the subquery
-                            let (result, _, fields) = subquery_csv(
+                            let (result, _, fields) = subquery_result(
                                 processed_subquery,
-                                output_path,
+                                &query_object.output_path,
                                 query_object.tables_info.clone(),
                                 query_object.table_to_csv.clone(),
                                 false,
@@ -319,19 +320,18 @@ fn process_filter_condition(
                                 let in_subquery = field.subquery.clone().unwrap();
                                 // Process the in subquery
                                 let processed_in_subquery =
-                                    manage_subqueries(&in_subquery, output_path, query_object)?;
+                                    manage_subqueries(&in_subquery, query_object)?;
 
                                 // Process the subquery
-                                let processed_subquery =
-                                    manage_subqueries(subquery, output_path, query_object)?;
+                                let processed_subquery = manage_subqueries(subquery, query_object)?;
 
                                 let tables_info = query_object.tables_info.clone();
                                 let table_to_csv = query_object.table_to_csv.clone();
 
                                 // Execute the in subquery
-                                let (in_result, in_result_type, in_fields) = subquery_csv(
+                                let (in_result, in_result_type, in_fields) = subquery_result(
                                     processed_in_subquery,
-                                    output_path,
+                                    &query_object.output_path,
                                     tables_info.clone(),
                                     table_to_csv.clone(),
                                     true,
@@ -342,9 +342,9 @@ fn process_filter_condition(
                                     .fill(in_fields.structs.clone(), in_fields.streams.clone());
 
                                 // Execute the subquery
-                                let (result, result_type, fields) = subquery_csv(
+                                let (result, result_type, fields) = subquery_result(
                                     processed_subquery,
-                                    output_path,
+                                    &query_object.output_path,
                                     tables_info,
                                     table_to_csv,
                                     false,
@@ -371,16 +371,14 @@ fn process_filter_condition(
                             } else {
                                 //second: the field is either a column_ref or a complex_expr
                                 //process complex_expr
-                                let processed_field =
-                                    process_complex_field(field, output_path, query_object)?;
+                                let processed_field = process_complex_field(field, query_object)?;
                                 // Process the subquery
-                                let processed_subquery =
-                                    manage_subqueries(subquery, output_path, query_object)?;
+                                let processed_subquery = manage_subqueries(subquery, query_object)?;
 
                                 // Execute the subquery
-                                let (result, result_type, fields) = subquery_csv(
+                                let (result, result_type, fields) = subquery_result(
                                     processed_subquery,
-                                    output_path,
+                                    &query_object.output_path,
                                     query_object.tables_info.clone(),
                                     query_object.table_to_csv.clone(),
                                     false,
@@ -406,8 +404,7 @@ fn process_filter_condition(
                             negated,
                         } => {
                             // Process the field for subqueries
-                            let processed_field =
-                                process_complex_field(field, output_path, query_object)?;
+                            let processed_field = process_complex_field(field, query_object)?;
 
                             Ok(FilterClause::Base(FilterConditionType::In(
                                 InCondition::Vec {
@@ -428,8 +425,8 @@ fn process_filter_condition(
             right,
         } => {
             // Recursively process both sides of the expression
-            let processed_left = process_filter_condition(left, output_path, query_object)?;
-            let processed_right = process_filter_condition(right, output_path, query_object)?;
+            let processed_left = process_filter_condition(left, query_object)?;
+            let processed_right = process_filter_condition(right, query_object)?;
 
             Ok(FilterClause::Expression {
                 left: Box::new(processed_left),
@@ -440,9 +437,9 @@ fn process_filter_condition(
     }
 }
 
+// Processes group conditions, including subqueries and complex expressions
 fn process_group_condition(
     condition: &GroupClause,
-    output_path: &String,
     query_object: &mut QueryObject,
 ) -> io::Result<GroupClause> {
     match condition {
@@ -451,9 +448,9 @@ fn process_group_condition(
                 GroupBaseCondition::Comparison(comparison) => {
                     // Process both left and right fields for subqueries
                     let processed_left =
-                        process_complex_field(&comparison.left_field, output_path, query_object)?;
+                        process_complex_field(&comparison.left_field, query_object)?;
                     let processed_right =
-                        process_complex_field(&comparison.right_field, output_path, query_object)?;
+                        process_complex_field(&comparison.right_field, query_object)?;
 
                     Ok(GroupClause::Base(GroupBaseCondition::Comparison(
                         Condition {
@@ -465,8 +462,7 @@ fn process_group_condition(
                 }
                 GroupBaseCondition::NullCheck(null_check) => {
                     // Process the field for subqueries
-                    let processed_field =
-                        process_complex_field(&null_check.field, output_path, query_object)?;
+                    let processed_field = process_complex_field(&null_check.field, query_object)?;
 
                     Ok(GroupClause::Base(GroupBaseCondition::NullCheck(
                         NullCondition {
@@ -479,13 +475,12 @@ fn process_group_condition(
                     match exists {
                         ExistsCondition::Subquery { subquery, negated } => {
                             // Process the subquery
-                            let processed_subquery =
-                                manage_subqueries(subquery, output_path, query_object)?;
+                            let processed_subquery = manage_subqueries(subquery, query_object)?;
 
                             // Execute the subquery
-                            let (result, _, fields) = subquery_csv(
+                            let (result, _, fields) = subquery_result(
                                 processed_subquery,
-                                output_path,
+                                &query_object.output_path,
                                 query_object.tables_info.clone(),
                                 query_object.table_to_csv.clone(),
                                 false,
@@ -529,19 +524,18 @@ fn process_group_condition(
 
                                 // Process the in subquery
                                 let processed_in_subquery =
-                                    manage_subqueries(&in_subquery, output_path, query_object)?;
+                                    manage_subqueries(&in_subquery, query_object)?;
 
                                 // Process the subquery
-                                let processed_subquery =
-                                    manage_subqueries(subquery, output_path, query_object)?;
+                                let processed_subquery = manage_subqueries(subquery, query_object)?;
 
                                 let tables_info = query_object.tables_info.clone();
                                 let table_to_csv = query_object.table_to_csv.clone();
 
                                 // Execute the in subquery
-                                let (in_result, in_result_type, in_fields) = subquery_csv(
+                                let (in_result, in_result_type, in_fields) = subquery_result(
                                     processed_in_subquery,
-                                    output_path,
+                                    &query_object.output_path,
                                     tables_info.clone(),
                                     table_to_csv.clone(),
                                     true,
@@ -552,9 +546,9 @@ fn process_group_condition(
                                     .fill(in_fields.structs.clone(), in_fields.streams.clone());
 
                                 // Execute the subquery
-                                let (result, result_type, fields) = subquery_csv(
+                                let (result, result_type, fields) = subquery_result(
                                     processed_subquery,
-                                    output_path,
+                                    &query_object.output_path,
                                     tables_info,
                                     table_to_csv,
                                     false,
@@ -581,16 +575,14 @@ fn process_group_condition(
                             } else {
                                 //second, field is a complex_expr, a column_ref or an aggregate
                                 //Process complex_expr
-                                let processed_field =
-                                    process_complex_field(field, output_path, query_object)?;
+                                let processed_field = process_complex_field(field, query_object)?;
                                 // Process the subquery
-                                let processed_subquery =
-                                    manage_subqueries(subquery, output_path, query_object)?;
+                                let processed_subquery = manage_subqueries(subquery, query_object)?;
 
                                 // Execute the subquery
-                                let (result, result_type, fields) = subquery_csv(
+                                let (result, result_type, fields) = subquery_result(
                                     processed_subquery,
-                                    output_path,
+                                    &query_object.output_path,
                                     query_object.tables_info.clone(),
                                     query_object.table_to_csv.clone(),
                                     false,
@@ -616,8 +608,7 @@ fn process_group_condition(
                             negated,
                         } => {
                             // Process the field for subqueries
-                            let processed_field =
-                                process_complex_field(field, output_path, query_object)?;
+                            let processed_field = process_complex_field(field, query_object)?;
 
                             Ok(GroupClause::Base(GroupBaseCondition::In(
                                 InCondition::Vec {
@@ -634,8 +625,8 @@ fn process_group_condition(
         }
         GroupClause::Expression { left, op, right } => {
             // Recursively process both sides of the expression
-            let processed_left = process_group_condition(left, output_path, query_object)?;
-            let processed_right = process_group_condition(right, output_path, query_object)?;
+            let processed_left = process_group_condition(left, query_object)?;
+            let processed_right = process_group_condition(right, query_object)?;
 
             Ok(GroupClause::Expression {
                 left: Box::new(processed_left),
@@ -646,18 +637,17 @@ fn process_group_condition(
     }
 }
 
-fn process_scan(
-    input: &Arc<IrPlan>,
-    output_path: &String,
-    query_object: &mut QueryObject,
-) -> Arc<IrPlan> {
+// Processes scan nodes, including subqueries and complex expressions
+fn process_scan(input: &Arc<IrPlan>, query_object: &mut QueryObject) -> Arc<IrPlan> {
+    //retrieve the output path
+    let output_path = query_object.output_path.clone();
     // process all the subqueries in the nested joins
-    let processed_input = manage_subqueries(input, output_path, query_object)
-        .expect("Failed to process nested join subqueries");
+    let processed_input =
+        manage_subqueries(input, query_object).expect("Failed to process nested join subqueries");
 
-    let sub_fields = subquery_sink(
+    let sub_fields = subquery_renoir(
         processed_input,
-        output_path,
+        &query_object.output_path,
         query_object.tables_info.clone(),
         query_object.table_to_csv.clone(),
     );
@@ -680,7 +670,7 @@ fn process_scan(
     );
 
     let fields = query_object.get_mut_fields();
-    fields.output_path = output_path.clone();
+    fields.output_path = output_path;
     fields.fill(sub_fields.structs, sub_fields.streams.clone());
 
     Arc::new(IrPlan::Table {

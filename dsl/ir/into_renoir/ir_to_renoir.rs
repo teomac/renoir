@@ -13,6 +13,7 @@ use std::sync::Arc;
 pub struct IrToRenoir;
 
 impl IrToRenoir {
+    /// Converts the IR plan into Renoir code.
     pub(crate) fn convert(
         ast: &Arc<IrPlan>,
         query_object: &mut QueryObject,

@@ -4,6 +4,7 @@ use std::fs;
 use std::io;
 use std::process::Command;
 
+/// Executes the generated Rust binary and returns the output as a string.
 pub(crate) fn binary_execution(
     output_path: &str,
     rust_project: creation::RustProject,

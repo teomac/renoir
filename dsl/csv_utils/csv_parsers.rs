@@ -17,6 +17,7 @@ impl fmt::Display for ParseTypeError {
 
 impl Error for ParseTypeError {}
 
+/// Parses a comma-separated string of types and returns a vector of strings representing the types.
 pub(crate) fn parse_type_string(input: &str) -> Result<Vec<String>, ParseTypeError> {
     // Check for empty input
     if input.trim().is_empty() {
@@ -56,6 +57,7 @@ pub(crate) fn parse_type_string(input: &str) -> Result<Vec<String>, ParseTypeErr
     types
 }
 
+/// Reads a CSV file and returns a vector of column names.
 pub(crate) fn get_csv_columns<P: AsRef<Path>>(path: P) -> Vec<String> {
     // Open the CSV file
     let file = File::open(path).expect("Unable to open file");

@@ -2,6 +2,7 @@ use crate::dsl::struct_object::support_structs::StreamInfo;
 use indexmap::IndexMap;
 use std::fmt::Write;
 
+/// Fields struct holds the necessary information for generating the main function of a Renoir binary.
 #[derive(Debug, Clone)]
 pub struct Fields {
     pub imports: String,
@@ -47,6 +48,7 @@ impl Fields {
         }
     }
 
+    /// Fills the main function with the necessary code to execute the Renoir binary.
     pub(crate) fn fill_main(&mut self) {
         self.main.push_str(&self.imports);
         self.main.push_str("\n\n");
@@ -100,6 +102,7 @@ impl Fields {
         self.main.push_str("}}");
     }
 
+    /// Fills the `Fields` struct with the necessary information from the input tables and streams.
     pub(crate) fn fill(
         &mut self,
         structs: IndexMap<String, IndexMap<String, String>>,
@@ -121,6 +124,7 @@ impl Fields {
         }
     }
 
+    /// Generates the struct declarations for the input tables and outputs.
     pub(crate) fn generate_struct_declarations(
         structs: IndexMap<String, IndexMap<String, String>>,
     ) -> String {
@@ -163,6 +167,7 @@ impl Fields {
         result
     }
 
+    /// Generates the necessary code to handle the result of a subquery.
     pub(crate) fn collect_subquery_result(&mut self, is_single_result: bool) -> (String, String) {
         let stream_name = self.streams.first().unwrap().0.clone();
         let new_result = format!("{}_result", stream_name);

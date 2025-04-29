@@ -7,6 +7,8 @@ pub struct RustProject {
 }
 
 impl RustProject {
+    /// Creates a new Rust project with the specified path.
+    /// If the project already exists, it does nothing.
     pub(crate) fn create_empty_project(path: &String) -> io::Result<RustProject> {
         // Get path to renoir and convert to string with forward slashes
         let renoir_path = std::env::current_dir()?
@@ -60,6 +62,7 @@ impl RustProject {
         Ok(RustProject { project_path })
     }
 
+    /// Updates the main.rs file with the provided content.
     pub(crate) fn update_main_rs(&self, main_content: &str) -> io::Result<()> {
         fs::write(self.project_path.join("src").join("main.rs"), main_content)
     }

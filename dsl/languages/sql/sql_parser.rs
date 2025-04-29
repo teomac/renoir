@@ -1,6 +1,7 @@
 use super::ast_parser::*;
 use crate::dsl::languages::sql::into_ir::ir_query_gen::SqlToIr;
 
+/// Converts a SQL query string into an IR string.
 pub(crate) fn sql_to_ir(query_str: &str) -> String {
     println!("Input SQL query: {}", query_str);
 

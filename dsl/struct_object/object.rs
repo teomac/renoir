@@ -11,6 +11,7 @@ use core::panic;
 use indexmap::IndexMap;
 use std::sync::Arc;
 
+///Object that holds all the information about query, streams and tables. It is the main core of the entire execution. 
 #[derive(Clone, Debug)]
 pub struct QueryObject {
     // Tables references
@@ -144,6 +145,7 @@ impl QueryObject {
             .unwrap_or_else(|| panic!("Stream {} does not exist.", stream_name))
     }
 
+    //getter for the mutable fields object
     pub(crate) fn get_mut_fields(&mut self) -> &mut Fields {
         &mut self.fields
     }
@@ -212,7 +214,8 @@ impl QueryObject {
         str
     }
 
-    //method to populate the QueryObject with the necessary information
+    ///Populates the QueryObject with the necessary information about tables, streams and columns.
+    ///This function is called after the IR AST is generated and before the Rust code generation.
     pub(crate) fn populate(mut self, ir_ast: &Arc<IrPlan>) -> Self {
         // empty result_col_types, projection_agg, has_join, order_by, limit, distinct
         self.result_column_types.clear();
@@ -412,9 +415,9 @@ impl QueryObject {
         self
     }
 
-    /// Collects ONLY aggregates from the final projection
-    /// This is Phase 1 of result mapping population, focusing only on gathering aggregates
-    /// before AST parsing for GROUP BY processing
+    /// Collects only aggregates from the final projection.
+    /// This is the first step for result mapping population, focusing only on gathering aggregates
+    /// before AST parsing for fold processing.
     pub(crate) fn collect_projection_aggregates(&mut self, ir_ast: &Arc<IrPlan>) {
         match &**ir_ast {
             IrPlan::Project { columns, .. } => {
@@ -475,6 +478,8 @@ impl QueryObject {
         }
     }
 
+    /// Populates the result mappings for the final projection. 
+    /// It generates the final structs names and types.
     pub(crate) fn populate_result_mappings(
         &mut self,
         columns: &Vec<ProjectionColumn>,
@@ -665,7 +670,7 @@ impl QueryObject {
         }
     }
 
-    // Helper method to generate unique column names
+    ///Generates unique column names for structs
     fn get_unique_name(
         &self,
         base_name: &str,
@@ -683,6 +688,7 @@ impl QueryObject {
         name
     }
 
+    ///Retrieves the type of a complex field recursively.
     pub(crate) fn get_complex_field_type(&self, field: &ComplexField) -> String {
         if let Some(ref col) = field.column_ref {
             let stream_name = if col.table.is_some() {
@@ -750,6 +756,7 @@ impl QueryObject {
         }
     }
 
+    ///Collects all scan nodes from the IR plan recursively.
     fn collect_scan_nodes(plan: &Arc<IrPlan>) -> Vec<Arc<IrPlan>> {
         let mut scans = Vec::new();
 

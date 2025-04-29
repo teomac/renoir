@@ -2,6 +2,10 @@ use crate::dsl::ir::{AggregateFunction, ColumnRef};
 use crate::dsl::struct_object::object::QueryObject;
 use indexmap::IndexMap;
 
+/// Represents the information about a stream in the query.
+/// This includes details about the source table, alias, initial columns, access path,
+/// whether the stream is keyed, key columns, operator chain, final structure,
+/// join tree, aggregate functions, limit, order by, and distinct properties.
 #[derive(Debug, Clone)]
 pub struct StreamInfo {
     pub id: String,                                        // Unique stream identifier
@@ -18,7 +22,7 @@ pub struct StreamInfo {
     pub agg_position: IndexMap<AggregateFunction, String>, // Aggregate function → position mappings
     pub limit: Option<(usize, usize)>, // Limit and offset for the stream
     pub order_by: Vec<(ColumnRef, String)>, // Column name and order (ASC/DESC)
-    pub distinct: bool,
+    pub distinct: bool, // Whether the output of the stream needs to be distinct
 }
 
 #[derive(Debug, Clone)]

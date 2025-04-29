@@ -11,6 +11,7 @@ use std::sync::Arc;
 pub struct IrASTBuilder;
 
 impl IrASTBuilder {
+    /// Parses the input IR query string and builds an IR AST.
     pub(crate) fn build_ast_from_pairs(pairs: Pairs<Rule>) -> Result<Arc<IrPlan>, Box<IrParseError>> {
         let mut current_plan: Option<Arc<IrPlan>> = None;
 
