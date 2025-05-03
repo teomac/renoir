@@ -1,5 +1,5 @@
-pub(crate) mod df_builder;
-pub(crate) mod df_parser;
+pub mod converter;
+mod conversion_error;
 
 use crate::dsl::ir::ast_parser::ir_ast_structure::IrPlan;
 use std::sync::Arc;
