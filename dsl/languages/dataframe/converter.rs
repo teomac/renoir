@@ -3,6 +3,7 @@ use std::sync::Arc;
 use std::collections::{HashMap, HashSet};
 use super::conversion_error::ConversionError;
 use crate::dsl::ir::ast_parser::ir_ast_structure::*;
+use indexmap::IndexMap;
 
 pub struct CatalystConverter {
     // Track expression IDs and their tables
@@ -291,5 +292,52 @@ impl CatalystConverter {
         }
         
         Err(ConversionError::MissingField("table name".to_string()))
+    }
+
+
+    pub fn process_table_metadata(metadata_list: Vec<String>) -> Vec<(String, IndexMap<String, String>)> {
+        let mut result = Vec::new();
+        
+        for metadata_str in metadata_list {
+            // Parse JSON 
+            let metadata: serde_json::Value = serde_json::from_str(&metadata_str)
+                .unwrap_or_else(|e| panic!("Failed to parse metadata JSON: {}", e));
+                
+            // For each table in metadata
+            for (table_name, table_info) in metadata.as_object().unwrap() {
+                let mut column_types = IndexMap::new();
+                
+                // Get columns array
+                let columns = table_info.get("columns")
+                    .and_then(|c| c.as_array())
+                    .unwrap_or_else(|| panic!("No columns found for table {}", table_name));
+                    
+                // Process each column
+                for column in columns {
+                    let name = column.get("name")
+                        .and_then(|n| n.as_str())
+                        .unwrap_or_else(|| panic!("Column name not found"));
+                        
+                    let type_str = column.get("type")
+                        .and_then(|t| t.as_str())
+                        .unwrap_or_else(|| panic!("Column type not found"));
+                        
+                    // Convert Spark types to Renoir types
+                    let renoir_type = match type_str {
+                        "LongType()" => "i64",
+                        "DoubleType()" => "f64",
+                        "StringType()" => "String", 
+                        "BooleanType()" => "bool",
+                        _ => panic!("Unsupported type: {}", type_str)
+                    };
+                    
+                    column_types.insert(name.to_string(), renoir_type.to_string());
+                }
+                
+                result.push((table_name.to_string(), column_types));
+            }
+        }
+        
+        result
     }
 }
