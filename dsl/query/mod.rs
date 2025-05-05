@@ -78,6 +78,8 @@ pub fn renoir_sql(
     let ir_query = sql_to_ir(sql_query);
     let ir_ast = query_ir_to_ast(&ir_query);
 
+    println!("IR AST: {:?}", ir_ast);
+
     //step 3: Processes the ast calling the process_ir_ast function
     process_ir_ast(ir_ast, output_path, input_tables)
 }

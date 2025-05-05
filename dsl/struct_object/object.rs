@@ -192,6 +192,7 @@ impl QueryObject {
                 .clone()
         } else {
             let all_streams = self.streams.keys().cloned().collect::<Vec<_>>();
+            println!("all streams: {:?}", all_streams);
             if all_streams.len() == 1 {
                 all_streams[0].clone()
             } else {
@@ -200,11 +201,17 @@ impl QueryObject {
             }
         };
 
-        let table_name = self.get_stream(&stream_name).source_table.clone();
+        let stream = self.get_stream(&stream_name);
+        let table_name = stream.source_table.clone();
 
         let field = &column.column;
         let str = if self.get_struct_field(&table_name, field).is_none() {
-            "f64".to_string()
+            if stream.final_struct.contains_key(&column.column){
+                stream.final_struct.get(&column.column).unwrap().to_string()
+            }
+            else{
+              "f64".to_string()  
+            }   
         } else {
             self.get_struct_field(&table_name, field)
                 .unwrap()

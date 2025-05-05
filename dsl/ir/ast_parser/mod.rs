@@ -2,7 +2,7 @@ pub(crate) mod builder;
 pub(crate) mod condition;
 pub(crate) mod error;
 pub(crate) mod group;
-pub(crate) mod ir_ast_structure;
+pub mod ir_ast_structure;
 pub(crate) mod limit;
 pub(crate) mod literal;
 pub(crate) mod order;

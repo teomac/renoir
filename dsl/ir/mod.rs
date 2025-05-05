@@ -1,4 +1,4 @@
-pub(crate) mod ast_parser;
+pub mod ast_parser;
 pub(crate) mod into_renoir;
 
 pub use ast_parser::*;
