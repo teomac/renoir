@@ -33,7 +33,7 @@ pub enum MetadataError {
     /// 
     /// # Returns
     /// * `IndexMap<String, (String, String)>` - Map of table name to (CSV path, type definitions)
-    pub fn extract_metadata(metadata_list: Vec<String>, csv_paths: Vec<String>) -> io::Result<IndexMap<String, (String, String)>> {
+    pub fn extract_metadata(metadata_list: Vec<String>, csv_paths: Vec<String>) -> io::Result<IndexMap<String, (String, IndexMap<String, String>)>> {
         if metadata_list.is_empty() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
@@ -41,7 +41,7 @@ pub enum MetadataError {
             ));
         }
         
-        let mut input_tables: IndexMap<String, (String, String)> = IndexMap::new();
+        let mut input_tables: IndexMap<String, (String, IndexMap<String,String>)> = IndexMap::new();
         let mut csv_path_index = 0;
         
         for metadata_json in metadata_list {
@@ -87,7 +87,7 @@ pub enum MetadataError {
                     };
                     
                     // Generate type definition string: "col1:type1,col2:type2,..."
-                    let mut type_defs = String::new();
+                    let mut type_defs = IndexMap::new();
                     for (i, column) in columns.iter().enumerate() {
                         let name = column.get("name").and_then(|n| n.as_str()).ok_or_else(|| {
                             io::Error::new(
@@ -116,10 +116,7 @@ pub enum MetadataError {
                             _ => "String", // Default to String for unknown types
                         };
                         
-                        if i > 0 {
-                            type_defs.push(',');
-                        }
-                        type_defs.push_str(&format!("{}:{}", name, renoir_type));
+                        type_defs.insert(name.to_string(), renoir_type.to_string());
                     }
                     
                     // Add the table to our input_tables map
@@ -152,7 +149,7 @@ pub enum MetadataError {
 /// 
 /// # Returns
 /// * HashMap<String, String> mapping expression IDs to table names
-pub fn extract_expr_ids(catalyst_plan: &[Value], input_tables: &IndexMap<String, (String, String)>) -> HashMap<String, String> {
+pub fn extract_expr_ids(catalyst_plan: &[Value], input_tables: &IndexMap<String, (String, IndexMap<String,String>)>) -> HashMap<String, String> {
     let mut expr_to_table: HashMap<String, String> = HashMap::new();
     
     // Process LogicalRDD nodes to extract expression IDs
@@ -298,14 +295,11 @@ fn process_alias_propagation(catalyst_plan: &[Value], expr_to_table: &mut HashMa
 /// 
 /// # Returns
 /// * String with the matched table name, or a fallback name if no match
-fn match_table_by_columns(rdd_columns: &[String], input_tables: &IndexMap<String, (String, String)>) -> String {
+fn match_table_by_columns(rdd_columns: &[String], input_tables: &IndexMap<String, (String, IndexMap<String,String>)>) -> String {
     for (table_name, (_, type_defs)) in input_tables {
         // Extract column names from type_defs
-        let table_columns: Vec<String> = type_defs
-            .split(',')
-            .filter_map(|def| {
-                def.split(':').next().map(|col| col.trim().to_string())
-            })
+        let table_columns: Vec<String> = type_defs.keys()
+            .cloned()
             .collect();
         
         // Check if this table matches the RDD columns
