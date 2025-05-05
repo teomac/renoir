@@ -1,7 +1,7 @@
-pub mod ast_parser;
+pub mod ast_builder;
 pub(crate) mod into_renoir;
 
-pub use ast_parser::*;
+pub use ast_builder::*;
 pub use into_renoir::*;
 use std::sync::Arc;
 

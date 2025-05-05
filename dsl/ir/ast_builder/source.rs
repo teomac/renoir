@@ -1,6 +1,6 @@
 use super::error::IrParseError;
 use super::{ir_ast_structure::*, IrParser};
-use crate::dsl::ir::ast_parser::Rule;
+use crate::dsl::ir::ast_builder::Rule;
 use pest::iterators::Pair;
 use std::sync::Arc;
 pub struct SourceParser;

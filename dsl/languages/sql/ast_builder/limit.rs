@@ -1,5 +1,5 @@
 use super::{error::SqlParseError, sql_ast_structure::LimitClause};
-use crate::dsl::languages::sql::ast_parser::Rule;
+use crate::dsl::languages::sql::ast_builder::Rule;
 use pest::iterators::Pair;
 
 pub struct LimitParser;

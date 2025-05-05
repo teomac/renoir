@@ -1,4 +1,4 @@
-use super::ast_parser::*;
+use super::ast_builder::*;
 use crate::dsl::languages::sql::into_ir::ir_query_gen::SqlToIr;
 
 /// Converts a SQL query string into an IR string.

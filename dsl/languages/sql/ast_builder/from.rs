@@ -1,6 +1,6 @@
 use super::error::SqlParseError;
 use super::{sql_ast_structure::*, SqlParser};
-use crate::dsl::languages::sql::ast_parser::Rule;
+use crate::dsl::languages::sql::ast_builder::Rule;
 use pest::iterators::Pair;
 
 pub struct FromParser;

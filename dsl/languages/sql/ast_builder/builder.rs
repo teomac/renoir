@@ -6,7 +6,7 @@ use super::validate::validate_ast;
 use super::{
     from::FromParser, group_by::GroupByParser, select::SelectParser, where_clause::ConditionParser,
 };
-use crate::dsl::languages::sql::ast_parser::Rule;
+use crate::dsl::languages::sql::ast_builder::Rule;
 use pest::iterators::Pairs;
 
 pub struct SqlASTBuilder;

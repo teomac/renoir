@@ -1,6 +1,6 @@
 use crate::dsl::{
     ir::{
-        ast_parser::ir_ast_structure::IrPlan,
+        ast_builder::ir_ast_structure::IrPlan,
         into_renoir::{
             r_condition::process_filter_clause, r_group::r_group_keys::process_group_by, r_join::*,
             r_sink::r_sink_main::process_projections,

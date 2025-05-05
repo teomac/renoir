@@ -8,12 +8,14 @@ pub(crate) mod order;
 pub(crate) mod select;
 pub(crate) mod sql_ast_structure;
 pub(crate) mod validate;
+
 pub(crate) mod where_clause;
 use pest::iterators::Pair;
 pub use sql_ast_structure::SqlAST;
 
-use crate::dsl::languages::sql::ast_parser::builder::SqlASTBuilder;
-use crate::dsl::languages::sql::ast_parser::error::SqlParseError;
+
+use crate::dsl::languages::sql::ast_builder::builder::SqlASTBuilder;
+use crate::dsl::languages::sql::ast_builder::error::SqlParseError;
 use pest::Parser;
 use pest_derive::Parser;
 

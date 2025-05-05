@@ -9,11 +9,12 @@ pub(crate) mod order;
 pub(crate) mod projection;
 pub(crate) mod source;
 
+
 pub use ir_ast_structure::*;
 use pest::iterators::Pair;
 
-use crate::dsl::ir::ast_parser::builder::IrASTBuilder;
-use crate::dsl::ir::ast_parser::error::IrParseError;
+use crate::dsl::ir::ast_builder::builder::IrASTBuilder;
+use crate::dsl::ir::ast_builder::error::IrParseError;
 use pest::Parser;
 use pest_derive::Parser;
 

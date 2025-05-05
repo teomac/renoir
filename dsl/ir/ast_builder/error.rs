@@ -1,4 +1,4 @@
-use crate::dsl::ir::ast_parser::Rule;
+use crate::dsl::ir::ast_builder::Rule;
 use pest::error::Error as PestError;
 use std::error::Error;
 use std::fmt::{self, Display};

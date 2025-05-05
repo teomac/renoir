@@ -4,7 +4,7 @@ use super::ir_ast_structure::*;
 use super::limit::LimitParser;
 use super::order::OrderParser;
 use super::{condition::ConditionParser, projection::ProjectionParser, source::SourceParser};
-use crate::dsl::ir::ast_parser::Rule;
+use crate::dsl::ir::ast_builder::Rule;
 use pest::iterators::Pairs;
 use std::sync::Arc;
 

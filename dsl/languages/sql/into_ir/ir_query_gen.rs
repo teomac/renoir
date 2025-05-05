@@ -1,4 +1,4 @@
-use crate::dsl::languages::sql::ast_parser::sql_ast_structure::*;
+use crate::dsl::languages::sql::ast_builder::sql_ast_structure::*;
 
 pub struct SqlToIr;
 

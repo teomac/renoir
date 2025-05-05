@@ -1,5 +1,5 @@
 use super::error::IrParseError;
-use crate::dsl::ir::ast_parser::Rule;
+use crate::dsl::ir::ast_builder::Rule;
 use pest::iterators::Pair;
 
 pub struct LimitParser;
