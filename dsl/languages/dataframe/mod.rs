@@ -1,5 +1,7 @@
-use std::{io, sync::Arc};
+use std::io;
+use std::sync::Arc;
 
+use converter::build_ir_ast_df;
 use indexmap::IndexMap;
 use metadata::{extract_expr_ids, extract_metadata};
 use serde_json::Value;
@@ -9,6 +11,7 @@ use crate::dsl::{binary_generation::{creation, execution::binary_execution}, csv
 pub(crate) mod converter;
 pub(crate) mod conversion_error;
 pub(crate) mod metadata;
+pub(crate) mod ast_builder;
 
 
 pub fn renoir_dataframe(metadata_list: Vec<String>, csv_paths: Vec<String>, catalyst_plan: &[Value], output_path: &str) -> io::Result<String> {
@@ -28,11 +31,11 @@ pub fn renoir_dataframe(metadata_list: Vec<String>, csv_paths: Vec<String>, cata
 
     //step 2: Generate the IR Plan from the catalyst plan
 
-    //let ir_ast = CatalystConverter::convert(catalyst_plan)?;
+    let ir_ast = build_ir_ast_df(catalyst_plan, expr_ids).unwrap();
 
     //step 3: Process the IR AST and generate the Rust binary with Renoir code
-    //process_ir_ast_for_df(&ir_ast, &output_path.to_string(), &input_tables)
-    Ok("".to_string())
+    process_ir_ast_for_df(ir_ast, &output_path.to_string(), &input_tables)
+    
 }
 
 /// Processes the IR AST and generates a Rust binary containing the corresponding Renoir code.

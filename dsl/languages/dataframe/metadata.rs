@@ -155,7 +155,7 @@ pub fn extract_expr_ids(catalyst_plan: &[Value], input_tables: &IndexMap<String,
     // Process LogicalRDD nodes to extract expression IDs
     for node in catalyst_plan.iter() {
         if let Some(class) = node["class"].as_str() {
-            if class.ends_with("LogicalRDD") {
+            if class.ends_with("LogicalRDD") || class.ends_with("LogicalRelation") {
                 // Extract column information from this RDD
                 let mut rdd_columns = Vec::new();
                 if let Some(output) = node["output"].as_array() {
