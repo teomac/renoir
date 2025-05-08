@@ -88,7 +88,7 @@ pub enum MetadataError {
                     
                     // Generate type definition string: "col1:type1,col2:type2,..."
                     let mut type_defs = IndexMap::new();
-                    for (i, column) in columns.iter().enumerate() {
+                    for column in columns.iter() {
                         let name = column.get("name").and_then(|n| n.as_str()).ok_or_else(|| {
                             io::Error::new(
                                 io::ErrorKind::InvalidData,

@@ -1,12 +1,13 @@
 use std::io;
 use std::sync::Arc;
 
+use ast_builder::df_utils::ConverterObject;
 use converter::build_ir_ast_df;
 use indexmap::IndexMap;
 use metadata::{extract_expr_ids, extract_metadata};
 use serde_json::Value;
 
-use crate::dsl::{binary_generation::{creation, execution::binary_execution}, csv_utils::csv_parsers::{get_csv_columns, parse_type_string}, ir::{ir_ast_to_renoir, IrPlan}, query::subquery_utils::manage_subqueries, struct_object::object::QueryObject};
+use crate::dsl::{binary_generation::{creation, execution::binary_execution}, ir::{ir_ast_to_renoir, IrPlan}, query::subquery_utils::manage_subqueries, struct_object::object::QueryObject};
 
 pub(crate) mod converter;
 pub(crate) mod conversion_error;
@@ -29,9 +30,13 @@ pub fn renoir_dataframe(metadata_list: Vec<String>, csv_paths: Vec<String>, cata
 
     println!("Expr IDs: {:?}", expr_ids);
 
+    let conv_object = ConverterObject::new(expr_ids.clone(), &input_tables);
+
     //step 2: Generate the IR Plan from the catalyst plan
 
-    let ir_ast = build_ir_ast_df(catalyst_plan, expr_ids).unwrap();
+    let ir_ast = build_ir_ast_df(catalyst_plan, conv_object).unwrap();
+
+    println!("IR AST: {:?}", ir_ast);
 
     //step 3: Process the IR AST and generate the Rust binary with Renoir code
     process_ir_ast_for_df(ir_ast, &output_path.to_string(), &input_tables)

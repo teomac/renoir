@@ -1,12 +1,13 @@
-use crate::dsl::ir::{AggregateFunction, AggregateType, ColumnRef, ComplexField, IrLiteral, IrPlan, ProjectionColumn};
+use crate::dsl::ir::{ColumnRef, ComplexField, IrLiteral, IrPlan, ProjectionColumn};
 use crate::dsl::languages::dataframe::conversion_error::ConversionError;
 use serde_json::Value;
-use std::collections::HashMap;
 use std::sync::Arc;
+
+use super::df_utils::ConverterObject;
 
 /// Process a Project (SELECT) node from a Catalyst plan
 /// Process a Project node (SELECT operation)
-pub fn process_project(node: &Value, input_plan: Arc<IrPlan>, expr_to_table: &HashMap<String, String>) -> Result<Arc<IrPlan>, Box<ConversionError>> {
+pub fn process_project(node: &Value, input_plan: Arc<IrPlan>, current_index: usize, conv_object: &ConverterObject) -> Result<Arc<IrPlan>, Box<ConversionError>> {
     // Extract the project list
     let project_list = node.get("projectList")
         .and_then(|p| p.as_array())
@@ -43,16 +44,15 @@ pub fn process_project(node: &Value, input_plan: Arc<IrPlan>, expr_to_table: &Ha
                         let child_expr = &projections[child_idx as usize + 1];
                         
                         // Process the child expression
-                        let column = process_expression(child_expr, expr_to_table, Some(alias_name))?;
+                        let column = process_expression(child_expr, Some(alias_name), conv_object)?;
                         columns.push(column);
                     },
                     "AttributeReference" => {
                         // Direct column reference without alias
-                        let column = process_expression(alias_expr, expr_to_table, None)?;
+                        let column = process_expression(alias_expr, None, conv_object)?;
                         columns.push(column);
                     },
                     _ => {
-                        println!("FFFFFFFFFFFFFFFFF");
                         return Err(Box::new(ConversionError::UnsupportedExpressionType(expr_type.to_string())));
                     }
                 }
@@ -80,7 +80,7 @@ pub fn process_project(node: &Value, input_plan: Arc<IrPlan>, expr_to_table: &Ha
 }
 
 /// Process an expression to create a ProjectionColumn
-fn process_expression(expr: &Value, expr_to_table: &HashMap<String, String>, alias: Option<String>) -> Result<ProjectionColumn, Box<ConversionError>> {
+fn process_expression(expr: &Value, alias: Option<String>, conv_object: &ConverterObject) -> Result<ProjectionColumn, Box<ConversionError>> {
     // Extract the expression type
     let class = expr.get("class")
         .and_then(|c| c.as_str())
@@ -101,7 +101,7 @@ fn process_expression(expr: &Value, expr_to_table: &HashMap<String, String>, ali
             let expr_id = get_expr_id(expr)?;
             
             // Look up table name from mapping
-            let table = expr_to_table.get(&expr_id).cloned();
+            let table = conv_object.expr_to_table.get(&expr_id).cloned();
             
             // Create column reference
             let column_ref = ColumnRef {

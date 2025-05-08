@@ -1,16 +1,16 @@
 use crate::dsl::ir::IrPlan;
 use crate::dsl::languages::dataframe::conversion_error::ConversionError;
 use serde_json::Value;
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use super::ast_builder::df_filter::process_filter;
 use super::ast_builder::df_select::process_project;
+use super::ast_builder::df_utils::ConverterObject;
 
 /// Convert a Catalyst plan to Renoir IR AST
 pub fn build_ir_ast_df(
     plan: &[Value],
-    expr_to_table: HashMap<String, String>,
+    conv_object: ConverterObject,
 ) -> Result<Arc<IrPlan>, Box<ConversionError>> {
     // The Catalyst plan is an array of nodes with the root node at index 0
     let mut stream_index: usize = 0;
@@ -19,10 +19,10 @@ pub fn build_ir_ast_df(
     }
 
     println!("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
-    print!("Plan: {:?}", plan);
+    println!("Plan: {:?}", plan);
 
     // Start processing from the root node
-    process_node(&plan[0], 0, plan, &expr_to_table, &mut stream_index)
+    process_node(&plan[0], 0, plan, &mut stream_index, &conv_object)
 }
 
 /// Process a node in the Catalyst plan
@@ -30,8 +30,8 @@ fn process_node(
     node: &Value,
     current_index: usize,
     full_plan: &[Value],
-    expr_to_table: &HashMap<String, String>,
     stream_index: &mut usize,
+    conv_object: &ConverterObject,
 ) -> Result<Arc<IrPlan>, Box<ConversionError>> {
     // Extract the node class
     let class = node
@@ -58,14 +58,14 @@ fn process_node(
                 &full_plan[current_index + child_idx as usize + 1],
                 current_index + child_idx as usize + 1,
                 full_plan,
-                expr_to_table,
                 stream_index,
+                conv_object,
             )?;
 
             // Process the child node first
 
             // Process the project node
-            process_project(node, input_plan, expr_to_table)
+            process_project(node, input_plan, current_index, conv_object)
         }
         "Filter" => {
             // Get the child node
@@ -79,15 +79,15 @@ fn process_node(
                 &full_plan[current_index + child_idx as usize + 1],
                 current_index + child_idx as usize + 1,
                 full_plan,
-                expr_to_table,
                 stream_index,
+                conv_object,
             )?;
             // Process the filter node
-            process_filter(node, input_plan, expr_to_table)
+            process_filter(node, input_plan, conv_object)
         }
         "LogicalRDD" | "LogicalRelation" => {
             // This is a base table scan
-            process_logical_rdd(node, expr_to_table, stream_index)
+            process_logical_rdd(node, stream_index, conv_object)
         }
         _ => Err(Box::new(ConversionError::UnsupportedNodeType(
             node_type.to_string(),
@@ -98,8 +98,8 @@ fn process_node(
 /// Process a LogicalRDD node (table scan)
 fn process_logical_rdd(
     node: &Value,
-    expr_to_table: &HashMap<String, String>,
     stream_index: &mut usize,
+    conv_object: &ConverterObject,
 ) -> Result<Arc<IrPlan>, Box<ConversionError>> {
     // Extract table name from column expression IDs
     let mut table_name = String::from("unknown_table");
@@ -118,7 +118,7 @@ fn process_logical_rdd(
                             let expr_id = format!("{}_{}", id, jvm_id);
 
                             // Look up the table name in our mapping
-                            if let Some(table) = expr_to_table.get(&expr_id) {
+                            if let Some(table) = conv_object.expr_to_table.get(&expr_id) {
                                 table_name = table.clone();
                                 break;
                             }
