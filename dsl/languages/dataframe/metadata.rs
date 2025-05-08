@@ -153,6 +153,7 @@ pub fn extract_expr_ids(catalyst_plan: &[Value], input_tables: &IndexMap<String,
     let mut expr_to_table: HashMap<String, String> = HashMap::new();
     
     // Process LogicalRDD nodes to extract expression IDs
+    let mut rdd_index = 0;
     for node in catalyst_plan.iter() {
         if let Some(class) = node["class"].as_str() {
             if class.ends_with("LogicalRDD") || class.ends_with("LogicalRelation") {
@@ -170,8 +171,9 @@ pub fn extract_expr_ids(catalyst_plan: &[Value], input_tables: &IndexMap<String,
                     }
                 }
                 
-                // Match this RDD with a table in input_tables based on column names
-                let table_name = match_table_by_columns(&rdd_columns, input_tables);
+                // Match this RDD with a table in input_tables based on column names and position
+                let table_name = match_table_by_columns(&rdd_columns, input_tables, rdd_index);
+                rdd_index += 1; // Increment for the next LogicalRDD/LogicalRelation
                 
                 // Now map all the expression IDs to this table
                 if let Some(output) = node["output"].as_array() {
@@ -295,7 +297,16 @@ fn process_alias_propagation(catalyst_plan: &[Value], expr_to_table: &mut HashMa
 /// 
 /// # Returns
 /// * String with the matched table name, or a fallback name if no match
-fn match_table_by_columns(rdd_columns: &[String], input_tables: &IndexMap<String, (String, IndexMap<String,String>)>) -> String {
+/// Match an RDD to a table from input_tables based on column names and position
+fn match_table_by_columns(rdd_columns: &[String], input_tables: &IndexMap<String, (String, IndexMap<String,String>)>, rdd_index: usize) -> String {
+    // If there are multiple tables, try to match by index first
+    if input_tables.len() > 1 && rdd_index < input_tables.len() {
+        // Get the table name at this index
+        let table_name = input_tables.keys().nth(rdd_index).unwrap();
+        return table_name.clone();
+    }
+
+    // Original column-based matching approach (fallback)
     for (table_name, (_, type_defs)) in input_tables {
         // Extract column names from type_defs
         let table_columns: Vec<String> = type_defs.keys()

@@ -155,7 +155,7 @@ impl QueryObject {
         let mut exists = false;
 
         for (_, s) in self.streams.iter() {
-            if s.equals(stream) || s.source_equals(stream) {
+            if s.equals(stream) {
                 exists = true;
                 break;
             }

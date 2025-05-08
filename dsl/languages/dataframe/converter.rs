@@ -1,9 +1,10 @@
-use crate::dsl::ir::IrPlan;
+use crate::dsl::ir::{IrPlan, JoinType};
 use crate::dsl::languages::dataframe::conversion_error::ConversionError;
 use serde_json::Value;
 use std::sync::Arc;
 
 use super::ast_builder::df_filter::process_filter;
+use super::ast_builder::df_join::process_join;
 use super::ast_builder::df_select::process_project;
 use super::ast_builder::df_utils::ConverterObject;
 
@@ -22,7 +23,7 @@ pub fn build_ir_ast_df(
     println!("Plan: {:?}", plan);
 
     // Start processing from the root node
-    process_node(&plan[0], 0, plan, &mut stream_index, &conv_object)
+    process_node(&plan[0], 0, plan, &mut stream_index, &conv_object).0
 }
 
 /// Process a node in the Catalyst plan
@@ -32,18 +33,18 @@ fn process_node(
     full_plan: &[Value],
     stream_index: &mut usize,
     conv_object: &ConverterObject,
-) -> Result<Arc<IrPlan>, Box<ConversionError>> {
+) -> (Result<Arc<IrPlan>, Box<ConversionError>>, usize) {
     // Extract the node class
     let class = node
         .get("class")
         .and_then(|c| c.as_str())
-        .ok_or_else(|| Box::new(ConversionError::InvalidClassName))?;
+        .ok_or_else(|| Box::new(ConversionError::InvalidClassName)).unwrap();
 
     // Get the node type from the class name (last part after the dot)
     let node_type = class
         .split('.')
         .last()
-        .ok_or_else(|| Box::new(ConversionError::InvalidClassName))?;
+        .ok_or_else(|| Box::new(ConversionError::InvalidClassName)).unwrap();
 
     // Process based on node type
     match node_type {
@@ -52,7 +53,7 @@ fn process_node(
             let child_idx = node
                 .get("child")
                 .and_then(|c| c.as_u64())
-                .ok_or_else(|| Box::new(ConversionError::MissingField("child".to_string())))?;
+                .ok_or_else(|| Box::new(ConversionError::MissingField("child".to_string()))).unwrap();
 
             let input_plan = process_node(
                 &full_plan[current_index + child_idx as usize + 1],
@@ -60,19 +61,19 @@ fn process_node(
                 full_plan,
                 stream_index,
                 conv_object,
-            )?;
+            ).0;
 
             // Process the child node first
 
             // Process the project node
-            process_project(node, input_plan, current_index, conv_object)
+            (process_project(node, input_plan.unwrap(), current_index, conv_object), current_index)
         }
         "Filter" => {
             // Get the child node
             let child_idx = node
                 .get("child")
                 .and_then(|c| c.as_u64())
-                .ok_or_else(|| Box::new(ConversionError::MissingField("child".to_string())))?;
+                .ok_or_else(|| Box::new(ConversionError::MissingField("child".to_string()))).unwrap();
 
             // Process the child node first
             let input_plan = process_node(
@@ -81,17 +82,44 @@ fn process_node(
                 full_plan,
                 stream_index,
                 conv_object,
-            )?;
+            ).0;
             // Process the filter node
-            process_filter(node, input_plan, conv_object)
+            (process_filter(node, input_plan.unwrap(), conv_object), current_index)
+        }
+        "Join" => {
+            
+
+            let child_idx = node
+                .get("left")
+                .and_then(|c| c.as_u64())
+                .ok_or_else(|| Box::new(ConversionError::MissingField("left".to_string()))).unwrap();
+
+            let (left_child, index) = process_node(
+                &full_plan[current_index + child_idx as usize + 1],
+                current_index + child_idx as usize + 1,
+                full_plan,
+                stream_index,
+                conv_object,
+            );
+
+            let right_child = process_node(
+                &full_plan[index + 1],
+                index + 1,
+                full_plan,
+                stream_index,
+                conv_object,
+            ).0;
+
+            (process_join(node, left_child.unwrap(), right_child.unwrap(), conv_object), current_index)
+
         }
         "LogicalRDD" | "LogicalRelation" => {
             // This is a base table scan
-            process_logical_rdd(node, stream_index, conv_object)
+            (process_logical_rdd(node, stream_index, conv_object), current_index)
         }
-        _ => Err(Box::new(ConversionError::UnsupportedNodeType(
+        _ => (Err(Box::new(ConversionError::UnsupportedNodeType(
             node_type.to_string(),
-        ))),
+        ))), current_index),
     }
 }
 

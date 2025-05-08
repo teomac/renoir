@@ -1,0 +1,121 @@
+use std::sync::Arc;
+
+use serde_json::Value;
+
+use crate::dsl::{ir::{ColumnRef, IrPlan, JoinCondition, JoinType}, languages::dataframe::conversion_error::ConversionError};
+
+use super::df_utils::ConverterObject;
+
+pub fn process_join(node: &Value, left_child: Arc<IrPlan>, right_child: Arc<IrPlan>, conv_object: &ConverterObject) -> Result<Arc<IrPlan>, Box<ConversionError>> {
+    let join_type = node.get("joinType")
+                .ok_or_else(|| Box::new(ConversionError::MissingField("joinType".to_string()))).unwrap();
+
+            let join_type_str = join_type.get("object")
+                .and_then(|o| o.as_str())
+                .ok_or_else(|| Box::new(ConversionError::InvalidJoinType))?
+                .split('.')
+                .last()
+                .ok_or_else(|| Box::new(ConversionError::InvalidJoinType))?;
+
+            let join_type_final = match join_type_str {
+                "Inner$" => JoinType::Inner,
+                "LeftOuter$" => JoinType::Left,
+                "FullOuter$" => JoinType::Outer,
+                _ => return Err(Box::new(ConversionError::UnsupportedJoinType(join_type_str.to_string()))),
+            };
+
+             // Extract the condition array
+            let condition_array = node.get("condition")
+            .and_then(|c| c.as_array())
+            .ok_or_else(|| Box::new(ConversionError::MissingField("condition".to_string())))?;
+
+            // The first element is usually the root condition expression
+            if condition_array.is_empty() {
+                return Err(Box::new(ConversionError::InvalidExpression));
+            }
+
+            let join_condition = process_condition(&condition_array, 0, conv_object)?;
+
+            Ok(Arc::new(IrPlan::Join {
+                left: left_child,
+                right: right_child,
+                join_type: join_type_final,
+                condition: join_condition.0,
+            }))
+}
+
+
+pub fn process_condition(condition_array: &[Value], idx: usize, conv_object: &ConverterObject) -> Result<(Vec<JoinCondition>, usize), Box<ConversionError>> {
+    if idx >= condition_array.len() {
+        return Err(Box::new(ConversionError::InvalidExpression));
+    }
+    
+    let node = &condition_array[idx];
+    
+    // Get the class name
+    let class = node.get("class")
+        .and_then(|c| c.as_str())
+        .ok_or_else(|| Box::new(ConversionError::InvalidClassName))?;
+    
+    let node_type = class.split('.').last()
+        .ok_or_else(|| Box::new(ConversionError::InvalidClassName))?;
+
+
+    println!("Processing node type: {}", node_type);
+    
+    match node_type {
+        "And" => process_binary_operator(condition_array, idx, conv_object),
+        "EqualTo" => process_comparison(condition_array, idx, conv_object),
+        _ => Err(Box::new(ConversionError::UnsupportedExpressionType(node_type.to_string()))),
+    }
+}
+
+pub fn process_attribute_reference(condition_array: &[Value], idx: usize, conv_object: &ConverterObject) -> Result<(ColumnRef, usize), Box<ConversionError>> {
+    let node = &condition_array[idx];
+    
+    // Create a column reference using the utility function
+    let column_ref = conv_object.create_column_ref(node)?;
+    
+    Ok((
+            column_ref,
+            idx + 1
+    ))
+}
+
+pub fn process_binary_operator(condition_array: &[Value], idx: usize, conv_object: &ConverterObject) -> Result<(Vec<JoinCondition>, usize), Box<ConversionError>> {
+    // Process left operand (always the next node)
+    let (left_clause, next_idx) = process_comparison(condition_array, idx + 1, conv_object)?;
+    
+    // Process right operand (starts after the left branch is complete)
+    let (right_clause, final_idx) = process_comparison(condition_array, next_idx, conv_object)?;
+    
+    
+
+    Ok((
+        [left_clause[0].clone(), right_clause[0].clone()].to_vec(),
+        final_idx
+    ))
+}
+
+pub fn process_comparison(condition_array: &[Value], idx: usize, conv_object: &ConverterObject) -> Result<(Vec<JoinCondition>, usize), Box<ConversionError>> {
+    let node = &condition_array[idx];
+    
+    // Get indices for left and right expressions
+    let left_idx = node.get("left").and_then(|l| l.as_u64())
+        .ok_or_else(|| Box::new(ConversionError::MissingField("left".to_string())))? as usize;
+    
+    // Process left expression
+    let (left_field, next_idx) = process_attribute_reference(condition_array, idx + left_idx +1, conv_object)?;
+    
+    // Process right expression
+    let (right_field, final_idx) = process_attribute_reference(condition_array, next_idx, conv_object)?;
+    
+
+    Ok((
+        [JoinCondition {
+            left_col: left_field,
+            right_col: right_field,
+        }].to_vec(),
+        final_idx
+    ))
+}

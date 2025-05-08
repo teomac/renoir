@@ -31,5 +31,13 @@ pub enum ConversionError {
 
     #[error("Error parsing integer: {0}")]
     ParseIntError(#[from] std::num::ParseIntError),
+
+    #[error("Error parsing join: invalid join type")]
+    InvalidJoinType,
+
+    #[error("Error parsing join, unsupported join type: {0}")]
+    UnsupportedJoinType(String),
+
+
 }
 
