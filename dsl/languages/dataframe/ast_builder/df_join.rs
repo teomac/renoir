@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use serde_json::Value;
 
-use crate::dsl::{ir::{ColumnRef, IrPlan, JoinCondition, JoinType}, languages::dataframe::conversion_error::ConversionError};
+use crate::dsl::{ir::{ColumnRef, IrPlan, JoinCondition, JoinType, ProjectionColumn}, languages::dataframe::{conversion_error::ConversionError, converter::process_node}};
 
 use super::df_utils::ConverterObject;
 
@@ -34,7 +34,7 @@ pub fn process_join(node: &Value, left_child: Arc<IrPlan>, right_child: Arc<IrPl
                 return Err(Box::new(ConversionError::InvalidExpression));
             }
 
-            let join_condition = process_condition(&condition_array, 0, conv_object)?;
+            let join_condition = process_join_condition(&condition_array, 0, conv_object)?;
 
             Ok(Arc::new(IrPlan::Join {
                 left: left_child,
@@ -44,8 +44,50 @@ pub fn process_join(node: &Value, left_child: Arc<IrPlan>, right_child: Arc<IrPl
             }))
 }
 
+pub fn process_join_child(child_index: usize, full_plan: &[Value], stream_index: &mut usize, conv_object: &ConverterObject) -> Result<(Arc<IrPlan>, usize), Box<ConversionError>> {
+    //get the child node
+    let child_node = full_plan.get(child_index)
+        .ok_or_else(|| Box::new(ConversionError::InvalidChildIndex))?;
 
-pub fn process_condition(condition_array: &[Value], idx: usize, conv_object: &ConverterObject) -> Result<(Vec<JoinCondition>, usize), Box<ConversionError>> {
+    //process the child node using the process_node function
+    let child_ir = process_node(child_node, child_index, full_plan, stream_index, conv_object)?;
+
+    let processed_child_node = match &*child_ir.0 {
+        //if the child node is a Project node, we need to create a Scan node with the project as input
+        IrPlan::Project { columns, .. } => {
+            // Create a Scan node with the project as input
+            
+            //first we retrieve the table name from the child node
+            //iterate over the columns vector and get the first ColumnRef object
+            let column_ref = columns.iter()
+                .find_map(|col| match col.clone() {
+                    ProjectionColumn::Column (col_ref, _)=> Some(col_ref.clone()),
+                    _ => None,
+                })
+                .ok_or_else(|| Box::new(ConversionError::MissingField("ColumnRef".to_string())))?;
+
+            let scan_node = IrPlan::Scan {
+                input: child_ir.0,
+                stream_name: {
+                    let stream_name = format!("stream_{}", stream_index);
+                    *stream_index += 1; // Increment the stream index for the next node
+                    stream_name
+                },
+                alias: column_ref.table,
+              
+            };
+            *stream_index += 1; // Increment the stream index for the next node
+            Arc::new(scan_node)
+        }
+     _ => child_ir.0.clone()  //in any other case, we just return the child node
+    };
+
+    // Return the processed child node and the updated index
+    Ok((processed_child_node, child_ir.1))
+}
+
+
+pub fn process_join_condition(condition_array: &[Value], idx: usize, conv_object: &ConverterObject) -> Result<(Vec<JoinCondition>, usize), Box<ConversionError>> {
     if idx >= condition_array.len() {
         return Err(Box::new(ConversionError::InvalidExpression));
     }

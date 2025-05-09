@@ -80,10 +80,6 @@ impl StreamInfo {
         self.id == other.id
     }
 
-    pub(crate) fn source_equals(&self, other: &StreamInfo) -> bool {
-        self.source_table == other.source_table && self.alias == other.alias
-    }
-
     pub(crate) fn get_access(&self) -> AccessPath {
         self.access.clone()
     }

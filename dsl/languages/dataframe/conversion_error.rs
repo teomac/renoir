@@ -2,14 +2,8 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum ConversionError {
-    #[error("Failed to parse JSON: {0}")]
-    JsonParsing(String),
-
     #[error("Empty Catalyst plan")]
     EmptyPlan,
-
-    #[error("Empty schema in LogicalRDD")]
-    EmptySchema,
 
     #[error("Missing required field: {0}")]
     MissingField(String),
@@ -26,9 +20,6 @@ pub enum ConversionError {
     #[error("Unsupported expression type: {0}")]
     UnsupportedExpressionType(String),
 
-    #[error("Missing input plan for operator")]
-    MissingInput,
-
     #[error("Error parsing integer: {0}")]
     ParseIntError(#[from] std::num::ParseIntError),
 
@@ -38,6 +29,7 @@ pub enum ConversionError {
     #[error("Error parsing join, unsupported join type: {0}")]
     UnsupportedJoinType(String),
 
-
+    #[error("Error parsing join: invalid child index")]
+    InvalidChildIndex,
 }
 
