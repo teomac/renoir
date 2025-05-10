@@ -1,4 +1,7 @@
-use crate::dsl::ir::{ColumnRef, ComplexField, IrLiteral, IrPlan, ProjectionColumn};
+use crate::dsl::ir::{
+    AggregateFunction, AggregateType, ColumnRef, ComplexField, IrPlan,
+    ProjectionColumn,
+};
 use crate::dsl::languages::dataframe::conversion_error::ConversionError;
 use serde_json::Value;
 use std::sync::Arc;
@@ -6,60 +9,28 @@ use std::sync::Arc;
 use super::df_utils::ConverterObject;
 
 /// Process a Project (SELECT) node from a Catalyst plan
-/// Process a Project node (SELECT operation)
-pub fn process_project(node: &Value, input_plan: Arc<IrPlan>, current_index: usize, conv_object: &ConverterObject) -> Result<Arc<IrPlan>, Box<ConversionError>> {
+pub fn process_project(
+    node: &Value,
+    input_plan: Arc<IrPlan>,
+    stream_index: &mut usize,
+    conv_object: &ConverterObject,
+) -> Result<Arc<IrPlan>, Box<ConversionError>> {
     // Extract the project list
-    let project_list = node.get("projectList")
+    let project_list = node
+        .get("projectList")
         .and_then(|p| p.as_array())
         .ok_or_else(|| Box::new(ConversionError::MissingField("projectList".to_string())))?;
-    
+
     let mut columns = Vec::new();
-    
+
     // Process each projection list item
     for projection_array in project_list {
         if let Some(projections) = projection_array.as_array() {
-            // Process alias expressions (typically the first element is an Alias, followed by its child)
-            if let Some(alias_expr) = projections.first() {
-                let class = alias_expr.get("class")
-                    .and_then(|c| c.as_str())
-                    .ok_or_else(|| Box::new(ConversionError::InvalidClassName))?;
-                
-                let expr_type = class.split('.').last()
-                    .ok_or_else(|| Box::new(ConversionError::InvalidClassName))?;
-                
-                match expr_type {
-                    "Alias" => {
-                        // This is an aliased expression
-                        let alias_name = alias_expr.get("name")
-                            .and_then(|n| n.as_str())
-                            .ok_or_else(|| Box::new(ConversionError::MissingField("name".to_string())))?
-                            .to_string();
-                        
-                        // Get the child expression index
-                        let child_idx = alias_expr.get("child")
-                            .and_then(|c| c.as_u64())
-                            .ok_or_else(|| Box::new(ConversionError::MissingField("child".to_string())))?;
-                        
-                        // Find the child expression in the projection array (typically at index 1)
-                        let child_expr = &projections[child_idx as usize + 1];
-                        
-                        // Process the child expression
-                        let column = process_expression(child_expr, Some(alias_name), conv_object)?;
-                        columns.push(column);
-                    },
-                    "AttributeReference" => {
-                        // Direct column reference without alias
-                        let column = process_expression(alias_expr, None, conv_object)?;
-                        columns.push(column);
-                    },
-                    _ => {
-                        return Err(Box::new(ConversionError::UnsupportedExpressionType(expr_type.to_string())));
-                    }
-                }
-            }
+            // Process the first expression in each projection array
+            let projection_column = process_projection_array(projections, stream_index, conv_object)?;
+            columns.push(projection_column);
         }
     }
-    
     // If no columns were processed, add a wildcard projection
     if columns.is_empty() {
         columns.push(ProjectionColumn::Column(
@@ -70,7 +41,7 @@ pub fn process_project(node: &Value, input_plan: Arc<IrPlan>, current_index: usi
             None,
         ));
     }
-    
+
     // Create the Project node
     Ok(Arc::new(IrPlan::Project {
         input: input_plan,
@@ -79,43 +50,131 @@ pub fn process_project(node: &Value, input_plan: Arc<IrPlan>, current_index: usi
     }))
 }
 
+fn process_projection_array(
+    projection_array: &[Value],
+    stream_index: &mut usize,
+    conv_object: &ConverterObject,
+) -> Result<ProjectionColumn, Box<ConversionError>> {
+    //check if the projection array is empty
+    if projection_array.is_empty() {
+        return Err(Box::new(ConversionError::InvalidExpression));
+    }
+
+    let mut projection_column = Vec::new();
+
+    if let Some(expr) = projection_array.first() {
+        let class = expr
+            .get("class")
+            .and_then(|c| c.as_str())
+            .ok_or_else(|| Box::new(ConversionError::InvalidClassName))?;
+
+        let expr_type = class
+            .split('.')
+            .last()
+            .ok_or_else(|| Box::new(ConversionError::InvalidClassName))?;
+
+        match expr_type {
+            "Alias" => {
+                //check if the alias is auto generated or input by the user
+                let has_alias = !expr
+                    .get("nonInheritableMetadataKeys")
+                    .and_then(|n| n.as_str())
+                    .ok_or_else(|| {
+                        Box::new(ConversionError::MissingField(
+                            "nonInheritableMetadataKeys".to_string(),
+                        ))
+                    })?
+                    .is_empty();
+
+                // This is an aliased expression
+                let alias_name = if has_alias {
+                    Some(
+                        expr.get("name")
+                            .and_then(|n| n.as_str())
+                            .ok_or_else(|| {
+                                Box::new(ConversionError::MissingField("name".to_string()))
+                            })?
+                            .to_string().replace(" ", ""),
+                    )
+                } else {
+                    None
+                };
+                // Get the child expression index
+                let child_idx = expr
+                    .get("child")
+                    .and_then(|c| c.as_u64())
+                    .ok_or_else(|| Box::new(ConversionError::MissingField("child".to_string())))?;
+
+                // Process the child expression with the alias
+                let (column, _) = process_expression(
+                    projection_array,
+                    0 + child_idx as usize + 1,
+                    alias_name,
+                    conv_object,
+                )?;
+                projection_column.push(column);
+            }
+            _ => {
+                // Directly process the expression
+                let (column, _) = process_expression(projection_array, 0, None, conv_object)?;
+                projection_column.push(column);
+            }
+        }
+    }
+
+    // if projection_column is empty, return an error
+    if projection_column.is_empty() {
+        return Err(Box::new(ConversionError::InvalidExpression));
+    }
+    // Return the first projection column
+    Ok(projection_column[0].clone())
+}
+
 /// Process an expression to create a ProjectionColumn
-fn process_expression(expr: &Value, alias: Option<String>, conv_object: &ConverterObject) -> Result<ProjectionColumn, Box<ConversionError>> {
+/// Returns the ProjectionColumn and the next index to process
+fn process_expression(
+    expr_array: &[Value],
+    idx: usize,
+    alias: Option<String>,
+    conv_object: &ConverterObject,
+) -> Result<(ProjectionColumn, usize), Box<ConversionError>> {
+    if idx >= expr_array.len() {
+        return Err(Box::new(ConversionError::InvalidExpression));
+    }
+    let expr = &expr_array[idx];
+
+    println!("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+
+    println!("Processing expression: {:?}", expr);
+    println!("Expression index: {}", idx);
+
     // Extract the expression type
-    let class = expr.get("class")
+    let class = expr
+        .get("class")
         .and_then(|c| c.as_str())
         .ok_or_else(|| Box::new(ConversionError::InvalidClassName))?;
-    
-    let expr_type = class.split('.').last()
+
+    let expr_type = class
+        .split('.')
+        .last()
         .ok_or_else(|| Box::new(ConversionError::InvalidClassName))?;
-    
+
     match expr_type {
         "AttributeReference" => {
-            // Extract column name
-            let column_name = expr.get("name")
-                .and_then(|n| n.as_str())
-                .ok_or_else(|| Box::new(ConversionError::MissingField("name".to_string())))?
-                .to_string();
-            
-            // Extract expression ID to look up table name
-            let expr_id = get_expr_id(expr)?;
-            
-            // Look up table name from mapping
-            let table = conv_object.expr_to_table.get(&expr_id).cloned();
-            
-            // Create column reference
-            let column_ref = ColumnRef {
-                table,
-                column: column_name,
-            };
-            
-            Ok(ProjectionColumn::Column(column_ref, alias))
-        },
+            // Process simple column reference
+            println!("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+            println!("Processing AttributeReference");
+
+            let column_ref = conv_object.create_column_ref(expr)?;
+            println!("Column reference: {:?}", column_ref);
+            Ok((ProjectionColumn::Column(column_ref, alias), idx + 1))
+        }
         "Literal" => {
-            // Extract literal value based on data type
-            let literal = process_literal_value(expr)?;
-            
-            // Create complex field for the literal
+            println!("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+            println!("Processing Literal");
+            // Process literal value
+            let literal = conv_object.extract_literal_value(expr)?;
+            println!("Literal value: {:?}", literal);
             let complex_field = ComplexField {
                 column_ref: None,
                 literal: Some(literal),
@@ -124,70 +183,320 @@ fn process_expression(expr: &Value, alias: Option<String>, conv_object: &Convert
                 subquery: None,
                 subquery_vec: None,
             };
-            
-            Ok(ProjectionColumn::ComplexValue(complex_field, alias))
-        },
-        _ => Err(Box::new(ConversionError::UnsupportedExpressionType(expr_type.to_string())))
+            Ok((
+                ProjectionColumn::ComplexValue(complex_field, alias),
+                idx + 1,
+            ))
+        }
+        // Aggregate functions
+        "Sum" | "Min" | "Max" | "Avg" | "Count" => {
+            process_aggregate(expr_array, idx, expr_type, alias, conv_object)
+        }
+        // Arithmetic operations
+        "Add" | "Subtract" | "Multiply" | "Divide" | "Pow" => {
+            let (complex_field, next_idx) =
+                process_arithmetic_operation(expr_array, idx, expr_type, conv_object)?;
+            Ok((
+                ProjectionColumn::ComplexValue(complex_field, alias),
+                next_idx,
+            ))
+        }
+        "Cast" => {
+            // For Cast operations, we'll process the child and maintain the same type
+            let child_idx = expr
+                .get("child")
+                .and_then(|c| c.as_u64())
+                .ok_or_else(|| Box::new(ConversionError::MissingField("child".to_string())))?
+                as usize;
+
+            process_expression(expr_array, idx + child_idx + 1, alias, conv_object)
+        }
+        _ => Err(Box::new(ConversionError::UnsupportedExpressionType(
+            expr_type.to_string(),
+        ))),
     }
 }
 
-/// Extract an expression ID as a string
-fn get_expr_id(expr: &Value) -> Result<String, Box<ConversionError>> {
-    let expr_id = expr.get("exprId")
-        .ok_or_else(|| Box::new(ConversionError::MissingField("exprId".to_string())))?;
-    
-    let id = expr_id.get("id")
-        .and_then(|id| id.as_u64())
-        .ok_or_else(|| Box::new(ConversionError::MissingField("id".to_string())))?;
-    
-    let jvm_id = expr_id.get("jvmId")
-        .and_then(|j| j.as_str())
-        .ok_or_else(|| Box::new(ConversionError::MissingField("jvmId".to_string())))?;
-    
-    Ok(format!("{}_{}", id, jvm_id))
+/// Process an aggregate function expression
+fn process_aggregate(
+    expr_array: &[Value],
+    idx: usize,
+    agg_type: &str,
+    alias: Option<String>,
+    conv_object: &ConverterObject,
+) -> Result<(ProjectionColumn, usize), Box<ConversionError>> {
+    let expr = &expr_array[idx];
+
+    // Get the child index
+    let child_idx = expr
+        .get("child")
+        .and_then(|c| c.as_u64())
+        .ok_or_else(|| Box::new(ConversionError::MissingField("child".to_string())))?
+        as usize;
+
+    // Get the aggregate type
+    let aggregate_type = match agg_type {
+        "Sum" => AggregateType::Sum,
+        "Min" => AggregateType::Min,
+        "Max" => AggregateType::Max,
+        "Avg" => AggregateType::Avg,
+        "Count" => AggregateType::Count,
+        _ => {
+            return Err(Box::new(ConversionError::UnsupportedExpressionType(
+                agg_type.to_string(),
+            )))
+        }
+    };
+
+    // Special handling for COUNT(*) which might not have a child expression
+    if aggregate_type == AggregateType::Count && expr.get("isDistinct").is_some() {
+        let column_ref = ColumnRef {
+            table: None,
+            column: "*".to_string(),
+        };
+
+        let agg_func = AggregateFunction {
+            function: AggregateType::Count,
+            column: column_ref,
+        };
+
+        return Ok((ProjectionColumn::Aggregate(agg_func, alias), idx + 1));
+    }
+
+    // Process the child expression to get the column reference
+    let child_expr = &expr_array[idx + child_idx + 1];
+    let column_ref = conv_object.create_column_ref(child_expr)?;
+
+    let agg_func = AggregateFunction {
+        function: aggregate_type,
+        column: column_ref,
+    };
+
+    Ok((
+        ProjectionColumn::Aggregate(agg_func, alias),
+        idx + child_idx + 2,
+    ))
 }
 
-/// Process a literal value
-fn process_literal_value(expr: &Value) -> Result<IrLiteral, Box<ConversionError>> {
-    // Get the literal value
-    let value = expr.get("value")
-        .ok_or_else(|| Box::new(ConversionError::MissingField("value".to_string())))?;
-    
-    // Get the data type
-    let data_type = expr.get("dataType")
-        .and_then(|dt| dt.as_str())
-        .ok_or_else(|| Box::new(ConversionError::MissingField("dataType".to_string())))?;
-    
-    // Convert the value based on data type
-    match data_type {
-        "long" | "int" => {
-            if let Some(i) = value.as_i64() {
-                Ok(IrLiteral::Integer(i))
-            } else {
-                Err(Box::new(ConversionError::InvalidExpression))
-            }
+/// Process an arithmetic operation node (Add, Subtract, Multiply, Divide, Pow)
+fn process_arithmetic_operation(
+    expr_array: &[Value],
+    idx: usize,
+    op_type: &str,
+    conv_object: &ConverterObject,
+) -> Result<(ComplexField, usize), Box<ConversionError>> {
+    let expr = &expr_array[idx];
+
+    println!("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+
+    println!("Processing arithmetic operation: {:?}", expr);
+    println!("Operation index: {}", idx);
+
+    // Get indices for left and right operands
+    let left_idx = expr
+        .get("left")
+        .and_then(|l| l.as_u64())
+        .ok_or_else(|| Box::new(ConversionError::MissingField("left".to_string())))?
+        as usize;
+
+       // Process left operand
+    let (left_field, left_next_idx) =
+        process_complex_field(expr_array, idx + left_idx + 1, conv_object)?;
+
+    println!("Left field: {:?}", left_field);
+    println!("Left next index: {}", left_next_idx);
+
+    // Convert operation type to operator string
+    let operator = match op_type {
+        "Add" => "+",
+        "Subtract" => "-",
+        "Multiply" => "*",
+        "Divide" => "/",
+        "Pow" => "^",
+        _ => {
+            return Err(Box::new(ConversionError::UnsupportedExpressionType(
+                op_type.to_string(),
+            )))
+        }
+    };
+
+    // Process right operand
+    let (right_field, right_next_idx) =
+        process_complex_field(expr_array, left_next_idx, conv_object)?;
+
+    // Create the nested expression
+    let nested_expr = Box::new((left_field, operator.to_string(), right_field, true));
+
+    Ok((
+        ComplexField {
+            column_ref: None,
+            literal: None,
+            aggregate: None,
+            nested_expr: Some(nested_expr),
+            subquery: None,
+            subquery_vec: None,
         },
-        "float" | "double" => {
-            if let Some(f) = value.as_f64() {
-                Ok(IrLiteral::Float(f))
-            } else {
-                Err(Box::new(ConversionError::InvalidExpression))
-            }
-        },
-        "string" => {
-            if let Some(s) = value.as_str() {
-                Ok(IrLiteral::String(s.to_string()))
-            } else {
-                Err(Box::new(ConversionError::InvalidExpression))
-            }
-        },
-        "boolean" => {
-            if let Some(b) = value.as_bool() {
-                Ok(IrLiteral::Boolean(b))
-            } else {
-                Err(Box::new(ConversionError::InvalidExpression))
-            }
-        },
-        _ => Err(Box::new(ConversionError::UnsupportedExpressionType(data_type.to_string())))
+        left_next_idx.max(right_next_idx),
+    ))
+}
+
+/// Process an expression node into a ComplexField
+fn process_complex_field(
+    expr_array: &[Value],
+    idx: usize,
+    conv_object: &ConverterObject,
+) -> Result<(ComplexField, usize), Box<ConversionError>> {
+    if idx >= expr_array.len() {
+        return Err(Box::new(ConversionError::InvalidExpression));
     }
+
+    let expr = &expr_array[idx];
+
+    println!("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+    println!("Processing complex field: {:?}", expr);
+    println!("Complex field index: {}", idx);
+
+    // Extract the expression type
+    let class = expr
+        .get("class")
+        .and_then(|c| c.as_str())
+        .ok_or_else(|| Box::new(ConversionError::InvalidClassName))?;
+
+    let expr_type = class
+        .split('.')
+        .last()
+        .ok_or_else(|| Box::new(ConversionError::InvalidClassName))?;
+
+    match expr_type {
+        "AttributeReference" => {
+            // Simple column reference
+            let column_ref = conv_object.create_column_ref(expr)?;
+
+            Ok((
+                ComplexField {
+                    column_ref: Some(column_ref),
+                    literal: None,
+                    aggregate: None,
+                    nested_expr: None,
+                    subquery: None,
+                    subquery_vec: None,
+                },
+                idx + 1,
+            ))
+        }
+        "Literal" => {
+            // Literal value
+            let literal = conv_object.extract_literal_value(expr)?;
+
+            Ok((
+                ComplexField {
+                    column_ref: None,
+                    literal: Some(literal),
+                    aggregate: None,
+                    nested_expr: None,
+                    subquery: None,
+                    subquery_vec: None,
+                },
+                idx + 1,
+            ))
+        }
+        // Aggregate functions
+        "Sum" | "Min" | "Max" | "Avg" | "Count" => {
+            process_aggregate_field(expr_array, idx, expr_type, conv_object)
+        }
+        // Arithmetic operations
+        "Add" | "Subtract" | "Multiply" | "Divide" | "Pow" => {
+            process_arithmetic_operation(expr_array, idx, expr_type, conv_object)
+        }
+        "Cast" => {
+            // For Cast operations, we'll process the child
+            let child_idx = expr
+                .get("child")
+                .and_then(|c| c.as_u64())
+                .ok_or_else(|| Box::new(ConversionError::MissingField("child".to_string())))?
+                as usize;
+
+            process_complex_field(expr_array, idx + child_idx + 1, conv_object)
+        }
+        _ => Err(Box::new(ConversionError::UnsupportedExpressionType(
+            expr_type.to_string(),
+        ))),
+    }
+}
+
+/// Process an aggregate function into a ComplexField
+fn process_aggregate_field(
+    expr_array: &[Value],
+    idx: usize,
+    agg_type: &str,
+    conv_object: &ConverterObject,
+) -> Result<(ComplexField, usize), Box<ConversionError>> {
+    let expr = &expr_array[idx];
+
+    // Get the child index
+    let child_idx = expr
+        .get("child")
+        .and_then(|c| c.as_u64())
+        .ok_or_else(|| Box::new(ConversionError::MissingField("child".to_string())))?
+        as usize;
+
+    // Get the aggregate type
+    let aggregate_type = match agg_type {
+        "Sum" => AggregateType::Sum,
+        "Min" => AggregateType::Min,
+        "Max" => AggregateType::Max,
+        "Avg" => AggregateType::Avg,
+        "Count" => AggregateType::Count,
+        _ => {
+            return Err(Box::new(ConversionError::UnsupportedExpressionType(
+                agg_type.to_string(),
+            )))
+        }
+    };
+
+    // Special handling for COUNT(*) which might not have a child expression
+    if aggregate_type == AggregateType::Count && expr.get("isDistinct").is_some() {
+        let column_ref = ColumnRef {
+            table: None,
+            column: "*".to_string(),
+        };
+
+        let agg_func = AggregateFunction {
+            function: AggregateType::Count,
+            column: column_ref,
+        };
+
+        return Ok((
+            ComplexField {
+                column_ref: None,
+                literal: None,
+                aggregate: Some(agg_func),
+                nested_expr: None,
+                subquery: None,
+                subquery_vec: None,
+            },
+            idx + 1,
+        ));
+    }
+
+    // Process the child expression to get the column reference
+    let child_expr = &expr_array[idx + child_idx + 1];
+    let column_ref = conv_object.create_column_ref(child_expr)?;
+
+    let agg_func = AggregateFunction {
+        function: aggregate_type,
+        column: column_ref,
+    };
+
+    Ok((
+        ComplexField {
+            column_ref: None,
+            literal: None,
+            aggregate: Some(agg_func),
+            nested_expr: None,
+            subquery: None,
+            subquery_vec: None,
+        },
+        idx + child_idx + 2,
+    ))
 }

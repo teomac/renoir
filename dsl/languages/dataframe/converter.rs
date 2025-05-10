@@ -20,6 +20,8 @@ pub fn build_ir_ast_df(
         return Err(Box::new(ConversionError::EmptyPlan));
     }
 
+    println!("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
+    println!("Catalyst plan: {:?}", plan);
     let mut project_count: usize = 0;
 
     // Start processing from the root node
@@ -49,9 +51,6 @@ pub fn process_node(
         .last()
         .ok_or_else(|| Box::new(ConversionError::InvalidClassName)).unwrap();
 
-    println!("Node type: {:?}", node_type);
-    println!("Node: {:?}", node);
-
     // Process based on node type
     match node_type {
         "Project" => {
@@ -75,7 +74,7 @@ pub fn process_node(
             // Process the child node first
 
             // Process the project node
-            Ok((process_project(node, input_plan, current_index, conv_object)?, index))
+            Ok((process_project(node, input_plan, stream_index, conv_object)?, index))
         }
         "Filter" => {
             // Get the child node
@@ -96,13 +95,10 @@ pub fn process_node(
             Ok((process_filter(node, input_plan, conv_object)?, index))
         }
         "Join" => {
-            println!("Current index: {:?}", current_index);
-
             let left_child_idx = node
                 .get("left")
                 .and_then(|c| c.as_u64())
                 .ok_or_else(|| Box::new(ConversionError::MissingField("left".to_string()))).unwrap();
-            println!("Child index: {:?}", left_child_idx);
 
             // Reset project count for each join child to properly track nested Projects
             let mut left_project_count: usize = 1;
@@ -115,9 +111,6 @@ pub fn process_node(
                 conv_object,
             )?;
 
-            println!("Left child: {:?}", left_child);
-            println!("Index: {:?}", index);
-
             // Reset project count for right child
             let mut right_project_count: usize = 1;
 
@@ -128,9 +121,6 @@ pub fn process_node(
                 &mut right_project_count,
                 conv_object,
             )?;
-
-            println!("Right child: {:?}", right_child);
-            println!("Final index: {:?}", final_idx);
 
             Ok((process_join(node, left_child, right_child, conv_object)?, final_idx))
 
