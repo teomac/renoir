@@ -20,21 +20,23 @@ pub fn build_ir_ast_df(
         return Err(Box::new(ConversionError::EmptyPlan));
     }
 
-    println!("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
-    println!("Plan: {:?}", plan);
+    let mut project_count: usize = 0;
 
     // Start processing from the root node
-    Ok(process_node(&plan[0], 0, plan, &mut stream_index, &conv_object).unwrap().0)
+    Ok(process_node(plan, 0, &mut project_count, &mut stream_index, &conv_object).unwrap().0)
 }
 
 /// Process a node in the Catalyst plan
 pub fn process_node(
-    node: &Value,
-    current_index: usize,
     full_plan: &[Value],
+    current_index: usize,
+    project_count: &mut usize,
     stream_index: &mut usize,
     conv_object: &ConverterObject,
 ) -> Result<(Arc<IrPlan>, usize), Box<ConversionError>> {
+    let node = full_plan
+        .get(current_index)
+        .ok_or_else(|| Box::new(ConversionError::InvalidNodeIndex(String::from("Invalid node index")))).unwrap();
     // Extract the node class
     let class = node
         .get("class")
@@ -53,6 +55,9 @@ pub fn process_node(
     // Process based on node type
     match node_type {
         "Project" => {
+            // Increment the project count
+            *project_count += 1;
+
             // Get the child node
             let child_idx = node
                 .get("child")
@@ -60,9 +65,9 @@ pub fn process_node(
                 .ok_or_else(|| Box::new(ConversionError::MissingField("child".to_string()))).unwrap();
 
             let (input_plan, index) = process_node(
-                &full_plan[current_index + child_idx as usize + 1],
-                current_index + child_idx as usize + 1,
                 full_plan,
+                current_index + child_idx as usize + 1,
+                project_count,                
                 stream_index,
                 conv_object,
             )?;
@@ -81,9 +86,9 @@ pub fn process_node(
 
             // Process the child node first
             let (input_plan, index) = process_node(
-                &full_plan[current_index + child_idx as usize + 1],
-                current_index + child_idx as usize + 1,
                 full_plan,
+                current_index + child_idx as usize + 1,
+                project_count,
                 stream_index,
                 conv_object,
             )?;
@@ -99,20 +104,28 @@ pub fn process_node(
                 .ok_or_else(|| Box::new(ConversionError::MissingField("left".to_string()))).unwrap();
             println!("Child index: {:?}", left_child_idx);
 
+            // Reset project count for each join child to properly track nested Projects
+            let mut left_project_count: usize = 1;
+
             let (left_child, index) = process_join_child(
                 current_index + left_child_idx as usize + 1,
                 full_plan,
                 stream_index,
+                &mut left_project_count,
                 conv_object,
             )?;
 
             println!("Left child: {:?}", left_child);
             println!("Index: {:?}", index);
 
+            // Reset project count for right child
+            let mut right_project_count: usize = 1;
+
             let (right_child, final_idx) = process_join_child(
                 index + 1,
                 full_plan,
                 stream_index,
+                &mut right_project_count,
                 conv_object,
             )?;
 
@@ -122,9 +135,11 @@ pub fn process_node(
             Ok((process_join(node, left_child, right_child, conv_object)?, final_idx))
 
         }
-        "LogicalRDD" | "LogicalRelation" => {
+        "LogicalRDD" | "LogicalRelation" => 
+        {
+            let is_subquery = *project_count > 1;
             // This is a base table scan
-            Ok((process_logical_rdd(node, stream_index, conv_object)?, current_index + 1))
+            Ok((process_logical_rdd(node, stream_index, is_subquery, conv_object)?, current_index + 1))
         }
         _ => Err(Box::new(ConversionError::UnsupportedNodeType(
             node_type.to_string(),
@@ -136,6 +151,7 @@ pub fn process_node(
 fn process_logical_rdd(
     node: &Value,
     stream_index: &mut usize,
+    is_subquery: bool,
     conv_object: &ConverterObject,
 ) -> Result<Arc<IrPlan>, Box<ConversionError>> {
     // Extract table name from column expression IDs
@@ -174,9 +190,15 @@ fn process_logical_rdd(
         table_name: table_name.clone(),
     });
 
+    let stream_name = if is_subquery {
+        format!("substream{}", stream_index)
+    } else {
+        format!("stream{}", stream_index)
+    };
+
     let plan = Arc::new(IrPlan::Scan {
         input: table_node,
-        stream_name: format!("stream_{}", stream_index),
+        stream_name,
         alias: Some(table_name),
     });
 

@@ -11,6 +11,9 @@ pub enum ConversionError {
     #[error("Invalid class name in Catalyst plan")]
     InvalidClassName,
 
+    #[error("Invalid node index: {0}")]
+    InvalidNodeIndex(String),
+
     #[error("Unsupported node type: {0}")]
     UnsupportedNodeType(String),
 
