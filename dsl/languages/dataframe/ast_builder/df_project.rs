@@ -1,6 +1,5 @@
 use crate::dsl::ir::{
-    AggregateFunction, AggregateType, ColumnRef, ComplexField, IrPlan,
-    ProjectionColumn,
+    AggregateFunction, AggregateType, ColumnRef, ComplexField, IrLiteral, IrPlan, ProjectionColumn
 };
 use crate::dsl::languages::dataframe::conversion_error::ConversionError;
 use serde_json::Value;
@@ -9,10 +8,11 @@ use std::sync::Arc;
 use super::df_utils::ConverterObject;
 
 /// Process a Project (SELECT) node from a Catalyst plan
-pub fn process_project(
+pub(crate) fn process_project(
     node: &Value,
     input_plan: Arc<IrPlan>,
     stream_index: &mut usize,
+    _project_count: &mut usize,
     conv_object: &ConverterObject,
 ) -> Result<Arc<IrPlan>, Box<ConversionError>> {
     // Extract the project list
@@ -27,7 +27,46 @@ pub fn process_project(
     for projection_array in project_list {
         if let Some(projections) = projection_array.as_array() {
             // Process the first expression in each projection array
-            let projection_column = process_projection_array(projections, stream_index, conv_object)?;
+            let projection_column =
+                process_projection_array(projections, stream_index, conv_object)?;
+            columns.push(projection_column);
+        }
+    }
+    // If no columns were processed, add a wildcard projection
+    if columns.is_empty() {
+        columns.push(ProjectionColumn::Column(
+            ColumnRef {
+                table: None,
+                column: "*".to_string(),
+            },
+            None,
+        ));
+    }
+    
+    // Create the Project node
+    Ok(Arc::new(IrPlan::Project {
+        input: input_plan,
+        columns,
+        distinct: false,
+    }))
+}
+
+/// Process a Project (SELECT) node from a Catalyst plan
+pub(crate) fn process_project_agg(
+    project_list: &[Value],
+    input_plan: Arc<IrPlan>,
+    stream_index: &mut usize,
+    _project_count: &mut usize,
+    conv_object: &ConverterObject,
+) -> Result<Arc<IrPlan>, Box<ConversionError>> {
+    let mut columns = Vec::new();
+
+    // Process each projection list item
+    for projection_array in project_list {
+        if let Some(projections) = projection_array.as_array() {
+            // Process the first expression in each projection array
+            let projection_column =
+                process_projection_array(projections, stream_index, conv_object)?;
             columns.push(projection_column);
         }
     }
@@ -52,7 +91,7 @@ pub fn process_project(
 
 fn process_projection_array(
     projection_array: &[Value],
-    stream_index: &mut usize,
+    _stream_index: &mut usize,
     conv_object: &ConverterObject,
 ) -> Result<ProjectionColumn, Box<ConversionError>> {
     //check if the projection array is empty
@@ -94,7 +133,8 @@ fn process_projection_array(
                             .ok_or_else(|| {
                                 Box::new(ConversionError::MissingField("name".to_string()))
                             })?
-                            .to_string().replace(" ", ""),
+                            .to_string()
+                            .replace(" ", ""),
                     )
                 } else {
                     None
@@ -108,7 +148,7 @@ fn process_projection_array(
                 // Process the child expression with the alias
                 let (column, _) = process_expression(
                     projection_array,
-                    0 + child_idx as usize + 1,
+                    (child_idx as usize) + 1,
                     alias_name,
                     conv_object,
                 )?;
@@ -189,9 +229,7 @@ fn process_expression(
             ))
         }
         // Aggregate functions
-        "Sum" | "Min" | "Max" | "Avg" | "Count" => {
-            process_aggregate(expr_array, idx, expr_type, alias, conv_object)
-        }
+        "AggregateExpression" => process_aggregate(expr_array, idx + 1, alias, conv_object),
         // Arithmetic operations
         "Add" | "Subtract" | "Multiply" | "Divide" | "Pow" => {
             let (complex_field, next_idx) =
@@ -221,18 +259,21 @@ fn process_expression(
 fn process_aggregate(
     expr_array: &[Value],
     idx: usize,
-    agg_type: &str,
     alias: Option<String>,
     conv_object: &ConverterObject,
 ) -> Result<(ProjectionColumn, usize), Box<ConversionError>> {
     let expr = &expr_array[idx];
 
-    // Get the child index
-    let child_idx = expr
-        .get("child")
-        .and_then(|c| c.as_u64())
-        .ok_or_else(|| Box::new(ConversionError::MissingField("child".to_string())))?
-        as usize;
+    //Get the aggregate type
+    let class = expr
+        .get("class")
+        .and_then(|c| c.as_str())
+        .ok_or_else(|| Box::new(ConversionError::InvalidClassName))?;
+
+    let agg_type = class
+        .split('.')
+        .last()
+        .ok_or_else(|| Box::new(ConversionError::InvalidClassName))?;
 
     // Get the aggregate type
     let aggregate_type = match agg_type {
@@ -247,35 +288,65 @@ fn process_aggregate(
             )))
         }
     };
+    // Get the child index
+    let child_idx = idx + 1;
 
-    // Special handling for COUNT(*) which might not have a child expression
-    if aggregate_type == AggregateType::Count && expr.get("isDistinct").is_some() {
-        let column_ref = ColumnRef {
-            table: None,
-            column: "*".to_string(),
-        };
+    let child = &expr_array[child_idx];
+
+    //Get the class of the child
+    let child_class = child
+        .get("class")
+        .and_then(|c| c.as_str())
+        .ok_or_else(|| Box::new(ConversionError::InvalidClassName))?;
+
+    let child_type = child_class
+        .split('.')
+        .last()
+        .ok_or_else(|| Box::new(ConversionError::InvalidClassName))?;
+
+    //Check if the child is an AttributeReference or a Literal
+    if child_type == "AttributeReference" {
+        // Process the child expression to get the column reference
+        let column_ref = conv_object.create_column_ref(child)?;
 
         let agg_func = AggregateFunction {
-            function: AggregateType::Count,
+            function: aggregate_type,
             column: column_ref,
         };
 
-        return Ok((ProjectionColumn::Aggregate(agg_func, alias), idx + 1));
+        Ok((ProjectionColumn::Aggregate(agg_func, alias), child_idx + 1))
     }
+    else if child_type == "Literal" {
+        // Process literal value
+        let literal = conv_object.extract_literal_value(child)?;
 
-    // Process the child expression to get the column reference
-    let child_expr = &expr_array[idx + child_idx + 1];
-    let column_ref = conv_object.create_column_ref(child_expr)?;
-
-    let agg_func = AggregateFunction {
-        function: aggregate_type,
-        column: column_ref,
-    };
-
-    Ok((
-        ProjectionColumn::Aggregate(agg_func, alias),
-        idx + child_idx + 2,
-    ))
+        //the only case in which we have a literal is when we have a count(*) operation
+        //so check if the aggregate type is count
+        if aggregate_type != AggregateType::Count || literal != IrLiteral::Integer(1) {
+            return Err(Box::new(ConversionError::UnsupportedExpressionType(
+                agg_type.to_string(),
+            )));
+        } else{
+            //create an aggregate function for count(*)
+            let column_ref = ColumnRef {
+                table: None,
+                column: "*".to_string(),
+            };
+            let agg_func = AggregateFunction {
+                function: AggregateType::Count,
+                column: column_ref,
+            };
+            return Ok((
+                ProjectionColumn::Aggregate(agg_func, alias),
+                child_idx + 1,
+            ));
+        }
+    }
+    else{
+        return Err(Box::new(ConversionError::UnsupportedExpressionType(
+            agg_type.to_string(),
+        )));
+    }
 }
 
 /// Process an arithmetic operation node (Add, Subtract, Multiply, Divide, Pow)
@@ -299,7 +370,7 @@ fn process_arithmetic_operation(
         .ok_or_else(|| Box::new(ConversionError::MissingField("left".to_string())))?
         as usize;
 
-       // Process left operand
+    // Process left operand
     let (left_field, left_next_idx) =
         process_complex_field(expr_array, idx + left_idx + 1, conv_object)?;
 

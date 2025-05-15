@@ -5,7 +5,7 @@ use std::sync::Arc;
 
 use super::df_utils::ConverterObject;
 /// Process a Filter (WHERE) node from a Catalyst plan
-pub fn process_filter(node: &Value, input_plan: Arc<IrPlan>, conv_object: &ConverterObject) -> Result<Arc<IrPlan>, Box<ConversionError>> {
+pub(crate) fn process_filter(node: &Value, input_plan: Arc<IrPlan>, conv_object: &ConverterObject) -> Result<Arc<IrPlan>, Box<ConversionError>> {
     // Extract the condition array
     let condition_array = node.get("condition")
         .and_then(|c| c.as_array())

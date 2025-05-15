@@ -9,7 +9,7 @@ use crate::dsl::{
 
 use super::df_utils::ConverterObject;
 
-pub fn process_join(
+pub(crate) fn process_join(
     node: &Value,
     left_child: Arc<IrPlan>,
     right_child: Arc<IrPlan>,
@@ -50,7 +50,7 @@ pub fn process_join(
         return Err(Box::new(ConversionError::InvalidExpression));
     }
 
-    let join_condition = process_join_condition(&condition_array, 0, conv_object)?;
+    let join_condition = process_join_condition(condition_array, 0, conv_object)?;
 
     Ok(Arc::new(IrPlan::Join {
         left: left_child,
@@ -60,7 +60,7 @@ pub fn process_join(
     }))
 }
 
-pub fn process_join_child(
+pub(crate) fn process_join_child(
     child_index: usize,
     full_plan: &[Value],
     stream_index: &mut usize,
@@ -68,6 +68,7 @@ pub fn process_join_child(
     conv_object: &ConverterObject,
 ) -> Result<(Arc<IrPlan>, usize), Box<ConversionError>> {
     //process the child node using the process_node function
+
     let child_ir = process_node(
         full_plan,
         child_index,

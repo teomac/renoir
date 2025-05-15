@@ -8,6 +8,9 @@ pub enum ConversionError {
     #[error("Missing required field: {0}")]
     MissingField(String),
 
+    #[error("Invalid group keys. Error: {0}")]
+    InvalidGroupKeys(String),
+
     #[error("Invalid class name in Catalyst plan")]
     InvalidClassName,
 
@@ -31,8 +34,5 @@ pub enum ConversionError {
 
     #[error("Error parsing join, unsupported join type: {0}")]
     UnsupportedJoinType(String),
-
-    #[error("Error parsing join: invalid child index")]
-    InvalidChildIndex,
 }
 
