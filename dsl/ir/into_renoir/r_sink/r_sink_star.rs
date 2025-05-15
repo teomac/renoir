@@ -1,9 +1,9 @@
 use crate::dsl::struct_object::object::QueryObject;
 use core::panic;
 
-pub(crate) fn create_star_map(stream_name: &String, query_object: &QueryObject) -> String {
+pub(crate) fn create_star_map(stream_name: &String, struct_name: &String, query_object: &QueryObject) -> String {
     let stream = query_object.get_stream(stream_name);
-    let mut result = format!(".map(|x| {} {{ ", stream.final_struct_name.last().unwrap());
+    let mut result = format!(".map(|x| {} {{ ", struct_name);
 
     //cases: JOIN -> WITH GROUP / WITHOUT GROUP
     //and
@@ -30,7 +30,7 @@ pub(crate) fn create_star_map(stream_name: &String, query_object: &QueryObject) 
             let table_struct = if stream.final_struct.is_empty() {
                 query_object.get_struct(&stream.source_table).unwrap()
             } else {
-                &stream.final_struct
+                stream.final_struct.get(stream.final_struct.keys().last().unwrap()).unwrap()
             };
 
             for (column_index, field_name) in table_struct.iter().enumerate() {

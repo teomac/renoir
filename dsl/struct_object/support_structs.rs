@@ -16,8 +16,7 @@ pub struct StreamInfo {
     pub is_keyed: bool, // Whether the stream is keyed
     pub key_columns: Vec<ColumnRef>, // Key columns
     pub op_chain: Vec<String>, // Operator chain
-    pub final_struct: IndexMap<String, String>, // Final structure of the stream
-    pub final_struct_name: Vec<String>, // Name of the final structure
+    pub final_struct: IndexMap<String, IndexMap<String, String>>, // key: final_struct name, value: struct
     pub join_tree: Option<JoinTree>, // Join tree
     pub agg_position: IndexMap<AggregateFunction, String>, // Aggregate function → position mappings
     pub limit: Option<(usize, usize)>, // Limit and offset for the stream
@@ -59,7 +58,6 @@ impl StreamInfo {
             key_columns: Vec::new(),
             op_chain: Vec::new(),
             final_struct: IndexMap::new(),
-            final_struct_name: Vec::new(),
             join_tree: None,
             agg_position: IndexMap::new(),
             limit: None,
@@ -97,8 +95,9 @@ impl StreamInfo {
     }
 
     pub(crate) fn get_initial_struct_name(&self) -> String {
-        if self.final_struct_name.len() > 1 {
-            self.final_struct_name.first().unwrap().clone()
+        let final_str_names = self.final_struct.keys().collect::<Vec<_>>();
+        if final_str_names.len() > 1 {
+            final_str_names.first().unwrap().to_string()
         } else {
             format!("Struct_{}", self.source_table)
         }
@@ -113,12 +112,12 @@ impl StreamInfo {
                         JoinTree::Leaf(stream_name) => {
                             // Get the stream info for the right stream and return its final struct name
                             let right_stream = query_object.get_stream(stream_name);
-                            if right_stream.final_struct_name.len() > 1 {
-                                right_stream
-                                    .final_struct_name
-                                    .get(right_stream.final_struct_name.len() - 2)
+                            let right_stream_structs = right_stream.final_struct.keys().collect::<Vec<_>>();
+                            if right_stream_structs.len() > 1 {
+                                right_stream_structs
+                                    .get(right_stream_structs.len() - 2)
                                     .unwrap()
-                                    .clone()
+                                    .to_string()
                             } else {
                                 format!("Struct_{}", right_stream.source_table)
                             }
@@ -136,13 +135,15 @@ impl StreamInfo {
 
     pub(crate) fn generate_nested_default(&self, query_object: &QueryObject) -> String {
         if self.join_tree.is_none() {
+            //Retrieve the final struct name for the stream
+            let final_struct_names = self.final_struct.keys().collect::<Vec<_>>();
             return format!(
                 "{}::default()",
-                if self.final_struct_name.len() > 1 {
-                    self.final_struct_name
-                        .get(self.final_struct_name.len() - 2)
+                if final_struct_names.len() > 1 {
+                    final_struct_names
+                        .get(final_struct_names.len() - 2)
                         .unwrap()
-                        .clone()
+                        .to_string()
                 } else {
                     format!("Struct_{}", self.source_table)
                 }
@@ -156,12 +157,13 @@ impl StreamInfo {
             match tree {
                 JoinTree::Leaf(stream_name) => {
                     let stream = query_object.get_stream(stream_name);
-                    if stream.final_struct_name.len() > 1 {
+                    // Retrieve the final struct name for the stream
+                    let final_struct_names = stream.final_struct.keys().collect::<Vec<_>>();
+                    if final_struct_names.len() > 1 {
                         format!(
                             "{}::default()",
-                            stream
-                                .final_struct_name
-                                .get(stream.final_struct_name.len() - 2)
+                            final_struct_names
+                                .get(final_struct_names.len() - 2)
                                 .unwrap()
                         )
                     } else {

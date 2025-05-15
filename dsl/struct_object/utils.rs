@@ -40,6 +40,13 @@ pub(crate) fn check_column_validity(
             let struct_map = query_object.tables_info.get(&table).unwrap();
             if struct_map.contains_key(&col_to_check) {
                 found = true;
+            } else{
+                //let's check on the final struct
+                let final_struct = query_object.get_stream(stream_name).final_struct.clone();
+                let last_struct  = final_struct.get(final_struct.keys().last().unwrap()).unwrap();
+                if last_struct.contains_key(&col_to_check) {
+                    found = true;
+                }
             }
         }
         if !found {

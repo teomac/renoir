@@ -17,6 +17,7 @@ use core::panic;
 pub(crate) fn create_aggregate_map(
     projection_clauses: &[ProjectionColumn],
     stream_name: &String,
+    final_struct_name: &String,
     query_object: &QueryObject,
 ) -> String {
     let mut acc_info = AccumulatorInfo::new();
@@ -83,6 +84,7 @@ pub(crate) fn create_aggregate_map(
         projection_clauses,
         &acc_info,
         stream_name,
+        final_struct_name,
         query_object,
     ));
 
@@ -319,6 +321,7 @@ pub(crate) fn create_map(
     projection_clauses: &[ProjectionColumn],
     acc_info: &AccumulatorInfo,
     stream_name: &String,
+    final_struct_name: &String,
     query_object: &QueryObject,
 ) -> String {
     let mut result = String::new();
@@ -340,7 +343,7 @@ pub(crate) fn create_map(
 
     result.push_str(&format!(
         ".map(move |x| {} {{\n",
-        stream.final_struct_name.last().unwrap()
+        final_struct_name
     ));
 
     let is_single_acc = acc_info.value_positions.len() == 1;

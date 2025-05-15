@@ -6,6 +6,7 @@ use core::panic;
 pub(crate) fn create_simple_map(
     projection_clauses: &[ProjectionColumn],
     stream_name: &String,
+    struct_name : &String,
     query_object: &QueryObject,
 ) -> String {
     let empty_string = "".to_string();
@@ -14,7 +15,7 @@ pub(crate) fn create_simple_map(
     let main_stream = query_object.get_stream(stream_name);
     let mut map_string = format!(
         ".map(move |x| {} {{ ",
-        main_stream.final_struct_name.last().unwrap()
+        struct_name
     );
     //if it has a join tree, get all the streams involved in the join
     if main_stream.join_tree.is_some() {

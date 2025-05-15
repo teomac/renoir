@@ -38,11 +38,12 @@ fn create_accumulator_info_from_stream(
 pub(crate) fn create_aggregate_map_from_previous(
     projection_clauses: &[ProjectionColumn],
     stream_name: &String,
+    struct_name: &String,
     query_object: &QueryObject,
 ) -> String {
     // Create AccumulatorInfo from StreamInfo's agg_position
     let acc_info = create_accumulator_info_from_stream(query_object, stream_name);
 
     // Reuse the existing create_map function
-    create_map(projection_clauses, &acc_info, stream_name, query_object)
+    create_map(projection_clauses, &acc_info, stream_name, struct_name, query_object)
 }

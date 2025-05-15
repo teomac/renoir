@@ -110,8 +110,8 @@ impl QueryObject {
         stream.update_columns(self.tables_info.get(source_table).unwrap().clone());
 
         stream
-            .final_struct_name
-            .push(format!("Struct_{}", stream_name.clone()).to_string());
+            .final_struct
+            .insert(format!("Struct_{}", stream_name.clone()).to_string(), IndexMap::new());
 
         self.streams.insert(stream_name.clone(), stream);
     }
@@ -192,7 +192,6 @@ impl QueryObject {
                 .clone()
         } else {
             let all_streams = self.streams.keys().cloned().collect::<Vec<_>>();
-            println!("all streams: {:?}", all_streams);
             if all_streams.len() == 1 {
                 all_streams[0].clone()
             } else {
@@ -205,9 +204,11 @@ impl QueryObject {
         let table_name = stream.source_table.clone();
 
         let field = &column.column;
+        let final_struct_name = stream.final_struct.keys().last().unwrap();
+        let final_struct = stream.final_struct.get(final_struct_name).unwrap();
         let str = if self.get_struct_field(&table_name, field).is_none() {
-            if stream.final_struct.contains_key(&column.column){
-                stream.final_struct.get(&column.column).unwrap().to_string()
+            if final_struct.contains_key(&column.column){
+                final_struct.get(&column.column).unwrap().to_string()
             }
             else{
               "f64".to_string()  
@@ -286,15 +287,15 @@ impl QueryObject {
             //update source table
             stream.source_table = main_table.clone();
             //if stream.final_struct_name is empty, we have to set it to the result_column_types
-            if stream.final_struct_name.is_empty() {
+            if stream.final_struct.is_empty() {
                 stream
-                    .final_struct_name
-                    .push(format!("Struct_{}", stream.id.clone()));
+                    .final_struct
+                    .insert(format!("Struct_{}", stream.id.clone()), IndexMap::new());
             } else {
-                stream.final_struct_name.push(format!(
+                stream.final_struct.insert(format!(
                     "{}_clone",
-                    stream.final_struct_name.last().unwrap()
-                ));
+                    stream.final_struct.keys().last().unwrap()
+                ), IndexMap::new());
             }
             stream.is_keyed = false;
             stream.key_columns.clear();
@@ -342,15 +343,15 @@ impl QueryObject {
                 //update source table
                 stream.source_table = join_table.clone();
                 //if stream.final_struct_name is empty, we have to set it to the result_column_types
-                if stream.final_struct_name.is_empty() {
+                if stream.final_struct.is_empty() {
                     stream
-                        .final_struct_name
-                        .push(format!("Struct_{}", stream.id.clone()));
+                        .final_struct
+                        .insert(format!("Struct_{}", stream.id.clone()), IndexMap::new());
                 } else {
-                    stream.final_struct_name.push(format!(
+                    stream.final_struct.insert(format!(
                         "{}_clone",
-                        stream.final_struct_name.last().unwrap()
-                    ));
+                        stream.final_struct.keys().last().unwrap()
+                    ), IndexMap::new());
                 }
                 stream.is_keyed = false;
                 stream.key_columns.clear();
@@ -496,6 +497,8 @@ impl QueryObject {
         let all_streams = self.streams.keys().cloned().collect::<Vec<String>>();
         let stream = self.get_stream(stream_name).clone();
 
+        self.result_column_types.clear();
+
         for clause in columns {
             match clause {
                 ProjectionColumn::Column(col_ref, alias) => {
@@ -561,7 +564,7 @@ impl QueryObject {
                                 let struct_map = if stream.final_struct.is_empty() {
                                     self.tables_info.get(table).unwrap()
                                 } else {
-                                    &stream.final_struct.clone()
+                                    &stream.final_struct.get(stream.final_struct.keys().last().unwrap()).unwrap().clone()
                                 };
 
                                 for (col_name, col_type) in struct_map {

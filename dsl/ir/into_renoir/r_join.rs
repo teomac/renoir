@@ -97,6 +97,7 @@ pub(crate) fn process_join(
     match join_type {
         JoinType::Left => {
             let right_stream_info = query_object.get_stream(right_stream);
+            let right_stream_final_struct_names = right_stream_info.final_struct.keys().collect::<Vec<_>>();
 
             final_join_op.push_str(&format!(
                 ".filter_map(|x| {{ if x.1.is_none() {{
@@ -104,12 +105,11 @@ pub(crate) fn process_join(
                 }} else {{
                     Some((x.0, x.1.unwrap()))
                 }} }})",
-                if right_stream_info.final_struct_name.len() > 1 {
-                    right_stream_info
-                        .final_struct_name
-                        .get(right_stream_info.final_struct_name.len() - 2)
+                if right_stream_final_struct_names.len() > 1 {
+                    right_stream_final_struct_names
+                        .get(right_stream_final_struct_names.len() - 2)
                         .unwrap()
-                        .clone()
+                        .to_string()
                 } else {
                     format!("Struct_{}", right_stream_info.source_table)
                 },
@@ -118,6 +118,10 @@ pub(crate) fn process_join(
         JoinType::Outer => {
             let left_stream_info = query_object.get_stream(left_stream);
             let right_stream_info = query_object.get_stream(right_stream);
+
+            //Retireve the final struct names
+            let left_stream_final_struct_names = left_stream_info.final_struct.keys().collect::<Vec<_>>();
+            let right_stream_final_struct_names = right_stream_info.final_struct.keys().collect::<Vec<_>>();
 
             // Determine if left side is from a previous join by checking join_tree
             let left_is_join = left_stream_info.join_tree.is_some();
@@ -137,12 +141,11 @@ pub(crate) fn process_join(
             let left_default = if nesting_level == 0 {
                 format!(
                     "{}::default()",
-                    if left_stream_info.final_struct_name.len() > 1 {
-                        left_stream_info
-                            .final_struct_name
-                            .get(left_stream_info.final_struct_name.len() - 2)
+                    if left_stream_final_struct_names.len() > 1 {
+                        left_stream_final_struct_names
+                            .get(left_stream_final_struct_names.len() - 2)
                             .unwrap()
-                            .clone()
+                            .to_string()
                     } else {
                         format!("Struct_{}", left_stream_info.source_table)
                     }
@@ -168,12 +171,11 @@ pub(crate) fn process_join(
                     Some((x.0.unwrap(), x.1.unwrap()))
                 }} }})",
                 left_default,
-                if right_stream_info.final_struct_name.len() > 1 {
-                    right_stream_info
-                        .final_struct_name
-                        .get(right_stream_info.final_struct_name.len() - 2)
+                if right_stream_final_struct_names.len() > 1 {
+                    right_stream_final_struct_names
+                        .get(right_stream_final_struct_names.len() - 2)
                         .unwrap()
-                        .clone()
+                        .to_string()
                 } else {
                     format!("Struct_{}", right_stream_info.source_table)
                 },

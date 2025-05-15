@@ -15,9 +15,9 @@ pub(crate) fn process_distinct_order(stream_name: &String, query_object: &mut Qu
     let order_by = stream.order_by.clone();
     let limit = stream.limit;
 
-    let final_struct = stream.final_struct.clone();
+    let final_struct = stream.final_struct.get(stream.final_struct.keys().last().unwrap()).unwrap().clone();
     //map the output struct to an ordered float struct
-    let final_struct_of_name = format!("{}_of", stream.final_struct_name.clone().last().unwrap());
+    let final_struct_of_name = format!("{}_of", stream.final_struct.keys().last().unwrap());
     let mut final_struct_of = final_struct.clone();
 
     let mut needs_mapping = false;
@@ -78,7 +78,7 @@ pub(crate) fn process_distinct_order(stream_name: &String, query_object: &mut Qu
         );
         backward_map = format!(
             ".map(move |x| {} {{\n{}\n            }})",
-            stream.final_struct_name.last().unwrap(),
+            stream.final_struct.keys().last().unwrap(),
             backward_map_fields
         );
     }

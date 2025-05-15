@@ -117,10 +117,10 @@ impl Fields {
         //push every stream from query_object
         for (name, stream) in streams.iter() {
             self.streams.insert(name.clone(), stream.clone());
-            self.structs.insert(
-                stream.final_struct_name.last().unwrap().clone(),
-                stream.final_struct.clone(),
-            );
+            //push every final_struct from the stream
+            for (struct_name, struct_map) in stream.final_struct.iter() {
+                self.structs.insert(struct_name.clone(), struct_map.clone());
+            }
         }
     }
 
@@ -172,7 +172,7 @@ impl Fields {
         let stream_name = self.streams.first().unwrap().0.clone();
         let new_result = format!("{}_result", stream_name);
         let stream = self.streams.get_mut(&stream_name).unwrap();
-        let result_type = stream.final_struct.first().unwrap().1.clone();
+        let result_type = stream.final_struct.first().unwrap().1.first().unwrap().1.clone();
 
         let len_check = format!(
             r#"if {}.len() != 1 {{
@@ -187,7 +187,7 @@ impl Fields {
         let collection_code = format!(
             r#"
         .map(|x| x.{}{})"#,
-            stream.final_struct.first().unwrap().0,
+            stream.final_struct.get(stream.final_struct.keys().last().unwrap()).unwrap().first().unwrap().0,
             if needs_ordered_float {
                 ".map(OrderedFloat)"
             } else {
@@ -216,6 +216,6 @@ impl Fields {
             }
         ));
 
-        (new_result, stream.final_struct.first().unwrap().1.clone())
+        (new_result, result_type)
     }
 }
