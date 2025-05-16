@@ -149,7 +149,8 @@ group_clause = { group_keyword  ~  group_columns ~ ( having_condition )? }
 
 
 order_direction = { "asc" | "desc" }
-order_item = { (qualified_column | identifier) ~ order_direction? }
+nulls_handling = { ^"nulls first" | ^"nulls last"}
+order_item = { (qualified_column | identifier) ~ order_direction?  ~ nulls_handling? }
 order_list = { order_item ~ ("," ~ order_item)* }
 order_clause = { order_keyword ~ order_list }
 

@@ -1,6 +1,6 @@
 use indexmap::IndexMap;
 
-use crate::dsl::ir::{ColumnRef, QueryObject};
+use crate::dsl::ir::{OrderByItem, OrderDirection, QueryObject};
 
 /// Applies the distinct, order_by, and limit clauses to the stream.
 pub(crate) fn process_distinct_order(stream_name: &String, query_object: &mut QueryObject) {
@@ -15,7 +15,11 @@ pub(crate) fn process_distinct_order(stream_name: &String, query_object: &mut Qu
     let order_by = stream.order_by.clone();
     let limit = stream.limit;
 
-    let final_struct = stream.final_struct.get(stream.final_struct.keys().last().unwrap()).unwrap().clone();
+    let final_struct = stream
+        .final_struct
+        .get(stream.final_struct.keys().last().unwrap())
+        .unwrap()
+        .clone();
     //map the output struct to an ordered float struct
     let final_struct_of_name = format!("{}_of", stream.final_struct.keys().last().unwrap());
     let mut final_struct_of = final_struct.clone();
@@ -137,7 +141,7 @@ pub(crate) fn process_distinct_order(stream_name: &String, query_object: &mut Qu
 }
 
 fn generate_sort_code(
-    order_by: Vec<(ColumnRef, String)>,
+    order_by: Vec<OrderByItem>,
     final_struct_of: IndexMap<String, String>,
 ) -> String {
     // Build sorting comparison function based on the order_by vector
@@ -147,8 +151,17 @@ fn generate_sort_code(
     // Iterate through order_by in reverse to apply sorting in correct order
     let mut order_conditions = Vec::new();
 
-    for (col_name, direction) in order_by.iter() {
-        let field_name = if col_name.table.is_some() {
+    for item in order_by.iter() {
+        let col_name = item.column.to_owned();
+        let direction = match item.direction {
+            OrderDirection::Asc => "asc",
+            OrderDirection::Desc => "desc",
+        };
+        // Determine null handling behavior
+        // Default behavior: nulls last for ASC, nulls first for DESC
+        let nulls_first = item.nulls_first.unwrap_or_else(|| direction == "desc");
+
+        let mut field_name = if col_name.table.is_some() {
             format!("{}_{}", col_name.column, col_name.table.as_ref().unwrap())
         } else {
             //check if the final struct has the field_name
@@ -164,8 +177,13 @@ fn generate_sort_code(
             }
         };
 
+        println!("field_name: {}", field_name);
+        println!("final_struct_of: {:?}", final_struct_of);
         let field_type = if final_struct_of.get(&field_name).is_some() {
             final_struct_of.get(&field_name).unwrap()
+        } else if final_struct_of.get(&col_name.column).is_some() {
+            field_name = col_name.column.clone();
+            final_struct_of.get(&col_name.column).unwrap()
         } else {
             //we need to iterate on all the keys of the final struct to find one key that contains the field_name
             let key = final_struct_of
@@ -175,27 +193,162 @@ fn generate_sort_code(
             final_struct_of.get(key).unwrap()
         };
 
-        // Handle different field types and sort directions
+        // Handle different field types and sort directions including null handling
         let comparison = if field_type == "f64" || field_type == "OrderedFloat<f64>" {
-            // For floating point fields using OrderedFloat
-            if direction == "desc" {
-                format!("std::cmp::Ord::cmp(\n                    &b.{}.as_ref().unwrap_or(&OrderedFloat(f64::MIN)),\n                    &a.{}.as_ref().unwrap_or(&OrderedFloat(f64::MIN))\n                )", field_name, field_name)
+            // For floating point fields
+            if nulls_first {
+                if direction == "desc" {
+                    format!(
+                        "match (a.{}.is_some(), b.{}.is_some()) {{
+                        (false, false) => std::cmp::Ordering::Equal,
+                        (false, true) => std::cmp::Ordering::Less,
+                        (true, false) => std::cmp::Ordering::Greater,
+                        (true, true) => std::cmp::Ord::cmp(
+                            &b.{}.as_ref().unwrap(),
+                            &a.{}.as_ref().unwrap()
+                        )
+                    }}",
+                        field_name, field_name, field_name, field_name
+                    )
+                } else {
+                    format!(
+                        "match (a.{}.is_some(), b.{}.is_some()) {{
+                        (false, false) => std::cmp::Ordering::Equal,
+                        (false, true) => std::cmp::Ordering::Less,
+                        (true, false) => std::cmp::Ordering::Greater,
+                        (true, true) => std::cmp::Ord::cmp(
+                            &a.{}.as_ref().unwrap(),
+                            &b.{}.as_ref().unwrap()
+                        )
+                    }}",
+                        field_name, field_name, field_name, field_name
+                    )
+                }
             } else {
-                format!("std::cmp::Ord::cmp(\n                    &a.{}.as_ref().unwrap_or(&OrderedFloat(f64::MIN)),\n                    &b.{}.as_ref().unwrap_or(&OrderedFloat(f64::MIN))\n                )", field_name, field_name)
+                // nulls last
+                if direction == "desc" {
+                    format!(
+                        "match (a.{}.is_some(), b.{}.is_some()) {{
+                        (false, false) => std::cmp::Ordering::Equal,
+                        (false, true) => std::cmp::Ordering::Greater,
+                        (true, false) => std::cmp::Ordering::Less,
+                        (true, true) => std::cmp::Ord::cmp(
+                            &b.{}.as_ref().unwrap(),
+                            &a.{}.as_ref().unwrap()
+                        )
+                    }}",
+                        field_name, field_name, field_name, field_name
+                    )
+                } else {
+                    format!(
+                        "match (a.{}.is_some(), b.{}.is_some()) {{
+                        (false, false) => std::cmp::Ordering::Equal,
+                        (false, true) => std::cmp::Ordering::Greater,
+                        (true, false) => std::cmp::Ordering::Less,
+                        (true, true) => std::cmp::Ord::cmp(
+                            &a.{}.as_ref().unwrap(),
+                            &b.{}.as_ref().unwrap()
+                        )
+                    }}",
+                        field_name, field_name, field_name, field_name
+                    )
+                }
             }
         } else if field_type == "String" {
             // For string fields
-            if direction == "desc" {
-                format!("b.{}.as_ref().unwrap_or(&String::new()).cmp(a.{}.as_ref().unwrap_or(&String::new()))", field_name, field_name)
+            if nulls_first {
+                if direction == "desc" {
+                    format!(
+                        "match (a.{}.is_some(), b.{}.is_some()) {{
+                        (false, false) => std::cmp::Ordering::Equal,
+                        (false, true) => std::cmp::Ordering::Less,
+                        (true, false) => std::cmp::Ordering::Greater,
+                        (true, true) => b.{}.as_ref().unwrap().cmp(a.{}.as_ref().unwrap())
+                    }}",
+                        field_name, field_name, field_name, field_name
+                    )
+                } else {
+                    format!(
+                        "match (a.{}.is_some(), b.{}.is_some()) {{
+                        (false, false) => std::cmp::Ordering::Equal,
+                        (false, true) => std::cmp::Ordering::Less,
+                        (true, false) => std::cmp::Ordering::Greater,
+                        (true, true) => a.{}.as_ref().unwrap().cmp(b.{}.as_ref().unwrap())
+                    }}",
+                        field_name, field_name, field_name, field_name
+                    )
+                }
             } else {
-                format!("a.{}.as_ref().unwrap_or(&String::new()).cmp(b.{}.as_ref().unwrap_or(&String::new()))", field_name, field_name)
+                // nulls last
+                if direction == "desc" {
+                    format!(
+                        "match (a.{}.is_some(), b.{}.is_some()) {{
+                        (false, false) => std::cmp::Ordering::Equal,
+                        (false, true) => std::cmp::Ordering::Greater,
+                        (true, false) => std::cmp::Ordering::Less,
+                        (true, true) => b.{}.as_ref().unwrap().cmp(a.{}.as_ref().unwrap())
+                    }}",
+                        field_name, field_name, field_name, field_name
+                    )
+                } else {
+                    format!(
+                        "match (a.{}.is_some(), b.{}.is_some()) {{
+                        (false, false) => std::cmp::Ordering::Equal,
+                        (false, true) => std::cmp::Ordering::Greater,
+                        (true, false) => std::cmp::Ordering::Less,
+                        (true, true) => a.{}.as_ref().unwrap().cmp(b.{}.as_ref().unwrap())
+                    }}",
+                        field_name, field_name, field_name, field_name
+                    )
+                }
             }
         } else {
             // Default comparison for other types
-            if direction == "desc" {
-                format!("b.{}.cmp(&a.{})", field_name, field_name)
+            if nulls_first {
+                if direction == "desc" {
+                    format!(
+                        "match (a.{}.is_some(), b.{}.is_some()) {{
+                        (false, false) => std::cmp::Ordering::Equal,
+                        (false, true) => std::cmp::Ordering::Less,
+                        (true, false) => std::cmp::Ordering::Greater,
+                        (true, true) => b.{}.cmp(&a.{})
+                    }}",
+                        field_name, field_name, field_name, field_name
+                    )
+                } else {
+                    format!(
+                        "match (a.{}.is_some(), b.{}.is_some()) {{
+                        (false, false) => std::cmp::Ordering::Equal,
+                        (false, true) => std::cmp::Ordering::Less,
+                        (true, false) => std::cmp::Ordering::Greater,
+                        (true, true) => a.{}.cmp(&b.{})
+                    }}",
+                        field_name, field_name, field_name, field_name
+                    )
+                }
             } else {
-                format!("a.{}.cmp(&b.{})", field_name, field_name)
+                // nulls last
+                if direction == "desc" {
+                    format!(
+                        "match (a.{}.is_some(), b.{}.is_some()) {{
+                        (false, false) => std::cmp::Ordering::Equal,
+                        (false, true) => std::cmp::Ordering::Greater,
+                        (true, false) => std::cmp::Ordering::Less,
+                        (true, true) => b.{}.cmp(&a.{})
+                    }}",
+                        field_name, field_name, field_name, field_name
+                    )
+                } else {
+                    format!(
+                        "match (a.{}.is_some(), b.{}.is_some()) {{
+                        (false, false) => std::cmp::Ordering::Equal,
+                        (false, true) => std::cmp::Ordering::Greater,
+                        (true, false) => std::cmp::Ordering::Less,
+                        (true, true) => a.{}.cmp(&b.{})
+                    }}",
+                        field_name, field_name, field_name, field_name
+                    )
+                }
             }
         };
 

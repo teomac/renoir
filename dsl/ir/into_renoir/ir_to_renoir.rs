@@ -4,9 +4,7 @@ use crate::dsl::{
         into_renoir::{
             r_condition::process_filter_clause, r_group::r_group_keys::process_group_by, r_join::*,
             r_sink::r_sink_main::process_projections,
-        },
-        OrderDirection,
-    },
+        }    },
     struct_object::object::QueryObject,
 };
 use std::sync::Arc;
@@ -86,11 +84,7 @@ impl IrToRenoir {
 
                 //for each item in items, push the order by clause to the stream
                 for item in items {
-                    let order = match item.direction {
-                        OrderDirection::Asc => "asc".to_string(),
-                        OrderDirection::Desc => "desc".to_string(),
-                    };
-                    stream.order_by.push((item.column.clone(), order));
+                    stream.order_by.push(item.to_owned());
                 }
                 // Store for output phase
                 //process_order_by(items, query_object);

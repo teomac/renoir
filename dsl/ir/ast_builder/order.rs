@@ -45,30 +45,42 @@ impl OrderParser {
                         }
                     };
 
-                    // Check for optional direction
-                    let direction = if let Some(dir) = item_inner.next() {
-                        match dir.as_rule() {
-                            Rule::order_direction => match dir.as_str() {
-                                "asc" => OrderDirection::Asc,
-                                "desc" => OrderDirection::Desc,
-                                _ => {
-                                    return Err(Box::new(IrParseError::InvalidInput(
-                                        "Invalid sort direction".to_string(),
-                                    )))
-                                }
-                            },
+                     // Default values
+                    let mut direction = OrderDirection::Asc;
+                    let mut nulls_first = None;
+
+                    // Process optional direction and nulls handling
+                    for option in item_inner.by_ref() {
+                        match option.as_rule() {
+                            Rule::order_direction => {
+                                direction = match option.as_str() {
+                                    "asc" => OrderDirection::Asc,
+                                    "desc" => OrderDirection::Desc,
+                                    _ => {
+                                        return Err(Box::new(IrParseError::InvalidInput(
+                                            "Invalid sort direction".to_string(),
+                                        )))
+                                    }
+                                };
+                            }
+                            Rule::nulls_handling => {
+                                // Handle NULLS FIRST/LAST
+                                nulls_first = Some(option.as_str().to_lowercase() == "nulls first");
+                            }
                             _ => {
                                 return Err(Box::new(IrParseError::InvalidInput(format!(
-                                    "Expected order direction, got {:?}",
-                                    dir.as_rule()
+                                    "Unexpected rule in order item: {:?}",
+                                    option.as_rule()
                                 ))))
                             }
                         }
-                    } else {
-                        OrderDirection::Asc // Default to ascending
-                    };
+                    }
 
-                    items.push(OrderByItem { column, direction });
+                    items.push(OrderByItem {
+                        column,
+                        direction,
+                        nulls_first,
+                    });
                 }
                 _ => {
                     return Err(Box::new(IrParseError::InvalidInput(format!(

@@ -1,4 +1,4 @@
-use crate::dsl::ir::{AggregateFunction, ColumnRef};
+use crate::dsl::ir::{AggregateFunction, ColumnRef, OrderByItem};
 use crate::dsl::struct_object::object::QueryObject;
 use indexmap::IndexMap;
 
@@ -20,7 +20,7 @@ pub struct StreamInfo {
     pub join_tree: Option<JoinTree>, // Join tree
     pub agg_position: IndexMap<AggregateFunction, String>, // Aggregate function → position mappings
     pub limit: Option<(usize, usize)>, // Limit and offset for the stream
-    pub order_by: Vec<(ColumnRef, String)>, // Column name and order (ASC/DESC)
+    pub order_by: Vec<OrderByItem>, // Column name, order (ASC/DESC), nulls first/last
     pub distinct: bool, // Whether the output of the stream needs to be distinct
 }
 

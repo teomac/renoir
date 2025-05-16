@@ -41,30 +41,49 @@ impl OrderParser {
                         }
                     };
 
-                    // Check for optional direction (ASC/DESC)
-                    let direction = if let Some(dir) = item_inner.next() {
-                        match dir.as_rule() {
-                            Rule::order_direction => match dir.as_str().to_uppercase().as_str() {
-                                "ASC" => OrderDirection::Asc,
-                                "DESC" => OrderDirection::Desc,
-                                _ => {
-                                    return Err(Box::new(SqlParseError::InvalidInput(
-                                        "Invalid sort direction".to_string(),
-                                    )))
-                                }
-                            },
+                      // Default values
+                    let mut direction = OrderDirection::Asc; // Default to ascending if not specified
+                    let mut nulls_first: Option<bool> = None; // Default to None if not specified
+
+                     // Check for optional direction (ASC/DESC) and nulls handling
+                    for option in item_inner.by_ref() {
+                        match option.as_rule() {
+                            Rule::order_direction => {
+                                direction = match option.as_str().to_uppercase().as_str() {
+                                    "ASC" => OrderDirection::Asc,
+                                    "DESC" => OrderDirection::Desc,
+                                    _ => {
+                                        return Err(Box::new(SqlParseError::InvalidInput(
+                                            "Invalid sort direction".to_string(),
+                                        )))
+                                    }
+                                };
+                            }
+                            Rule::nulls_handling => {
+                                nulls_first = match option.as_str().to_uppercase().as_str() {
+                                    "NULLS FIRST" => Some(true),
+                                    "NULLS LAST" => Some(false),
+                                    _ => {
+                                        return Err(Box::new(SqlParseError::InvalidInput(
+                                            "Invalid nulls handling".to_string(),
+                                        )))
+                                    }
+                                };
+                            }
                             _ => {
                                 return Err(Box::new(SqlParseError::InvalidInput(format!(
-                                    "Expected order direction, got {:?}",
-                                    dir.as_rule()
+                                    "Expected order direction or nulls handling, got {:?}",
+                                    option.as_rule()
                                 ))))
                             }
                         }
-                    } else {
-                        OrderDirection::Asc // Default to ascending if not specified
-                    };
+                    }
 
-                    items.push(OrderByItem { column, direction });
+                    items.push(OrderByItem {
+                        column,
+                        direction,
+                        nulls_first,
+                    });
                 }
                 _ => {
                     return Err(Box::new(SqlParseError::InvalidInput(format!(

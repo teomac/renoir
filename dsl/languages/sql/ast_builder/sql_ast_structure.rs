@@ -231,6 +231,7 @@ pub struct OrderByClause {
 pub struct OrderByItem {
     pub column: ColumnRef,
     pub direction: OrderDirection,
+    pub nulls_first: Option<bool>,
 }
 
 #[derive(Debug, PartialEq, Clone)]

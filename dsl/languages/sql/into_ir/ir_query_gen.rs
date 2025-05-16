@@ -593,10 +593,24 @@ impl SqlToIr {
                     None => item.column.column.clone(),
                 };
 
-                match item.direction {
-                    OrderDirection::Asc => col_str,
-                    OrderDirection::Desc => format!("{} desc", col_str),
+                let mut parts = Vec::new();
+                parts.push(col_str);
+
+                // Add direction if it's descending (asc is default)
+                if matches!(item.direction, OrderDirection::Desc) {
+                    parts.push("desc".to_string());
                 }
+
+                // Add nulls handling if specified
+                if let Some(nulls_first) = item.nulls_first {
+                    if nulls_first {
+                        parts.push("nulls first".to_string());
+                    } else {
+                        parts.push("nulls last".to_string());
+                    }
+                }
+
+                parts.join(" ")
             })
             .collect();
 

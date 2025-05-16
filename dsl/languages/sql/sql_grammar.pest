@@ -125,7 +125,8 @@ join_expr = { join_kind? ~ join ~ (scan_expr | subquery_expr) ~ on ~ join_condit
 join_kind = { ( ^"INNER" | (^"LEFT" ~ (^"OUTER")?) | ^"OUTER") }
 
 order_direction = { ^"ASC" | ^"DESC" }
-order_item = { (table_column | variable) ~ order_direction? }
+nulls_handling = { ^"NULLS FIRST" | ^"NULLS LAST"}
+order_item = { (table_column | variable) ~ order_direction? ~ nulls_handling?}
 order_by_list = { order_item ~ ("," ~ order_item)* }
 order_by_expr = { order_by_keyword ~ order_by_list }
             
