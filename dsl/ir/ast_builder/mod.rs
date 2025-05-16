@@ -8,6 +8,7 @@ pub(crate) mod literal;
 pub(crate) mod order;
 pub(crate) mod projection;
 pub(crate) mod source;
+pub(crate) mod validate;
 
 
 pub use ir_ast_structure::*;
