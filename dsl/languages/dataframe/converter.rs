@@ -1,4 +1,5 @@
-use crate::dsl::ir::{ColumnRef, IrPlan, ProjectionColumn};
+use crate::dsl::ir::validate::validate_ir_ast;
+use crate::dsl::ir::IrPlan;
 use crate::dsl::languages::dataframe::ast_builder::df_join::process_join_child;
 use crate::dsl::languages::dataframe::conversion_error::ConversionError;
 use serde_json::Value;
@@ -7,7 +8,9 @@ use std::sync::Arc;
 use super::ast_builder::df_aggregate::process_aggregate;
 use super::ast_builder::df_filter::process_filter;
 use super::ast_builder::df_join::process_join;
+use super::ast_builder::df_limit::process_limit;
 use super::ast_builder::df_project::process_project;
+use super::ast_builder::df_sort::process_sort;
 use super::ast_builder::df_utils::ConverterObject;
 
 /// Convert a Catalyst plan to Renoir IR AST
@@ -30,28 +33,10 @@ pub fn build_ir_ast_df(
         .unwrap()
         .0;
 
-    //if the first node is not a project, we need to add a project all (select *)
-    match &*final_ast {
-        IrPlan::Project { .. } | IrPlan::OrderBy { .. } | IrPlan::Limit { .. } => {
-            // If the first node is a project, we can return it directly
-            Ok(final_ast)
-        }
-        _ => {
-            // If the first node is not a project, we need to add a project all (select *)
-            let project_all = Arc::new(IrPlan::Project {
-                input: final_ast,
-                columns: vec![ProjectionColumn::Column(
-                    ColumnRef {
-                        table: None,
-                        column: "*".to_string(),
-                    },
-                    None,
-                )],
-                distinct: false,
-            });
-            Ok(project_all)
-        }
-    }
+    println!("Final AST: {:?}", final_ast);
+
+    // Validate the final AST
+    Ok(validate_ir_ast(final_ast))
 }
 
 /// Process a node in the Catalyst plan
@@ -188,6 +173,63 @@ pub fn process_node(
                 process_aggregate(node, input_plan, stream_index, project_count, conv_object)?,
                 index,
             ))
+        }
+        "Sort" => {
+            // Get the child node
+            let child_idx = node
+                .get("child")
+                .and_then(|c| c.as_u64())
+                .ok_or_else(|| Box::new(ConversionError::MissingField("child".to_string())))
+                .unwrap();
+
+            // Process the child node first
+            let (input_plan, index) = process_node(
+                full_plan,
+                current_index + child_idx as usize + 1,
+                project_count,
+                stream_index,
+                conv_object,
+            )?;
+
+            // Process the sort node
+            Ok((process_sort(node, input_plan, conv_object)?, index))
+        }
+        "GlobalLimit" => {
+            // Get the child node
+            let child_idx = node
+                .get("child")
+                .and_then(|c| c.as_u64())
+                .ok_or_else(|| Box::new(ConversionError::MissingField("child".to_string())))
+                .unwrap();
+
+            // Process the child node first
+            let (input_plan, index) = process_node(
+                full_plan,
+                current_index + child_idx as usize + 1,
+                project_count,
+                stream_index,
+                conv_object,
+            )?;
+
+            // Process the limit node
+            Ok((process_limit(node, input_plan, conv_object)?, index))
+        }
+        "LocalLimit" => {
+            // Skip LocalLimit and process its child directly as we already handle it in GlobalLimit
+            let child_idx = node
+                .get("child")
+                .and_then(|c| c.as_u64())
+                .ok_or_else(|| Box::new(ConversionError::MissingField("child".to_string())))
+                .unwrap();
+
+            // Just pass through to the child
+            process_node(
+                full_plan,
+                current_index + child_idx as usize + 1,
+                project_count,
+                stream_index,
+                conv_object,
+            )
         }
         "LogicalRDD" | "LogicalRelation" => {
             let is_subquery = *project_count > 1;

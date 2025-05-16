@@ -299,10 +299,10 @@ fn process_alias_propagation(catalyst_plan: &[Value], expr_to_table: &mut HashMa
         for (alias_id, source_id) in relationships {
             // If the source has a table but the alias doesn't, propagate
             if let Some(table) = expr_to_table.get(&source_id) {
-                if !expr_to_table.contains_key(&alias_id) {
-                    expr_to_table.insert(alias_id, table.clone());
-                    changes_made = true;
-                }
+                if let std::collections::hash_map::Entry::Vacant(e) = expr_to_table.to_owned().entry(alias_id) {
+                    e.insert(table.clone());
+                     changes_made = true;
+                 }
             }
         }
     }

@@ -114,10 +114,12 @@ fn process_projection_array(
 
         match expr_type {
             "Alias" => {
+                println!("Processing Alias expression");
+                println!("Alias expression: {:?}", expr);
                 //check if the alias is auto generated or input by the user
                 let has_alias = !expr
                     .get("nonInheritableMetadataKeys")
-                    .and_then(|n| n.as_str())
+                    .and_then(|n| n.as_array())
                     .ok_or_else(|| {
                         Box::new(ConversionError::MissingField(
                             "nonInheritableMetadataKeys".to_string(),
