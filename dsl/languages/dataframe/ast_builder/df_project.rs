@@ -119,7 +119,7 @@ fn process_projection_array(
                 //check if the alias is auto generated or input by the user
                 let has_alias = !expr
                     .get("nonInheritableMetadataKeys")
-                    .and_then(|n| n.as_array())
+                    .and_then(|n| n.as_str())
                     .ok_or_else(|| {
                         Box::new(ConversionError::MissingField(
                             "nonInheritableMetadataKeys".to_string(),
@@ -284,6 +284,7 @@ fn process_aggregate(
         "Max" => AggregateType::Max,
         "Avg" => AggregateType::Avg,
         "Count" => AggregateType::Count,
+        "Average" => AggregateType::Avg,
         _ => {
             return Err(Box::new(ConversionError::UnsupportedExpressionType(
                 agg_type.to_string(),
