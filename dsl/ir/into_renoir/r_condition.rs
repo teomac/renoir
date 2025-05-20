@@ -228,14 +228,14 @@ fn process_arithmetic_expression(
         check_list.push(format!("!{}.is_empty()", sub_name));
         //check if the type is correct
         if sub_type == "f64" {
-            format!("{}.first().unwrap().unwrap().into_inner()", sub_name)
+            format!("{}.first().unwrap().clone().unwrap().into_inner()", sub_name)
         } else if needs_casting {
             format!(
-                "({}.first().unwrap().unwrap() as {})",
+                "({}.first().unwrap().clone().unwrap() as {})",
                 sub_name, casting_type
             )
         } else {
-            format!("{}.first().unwrap().unwrap()", sub_name)
+            format!("{}.first().unwrap().clone().unwrap()", sub_name)
         }
     } else {
         panic!("Invalid ComplexField - no valid content");
@@ -277,7 +277,7 @@ fn process_condition(condition: &FilterConditionType, query_object: &QueryObject
 
                                 if *vector_type == "f64" {
                                     format!(
-                                        "{}{}.contains(&Some(OrderedFloat({}.first().unwrap().unwrap() as {})))",
+                                        "{}{}.contains(&Some(OrderedFloat({}.first().unwrap().clone().unwrap() as {})))",
                                         if *negated { "!" } else { "" },
                                         vector_name,
                                         field_name,
@@ -285,7 +285,7 @@ fn process_condition(condition: &FilterConditionType, query_object: &QueryObject
                                     )
                                 } else {
                                     format!(
-                                        "{}{}.contains(&Some({}.first().unwrap().unwrap() as {}))",
+                                        "{}{}.contains(&Some({}.first().unwrap().clone().as_ref() as {}))",
                                         if *negated { "!" } else { "" },
                                         vector_name,
                                         field_name,
