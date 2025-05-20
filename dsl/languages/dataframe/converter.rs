@@ -115,7 +115,7 @@ pub fn process_node(
                 conv_object,
             )?;
             // Process the filter node
-            Ok((process_filter(node, input_plan, conv_object)?, index))
+            Ok((process_filter(node, input_plan, stream_index, project_count, conv_object)?, index))
         }
         "Join" => {
             let left_child_idx = node

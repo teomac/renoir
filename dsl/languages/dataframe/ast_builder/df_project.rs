@@ -1,6 +1,7 @@
 use crate::dsl::ir::{
-    AggregateFunction, AggregateType, ColumnRef, ComplexField, IrLiteral, IrPlan, ProjectionColumn
+    AggregateFunction, AggregateType, ColumnRef, ComplexField, IrLiteral, IrPlan, ProjectionColumn,
 };
+use crate::dsl::languages::dataframe::ast_builder::df_subqueries::process_scalar_subquery;
 use crate::dsl::languages::dataframe::conversion_error::ConversionError;
 use serde_json::Value;
 use std::sync::Arc;
@@ -12,7 +13,7 @@ pub(crate) fn process_project(
     node: &Value,
     input_plan: Arc<IrPlan>,
     stream_index: &mut usize,
-    _project_count: &mut usize,
+    project_count: &mut usize,
     conv_object: &ConverterObject,
 ) -> Result<Arc<IrPlan>, Box<ConversionError>> {
     // Extract the project list
@@ -28,7 +29,7 @@ pub(crate) fn process_project(
         if let Some(projections) = projection_array.as_array() {
             // Process the first expression in each projection array
             let projection_column =
-                process_projection_array(projections, stream_index, conv_object)?;
+                process_projection_array(projections, stream_index, project_count, conv_object)?;
             columns.push(projection_column);
         }
     }
@@ -42,7 +43,7 @@ pub(crate) fn process_project(
             None,
         ));
     }
-    
+
     // Create the Project node
     Ok(Arc::new(IrPlan::Project {
         input: input_plan,
@@ -66,7 +67,7 @@ pub(crate) fn process_project_agg(
         if let Some(projections) = projection_array.as_array() {
             // Process the first expression in each projection array
             let projection_column =
-                process_projection_array(projections, stream_index, conv_object)?;
+                process_projection_array(projections, stream_index, _project_count, conv_object)?;
             columns.push(projection_column);
         }
     }
@@ -91,7 +92,8 @@ pub(crate) fn process_project_agg(
 
 fn process_projection_array(
     projection_array: &[Value],
-    _stream_index: &mut usize,
+    stream_index: &mut usize,
+    project_count: &mut usize,
     conv_object: &ConverterObject,
 ) -> Result<ProjectionColumn, Box<ConversionError>> {
     //check if the projection array is empty
@@ -117,15 +119,21 @@ fn process_projection_array(
                 println!("Processing Alias expression");
                 println!("Alias expression: {:?}", expr);
                 //check if the alias is auto generated or input by the user
-                let has_alias = !expr
+                let has_alias = expr
                     .get("nonInheritableMetadataKeys")
-                    .and_then(|n| n.as_str())
-                    .ok_or_else(|| {
-                        Box::new(ConversionError::MissingField(
-                            "nonInheritableMetadataKeys".to_string(),
-                        ))
-                    })?
-                    .is_empty();
+                    .map(|keys| {
+                        if keys.is_array() {
+                            // If it's an array, check if it's non-empty
+                            keys.as_array().map(|arr| !arr.is_empty()).unwrap_or(false)
+                        } else if keys.is_string() {
+                            // If it's a string, check if it's non-empty
+                            !keys.as_str().unwrap_or("").is_empty()
+                        } else {
+                            // For other types, default to false
+                            false
+                        }
+                    })
+                    .unwrap_or(false);
 
                 // This is an aliased expression
                 let alias_name = if has_alias {
@@ -151,6 +159,8 @@ fn process_projection_array(
                 let (column, _) = process_expression(
                     projection_array,
                     (child_idx as usize) + 1,
+                    stream_index,
+                    project_count,
                     alias_name,
                     conv_object,
                 )?;
@@ -158,7 +168,14 @@ fn process_projection_array(
             }
             _ => {
                 // Directly process the expression
-                let (column, _) = process_expression(projection_array, 0, None, conv_object)?;
+                let (column, _) = process_expression(
+                    projection_array,
+                    0,
+                    stream_index,
+                    project_count,
+                    None,
+                    conv_object,
+                )?;
                 projection_column.push(column);
             }
         }
@@ -177,6 +194,8 @@ fn process_projection_array(
 fn process_expression(
     expr_array: &[Value],
     idx: usize,
+    stream_index: &mut usize,
+    project_count: &mut usize,
     alias: Option<String>,
     conv_object: &ConverterObject,
 ) -> Result<(ProjectionColumn, usize), Box<ConversionError>> {
@@ -249,7 +268,27 @@ fn process_expression(
                 .ok_or_else(|| Box::new(ConversionError::MissingField("child".to_string())))?
                 as usize;
 
-            process_expression(expr_array, idx + child_idx + 1, alias, conv_object)
+            process_expression(
+                expr_array,
+                idx + child_idx + 1,
+                stream_index,
+                project_count,
+                alias,
+                conv_object,
+            )
+        }
+        "ScalarSubquery" => {
+            // Process scalar subquery
+            let complex_field = process_scalar_subquery(
+                &expr_array[idx],
+                stream_index,
+                project_count,
+                conv_object,
+            )?;
+            Ok((
+                ProjectionColumn::ComplexValue(complex_field, alias),
+                idx + 1,
+            ))
         }
         _ => Err(Box::new(ConversionError::UnsupportedExpressionType(
             expr_type.to_string(),
@@ -318,8 +357,7 @@ fn process_aggregate(
         };
 
         Ok((ProjectionColumn::Aggregate(agg_func, alias), child_idx + 1))
-    }
-    else if child_type == "Literal" {
+    } else if child_type == "Literal" {
         // Process literal value
         let literal = conv_object.extract_literal_value(child)?;
 
@@ -329,7 +367,7 @@ fn process_aggregate(
             return Err(Box::new(ConversionError::UnsupportedExpressionType(
                 agg_type.to_string(),
             )));
-        } else{
+        } else {
             //create an aggregate function for count(*)
             let column_ref = ColumnRef {
                 table: None,
@@ -339,13 +377,9 @@ fn process_aggregate(
                 function: AggregateType::Count,
                 column: column_ref,
             };
-            return Ok((
-                ProjectionColumn::Aggregate(agg_func, alias),
-                child_idx + 1,
-            ));
+            return Ok((ProjectionColumn::Aggregate(agg_func, alias), child_idx + 1));
         }
-    }
-    else{
+    } else {
         return Err(Box::new(ConversionError::UnsupportedExpressionType(
             agg_type.to_string(),
         )));

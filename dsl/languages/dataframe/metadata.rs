@@ -162,44 +162,63 @@ pub fn extract_expr_ids(
 ) -> HashMap<String, String> {
     let mut expr_to_table: HashMap<String, String> = HashMap::new();
 
-    // Process LogicalRDD nodes to extract expression IDs
+      // Process the root plan first
+    process_plan_for_expr_ids(catalyst_plan, input_tables, &mut expr_to_table);
+
+    // Now handle aliases and projections to propagate table assignments
+    process_alias_propagation(catalyst_plan, &mut expr_to_table);
+
+    expr_to_table
+}
+
+/// Recursively process a plan to extract expression IDs
+fn process_plan_for_expr_ids(
+    plan: &[Value],
+    input_tables: &IndexMap<String, (String, IndexMap<String, String>)>,
+    expr_to_table: &mut HashMap<String, String>,
+) {
     let mut rdd_index = 0;
-    for node in catalyst_plan.iter() {
+    
+    for node in plan.iter() {
         if let Some(class) = node["class"].as_str() {
+            // Process LogicalRDD or LogicalRelation nodes
             if class.ends_with("LogicalRDD") || class.ends_with("LogicalRelation") {
-                // Extract column information from this RDD
-                let mut rdd_columns = Vec::new();
-                if let Some(output) = node["output"].as_array() {
-                    for column_list in output.iter() {
-                        if let Some(columns) = column_list.as_array() {
-                            for column in columns.iter() {
-                                if let Some(name) = column.get("name").and_then(|n| n.as_str()) {
-                                    rdd_columns.push(name.to_string());
+                process_logical_relation(node, input_tables, expr_to_table, &mut rdd_index);
+            }
+            
+            // Look for ScalarSubquery nodes and process their plans
+            else if class.ends_with("ScalarSubquery") {
+                if let Some(subquery_plan) = node.get("plan").and_then(|p| p.as_array()) {
+                    // Recursively process the subquery plan
+                    process_plan_for_expr_ids(subquery_plan, input_tables, expr_to_table);
+                }
+            }
+            
+            // Look for other attributes that might contain nested plans or conditions
+            else {
+                // Check for condition arrays (used in Filter nodes)
+                if let Some(condition) = node.get("condition").and_then(|c| c.as_array()) {
+                    for cond_node in condition.iter() {
+                        if let Some(cond_class) = cond_node.get("class").and_then(|c| c.as_str()) {
+                            if cond_class.ends_with("ScalarSubquery") {
+                                if let Some(subquery_plan) = cond_node.get("plan").and_then(|p| p.as_array()) {
+                                    process_plan_for_expr_ids(subquery_plan, input_tables, expr_to_table);
                                 }
                             }
                         }
                     }
                 }
-
-                // Match this RDD with a table in input_tables based on column names and position
-                let table_name = match_table_by_columns(&rdd_columns, input_tables, rdd_index);
-                rdd_index += 1; // Increment for the next LogicalRDD/LogicalRelation
-
-                // Now map all the expression IDs to this table
-                if let Some(output) = node["output"].as_array() {
-                    for column_list in output.iter() {
-                        if let Some(columns) = column_list.as_array() {
-                            for column in columns.iter() {
-                                if let Some(expr_id_obj) = column.get("exprId") {
-                                    // Extract expression ID
-                                    if let (Some(id), Some(jvm_id)) = (
-                                        expr_id_obj.get("id").and_then(|id| id.as_u64()),
-                                        expr_id_obj.get("jvmId").and_then(|j| j.as_str()),
-                                    ) {
-                                        let expr_id_str = format!("{}_{}", id, jvm_id);
-
-                                        // Map expression ID to table
-                                        expr_to_table.insert(expr_id_str, table_name.clone());
+                
+                // Check for project lists (used in Project nodes)
+                if let Some(project_list) = node.get("projectList").and_then(|p| p.as_array()) {
+                    for proj_list in project_list.iter() {
+                        if let Some(projections) = proj_list.as_array() {
+                            for proj in projections.iter() {
+                                if let Some(proj_class) = proj.get("class").and_then(|c| c.as_str()) {
+                                    if proj_class.ends_with("ScalarSubquery") {
+                                        if let Some(subquery_plan) = proj.get("plan").and_then(|p| p.as_array()) {
+                                            process_plan_for_expr_ids(subquery_plan, input_tables, expr_to_table);
+                                        }
                                     }
                                 }
                             }
@@ -209,11 +228,54 @@ pub fn extract_expr_ids(
             }
         }
     }
+}
 
-    // Now handle aliases and projections to propagate table assignments
-    process_alias_propagation(catalyst_plan, &mut expr_to_table);
+/// Process a LogicalRDD or LogicalRelation node to extract expression IDs
+fn process_logical_relation(
+    node: &Value,
+    input_tables: &IndexMap<String, (String, IndexMap<String, String>)>,
+    expr_to_table: &mut HashMap<String, String>,
+    rdd_index: &mut usize,
+) {
+    // Extract column information from this RDD/Relation
+    let mut rdd_columns = Vec::new();
+    if let Some(output) = node["output"].as_array() {
+        for column_list in output.iter() {
+            if let Some(columns) = column_list.as_array() {
+                for column in columns.iter() {
+                    if let Some(name) = column.get("name").and_then(|n| n.as_str()) {
+                        rdd_columns.push(name.to_string());
+                    }
+                }
+            }
+        }
+    }
 
-    expr_to_table
+    // Match this RDD with a table in input_tables based on column names and position
+    let table_name = match_table_by_columns(&rdd_columns, input_tables, *rdd_index);
+    *rdd_index += 1; // Increment for the next LogicalRDD/LogicalRelation
+
+    // Now map all the expression IDs to this table
+    if let Some(output) = node["output"].as_array() {
+        for column_list in output.iter() {
+            if let Some(columns) = column_list.as_array() {
+                for column in columns.iter() {
+                    if let Some(expr_id_obj) = column.get("exprId") {
+                        // Extract expression ID
+                        if let (Some(id), Some(jvm_id)) = (
+                            expr_id_obj.get("id").and_then(|id| id.as_u64()),
+                            expr_id_obj.get("jvmId").and_then(|j| j.as_str()),
+                        ) {
+                            let expr_id_str = format!("{}_{}", id, jvm_id);
+
+                            // Map expression ID to table
+                            expr_to_table.insert(expr_id_str, table_name.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// Process the plan to propagate table assignments through aliases
