@@ -24,7 +24,6 @@ pub fn build_ir_ast_df(
         return Err(Box::new(ConversionError::EmptyPlan));
     }
 
-    println!("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
     println!("Catalyst plan: {:?}", plan);
     let mut project_count: usize = 0;
 
@@ -262,18 +261,15 @@ fn process_logical_rdd(
                 if let Some(column) = columns.first() {
                     // Extract the expression ID
                     if let Some(expr_id_obj) = column.get("exprId") {
-                        println!("exprId: {:?}", expr_id_obj);
                         if let (Some(id), Some(jvm_id)) = (
                             expr_id_obj.get("id").and_then(|id| id.as_u64()),
                             expr_id_obj.get("jvmId").and_then(|j| j.as_str()),
                         ) {
                             let expr_id = format!("{}_{}", id, jvm_id);
-                            println!("exprId: {:?}", expr_id);
 
                             // Look up the table name in our mapping
                             if let Some(table) = conv_object.expr_to_table.get(&expr_id) {
                                 table_name = table.clone();
-                                println!("Table name: {:?}", table_name);
                                 break;
                             }
                         }

@@ -64,8 +64,6 @@ fn process_condition_node(
         .last()
         .ok_or_else(|| Box::new(ConversionError::InvalidClassName))?;
 
-    println!("Processing node type: {}", node_type);
-
     match node_type {
         "And" | "Or" => process_binary_op_node(
             condition_array,

@@ -116,8 +116,6 @@ fn process_projection_array(
 
         match expr_type {
             "Alias" => {
-                println!("Processing Alias expression");
-                println!("Alias expression: {:?}", expr);
                 //check if the alias is auto generated or input by the user
                 let has_alias = expr
                     .get("nonInheritableMetadataKeys")
@@ -204,11 +202,6 @@ fn process_expression(
     }
     let expr = &expr_array[idx];
 
-    println!("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
-
-    println!("Processing expression: {:?}", expr);
-    println!("Expression index: {}", idx);
-
     // Extract the expression type
     let class = expr
         .get("class")
@@ -223,19 +216,12 @@ fn process_expression(
     match expr_type {
         "AttributeReference" => {
             // Process simple column reference
-            println!("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
-            println!("Processing AttributeReference");
-
             let column_ref = conv_object.create_column_ref(expr)?;
-            println!("Column reference: {:?}", column_ref);
             Ok((ProjectionColumn::Column(column_ref, alias), idx + 1))
         }
         "Literal" => {
-            println!("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
-            println!("Processing Literal");
             // Process literal value
             let literal = conv_object.extract_literal_value(expr)?;
-            println!("Literal value: {:?}", literal);
             let complex_field = ComplexField {
                 column_ref: None,
                 literal: Some(literal),
@@ -395,11 +381,6 @@ fn process_arithmetic_operation(
 ) -> Result<(ComplexField, usize), Box<ConversionError>> {
     let expr = &expr_array[idx];
 
-    println!("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
-
-    println!("Processing arithmetic operation: {:?}", expr);
-    println!("Operation index: {}", idx);
-
     // Get indices for left and right operands
     let left_idx = expr
         .get("left")
@@ -410,9 +391,6 @@ fn process_arithmetic_operation(
     // Process left operand
     let (left_field, left_next_idx) =
         process_complex_field(expr_array, idx + left_idx + 1, conv_object)?;
-
-    println!("Left field: {:?}", left_field);
-    println!("Left next index: {}", left_next_idx);
 
     // Convert operation type to operator string
     let operator = match op_type {
@@ -459,10 +437,6 @@ fn process_complex_field(
     }
 
     let expr = &expr_array[idx];
-
-    println!("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA");
-    println!("Processing complex field: {:?}", expr);
-    println!("Complex field index: {}", idx);
 
     // Extract the expression type
     let class = expr

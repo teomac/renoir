@@ -2,23 +2,19 @@
 
 use crate::dsl::ir::{ColumnRef, IrLiteral};
 use crate::dsl::languages::dataframe::conversion_error::ConversionError;
-use indexmap::IndexMap;
 use serde_json::Value;
 use std::collections::HashMap;
 
 pub struct ConverterObject {
     pub expr_to_table: HashMap<String, String>,
-    pub input_tables: IndexMap<String, (String, IndexMap<String, String>)>,
 }
 
 impl ConverterObject {
     pub fn new(
         expr_to_table: HashMap<String, String>,
-        input_tables: &IndexMap<String, (String, IndexMap<String, String>)>,
     ) -> Self {
         ConverterObject {
             expr_to_table,
-            input_tables: input_tables.clone(),
         }
     }
 
