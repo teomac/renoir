@@ -31,7 +31,7 @@ pub(crate) fn binary_execution(
 
     // Added: Fix the code using cargo fix
     let fix_status = Command::new("cargo")
-        .args(["fix", "--bin", "query_binary", "--allow-dirty"])
+        .args(["fix", "--bin", "renoir_binary", "--allow-dirty"])
         .current_dir(&rust_project.project_path)
         .status()?;
 
@@ -56,9 +56,9 @@ pub(crate) fn binary_execution(
     }
 
     let binary_name = if cfg!(windows) {
-        "query_binary.exe"
+        "renoir_binary.exe"
     } else {
-        "query_binary"
+        "renoir_binary"
     };
 
     // Execute the binary with the provided input range

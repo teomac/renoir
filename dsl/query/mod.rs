@@ -47,6 +47,7 @@ use std::sync::Arc;
 pub fn renoir_sql(
     sql_query: &str,
     output_path: &String,
+    renoir_path: &Option<String>,
     input_tables: &IndexMap<String, (String, String)>,
 ) -> io::Result<String> {
     //step 1: Safety checks on inputs
@@ -81,7 +82,7 @@ pub fn renoir_sql(
     println!("IR AST: {:?}", ir_ast);
 
     //step 3: Processes the ast calling the process_ir_ast function
-    process_ir_ast(ir_ast, output_path, input_tables)
+    process_ir_ast(ir_ast, output_path, renoir_path, input_tables)
 }
 
 /// Executes an IR query on CSV files and generates a Rust binary containing the corresponding Renoir code.
@@ -117,6 +118,7 @@ pub fn renoir_sql(
 pub fn renoir_ir(
     ir_query: &str,
     output_path: &String,
+    renoir_path: &Option<String>,
     input_tables: &IndexMap<String, (String, String)>,
 ) -> io::Result<String> {
     //step 1: Safety checks on inputs
@@ -148,13 +150,14 @@ pub fn renoir_ir(
     let ir_ast = query_ir_to_ast(ir_query);
 
     //step 3: Processes the ast calling the process_ir_ast function
-    process_ir_ast(ir_ast, output_path, input_tables)
+    process_ir_ast(ir_ast, output_path, renoir_path, input_tables)
 }
 
 /// Processes the IR AST and generates a Rust binary containing the corresponding Renoir code.
 pub(crate) fn process_ir_ast(
     ir_ast: Arc<IrPlan>,
     output_path: &String,
+    renoir_path: &Option<String>,
     input_tables: &IndexMap<String, (String, String)>,
 ) -> io::Result<String> {
     //creates a new QueryObject and sets the output path
@@ -162,7 +165,7 @@ pub(crate) fn process_ir_ast(
     query_object.set_output_path(output_path);
 
     //creates a new Rust project if it doesn't exist
-    let rust_project = creation::RustProject::create_empty_project(output_path)?;
+    let rust_project = creation::RustProject::create_empty_project(output_path, renoir_path)?;
 
     //opens csvs input, reads column names and data types and creates the struct for each csv file
     let mut tables_info: IndexMap<String, IndexMap<String, String>> = IndexMap::new();

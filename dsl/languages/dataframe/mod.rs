@@ -15,31 +15,25 @@ pub(crate) mod metadata;
 pub(crate) mod ast_builder;
 
 
-pub fn renoir_dataframe(metadata_list: Vec<String>, csv_paths: Vec<String>, catalyst_plan: &[Value], output_path: &str) -> io::Result<String> {
+pub fn renoir_dataframe(metadata_list: Vec<String>, csv_paths: Vec<String>, catalyst_plan: &[Value], output_path: &str, renoir_path: &Option<String>) -> io::Result<String> {
     //step 1: convert metadata_list to a IndexMap<String, (String, String)> containing the input tables
 
     //safety checks on metadata_list
 
     let input_tables = extract_metadata(metadata_list, csv_paths)?;
 
-    println!("Input tables: {:?}", input_tables);
-
     //step 2: retireve an object from the catalyst plan that contains the mapping expr_id to table name
 
     let expr_ids = extract_expr_ids(catalyst_plan, &input_tables);
 
-    println!("Expr IDs: {:?}", expr_ids);
-
-    let conv_object = ConverterObject::new(expr_ids.clone(), &input_tables);
+    let conv_object = ConverterObject::new(expr_ids.clone());
 
     //step 2: Generate the IR Plan from the catalyst plan
 
     let ir_ast = build_ir_ast_df(catalyst_plan, conv_object).unwrap();
 
-    println!("IR AST: {:?}", ir_ast);
-
     //step 3: Process the IR AST and generate the Rust binary with Renoir code
-    process_ir_ast_for_df(ir_ast, &output_path.to_string(), &input_tables)
+    process_ir_ast_for_df(ir_ast, &output_path.to_string(), renoir_path, &input_tables)
     
 }
 
@@ -47,6 +41,7 @@ pub fn renoir_dataframe(metadata_list: Vec<String>, csv_paths: Vec<String>, cata
 fn process_ir_ast_for_df(
     ir_ast: Arc<IrPlan>,
     output_path: &String,
+    renoir_path: &Option<String>,
     input_tables: &IndexMap<String, (String, IndexMap<String, String>)>,
 ) -> io::Result<String> {
     //creates a new QueryObject and sets the output path
@@ -54,7 +49,7 @@ fn process_ir_ast_for_df(
     query_object.set_output_path(output_path);
 
     //creates a new Rust project if it doesn't exist
-    let rust_project = creation::RustProject::create_empty_project(output_path)?;
+    let rust_project = creation::RustProject::create_empty_project(output_path, renoir_path)?;
 
     //opens csvs input, reads column names and data types and creates the struct for each csv file
     let mut tables_info: IndexMap<String, IndexMap<String, String>> = IndexMap::new();

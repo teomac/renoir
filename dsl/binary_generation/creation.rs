@@ -9,16 +9,21 @@ pub struct RustProject {
 impl RustProject {
     /// Creates a new Rust project with the specified path.
     /// If the project already exists, it does nothing.
-    pub(crate) fn create_empty_project(path: &String) -> io::Result<RustProject> {
-        // Get path to renoir and convert to string with forward slashes
-        let renoir_path = std::env::current_dir()?
-            .parent()
-            .ok_or_else(|| {
-                std::io::Error::new(std::io::ErrorKind::NotFound, "Parent directory not found")
-            })?
-            .join("renoir")
-            .to_string_lossy()
-            .replace('\\', "/");
+    pub(crate) fn create_empty_project(path: &String, renoir_path: &Option<String>) -> io::Result<RustProject> {
+
+        // Check if the provided renoir_path is valid. If not, use the default path from the parent directory.
+        let renoir = if let Some(ref renoir_path_str) = renoir_path {
+            renoir_path_str.clone()
+        } else {
+            std::env::current_dir()?
+                .parent()
+                .ok_or_else(|| {
+                    std::io::Error::new(std::io::ErrorKind::NotFound, "Parent directory not found")
+                })?
+                .join("renoir")
+                .to_string_lossy()
+                .replace('\\', "/")
+        };
 
         // Create project directory in current directory
         let project_path = PathBuf::from(path);
@@ -29,9 +34,9 @@ impl RustProject {
             // Create Cargo.toml
             let cargo_toml = format!(
                 r#"[package]
-                name = "query_binary"
+                name = "renoir_binary"
                 version = "0.1.0"
-                edition = "2021"
+                edition = "2024"
                 
                 [dependencies]
                 renoir = {{ path = "{}" }}
@@ -41,7 +46,7 @@ impl RustProject {
                 indexmap = "2.6.0"
                 ordered-float = {{version = "5.0.0", features = ["serde"]}}
                 "#,
-                renoir_path
+                renoir
             );
 
             fs::write(project_path.join("Cargo.toml"), cargo_toml)?;
