@@ -148,40 +148,50 @@ pub fn extract_metadata(
     Ok(input_tables)
 }
 
-/// Extract expression IDs and their corresponding table information from the Catalyst plan
+/// Extract expression IDs and their corresponding column and source information from the Catalyst plan
 ///
 /// # Arguments
 /// * `catalyst_plan` - The Catalyst logical plan as a JSON Value array
 /// * `input_tables` - IndexMap containing table information (table_name -> (csv_path, type_defs))
 ///
 /// # Returns
-/// * HashMap<String, String> mapping expression IDs to table names
+/// * IndexMap<usize, (String, String)> mapping expression IDs to (column_name, source_name)
 pub fn extract_expr_ids(
     catalyst_plan: &[Value],
     input_tables: &IndexMap<String, (String, IndexMap<String, String>)>,
-) -> HashMap<String, String> {
-    let mut expr_to_table: HashMap<String, String> = HashMap::new();
+) -> IndexMap<usize, (String, String)> {
+    let mut expr_to_column_source: IndexMap<usize, (String, String)> = IndexMap::new();
 
     // First pass: find all qualifiers in the entire plan recursively
-    find_tables_from_qualifiers_recursive(catalyst_plan, &mut expr_to_table);
+    find_columns_from_qualifiers_recursive(catalyst_plan, &mut expr_to_column_source);
 
     // Second pass: apply some heuristics for expressions without qualifiers
-    apply_table_heuristics(catalyst_plan, &mut expr_to_table, input_tables);
+    apply_column_heuristics(catalyst_plan, &mut expr_to_column_source, input_tables);
 
-    // Process alias propagation to propagate table assignments through aliases
-    process_alias_propagation(catalyst_plan, &mut expr_to_table);
+    // Sort keys for initial table matching
+    expr_to_column_source.sort_unstable_keys();
 
-    expr_to_table
+    //Third pass: process LogicalRelation nodes to match them to input tables
+    let _ = add_initial_table_mappings(&mut expr_to_column_source, input_tables);
+
+    // Process alias propagation to propagate column assignments through aliases
+    //process_alias_propagation(catalyst_plan, &mut expr_to_column_source);
+
+    println!(
+        "Expression to column/source mapping: {:?}",
+        expr_to_column_source
+    );
+    expr_to_column_source
 }
 
 /// Recursively process the entire Catalyst plan to find qualifier information
-fn find_tables_from_qualifiers_recursive(
+fn find_columns_from_qualifiers_recursive(
     plan: &[Value],
-    expr_to_table: &mut HashMap<String, String>,
+    expr_to_column_source: &mut IndexMap<usize, (String, String)>,
 ) {
     for node in plan {
         // Process output columns at current level
-        process_node_qualifiers(node, expr_to_table);
+        process_node_qualifiers(node, expr_to_column_source);
 
         // Handle various node types that might contain nested plans
         if let Some(obj) = node.as_object() {
@@ -189,9 +199,9 @@ fn find_tables_from_qualifiers_recursive(
             if let Some(child_idx) = obj.get("child").and_then(|c| c.as_u64()) {
                 let child_idx = child_idx as usize + 1; // +1 because Catalyst indices are relative
                 if plan.len() > child_idx {
-                    find_tables_from_qualifiers_recursive(
+                    find_columns_from_qualifiers_recursive(
                         &plan[child_idx..child_idx + 1],
-                        expr_to_table,
+                        expr_to_column_source,
                     );
                 }
             }
@@ -200,9 +210,9 @@ fn find_tables_from_qualifiers_recursive(
             if let Some(left_idx) = obj.get("left").and_then(|l| l.as_u64()) {
                 let left_idx = left_idx as usize + 1;
                 if plan.len() > left_idx {
-                    find_tables_from_qualifiers_recursive(
+                    find_columns_from_qualifiers_recursive(
                         &plan[left_idx..left_idx + 1],
-                        expr_to_table,
+                        expr_to_column_source,
                     );
                 }
             }
@@ -210,27 +220,27 @@ fn find_tables_from_qualifiers_recursive(
             if let Some(right_idx) = obj.get("right").and_then(|r| r.as_u64()) {
                 let right_idx = right_idx as usize + 1;
                 if plan.len() > right_idx {
-                    find_tables_from_qualifiers_recursive(
+                    find_columns_from_qualifiers_recursive(
                         &plan[right_idx..right_idx + 1],
-                        expr_to_table,
+                        expr_to_column_source,
                     );
                 }
             }
 
             // Recursively process nested subquery plans
             if let Some(subplan) = obj.get("plan").and_then(|p| p.as_array()) {
-                find_tables_from_qualifiers_recursive(subplan, expr_to_table);
+                find_columns_from_qualifiers_recursive(subplan, expr_to_column_source);
             }
 
             // Process conditions which may contain subqueries
             if let Some(condition) = obj.get("condition").and_then(|c| c.as_array()) {
                 // Process each element in the condition
                 for cond in condition {
-                    process_node_qualifiers(cond, expr_to_table);
+                    //process_node_qualifiers(cond, expr_to_column_source);
 
                     // If this condition contains a subquery, process it
                     if let Some(plan) = cond.get("plan").and_then(|p| p.as_array()) {
-                        find_tables_from_qualifiers_recursive(plan, expr_to_table);
+                        find_columns_from_qualifiers_recursive(plan, expr_to_column_source);
                     }
                 }
             }
@@ -240,23 +250,12 @@ fn find_tables_from_qualifiers_recursive(
                 for proj_array in project_list {
                     if let Some(projections) = proj_array.as_array() {
                         for proj in projections {
-                            process_node_qualifiers(proj, expr_to_table);
+                            //process_node_qualifiers(proj, expr_to_column_source);
 
                             // Handle subqueries in projections
                             if let Some(plan) = proj.get("plan").and_then(|p| p.as_array()) {
-                                find_tables_from_qualifiers_recursive(plan, expr_to_table);
+                                find_columns_from_qualifiers_recursive(plan, expr_to_column_source);
                             }
-                        }
-                    }
-                }
-            }
-
-            // Process aggregate expressions which may contain subqueries
-            if let Some(agg_exprs) = obj.get("aggregateExpressions").and_then(|a| a.as_array()) {
-                for agg_array in agg_exprs {
-                    if let Some(aggs) = agg_array.as_array() {
-                        for agg in aggs {
-                            process_node_qualifiers(agg, expr_to_table);
                         }
                     }
                 }
@@ -265,47 +264,32 @@ fn find_tables_from_qualifiers_recursive(
     }
 }
 
-/// Process qualifier information in a node and extract table mappings
-fn process_node_qualifiers(node: &Value, expr_to_table: &mut HashMap<String, String>) {
-    // Extract qualifier and exprId if present
-    if let Some(qualifier) = node.get("qualifier") {
-        let table_name = extract_table_from_qualifier(qualifier);
+/// Process qualifier information in a node and extract column and source mappings
+fn process_node_qualifiers(
+    node: &Value,
+    expr_to_column_source: &mut IndexMap<usize, (String, String)>,
+) {
+    // Extract qualifier, column name, and exprId if present
+    if let Some(expr_id_obj) = node.get("exprId") {
+        if let Some(id) = expr_id_obj.get("id").and_then(|id| id.as_u64()) {
+            let expr_id = id as usize;
 
-        if let Some(table) = table_name {
-            if let Some(expr_id_obj) = node.get("exprId") {
-                if let (Some(id), Some(jvm_id)) = (
-                    expr_id_obj.get("id").and_then(|id| id.as_u64()),
-                    expr_id_obj.get("jvmId").and_then(|j| j.as_str()),
-                ) {
-                    let expr_id = format!("{}_{}", id, jvm_id);
-                    expr_to_table.insert(expr_id, table);
-                }
-            }
-        }
-    }
+            // Get column name
+            let column_name = node
+                .get("name")
+                .and_then(|n| n.as_str())
+                .unwrap_or("unknown_column")
+                .to_string();
 
-    // Handle output arrays in case this is a relation node
-    if let Some(output) = node.get("output").and_then(|o| o.as_array()) {
-        for column_array in output {
-            if let Some(columns) = column_array.as_array() {
-                for column in columns {
-                    if let Some(qualifier) = column.get("qualifier") {
-                        let table_name = extract_table_from_qualifier(qualifier);
+            // Get source name from qualifier or default
+            let source_name = if let Some(qualifier) = node.get("qualifier") {
+                extract_table_from_qualifier(qualifier)
+                    .unwrap_or_else(|| "unknown_source".to_string())
+            } else {
+                "unknown_source".to_string()
+            };
 
-                        if let Some(table) = table_name {
-                            if let Some(expr_id_obj) = column.get("exprId") {
-                                if let (Some(id), Some(jvm_id)) = (
-                                    expr_id_obj.get("id").and_then(|id| id.as_u64()),
-                                    expr_id_obj.get("jvmId").and_then(|j| j.as_str()),
-                                ) {
-                                    let expr_id = format!("{}_{}", id, jvm_id);
-                                    expr_to_table.insert(expr_id, table);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
+            expr_to_column_source.insert(expr_id, (column_name, source_name));
         }
     }
 }
@@ -339,9 +323,9 @@ fn extract_table_from_qualifier(qualifier: &Value) -> Option<String> {
 }
 
 /// Apply heuristics for expressions without qualifier information
-fn apply_table_heuristics(
+fn apply_column_heuristics(
     plan: &[Value],
-    expr_to_table: &mut HashMap<String, String>,
+    expr_to_column_source: &mut IndexMap<usize, (String, String)>,
     input_tables: &IndexMap<String, (String, IndexMap<String, String>)>,
 ) {
     // For LogicalRelation nodes without qualifiers, use table position
@@ -359,13 +343,22 @@ fn apply_table_heuristics(
                         if let Some(columns) = column_list.as_array() {
                             for column in columns {
                                 if let Some(expr_id_obj) = column.get("exprId") {
-                                    if let (Some(id), Some(jvm_id)) = (
-                                        expr_id_obj.get("id").and_then(|id| id.as_u64()),
-                                        expr_id_obj.get("jvmId").and_then(|j| j.as_str()),
-                                    ) {
-                                        let expr_id = format!("{}_{}", id, jvm_id);
+                                    if let Some(id) =
+                                        expr_id_obj.get("id").and_then(|id| id.as_u64())
+                                    {
+                                        let expr_id = id as usize;
+
+                                        // Get column name
+                                        let column_name = column
+                                            .get("name")
+                                            .and_then(|n| n.as_str())
+                                            .unwrap_or("unknown_column")
+                                            .to_string();
+
                                         // Only add if not already mapped
-                                        expr_to_table.entry(expr_id).or_insert_with(|| table_name.clone());
+                                        expr_to_column_source
+                                            .entry(expr_id)
+                                            .or_insert((column_name, table_name.clone()));
                                     }
                                 }
                             }
@@ -377,7 +370,7 @@ fn apply_table_heuristics(
             // Recursively process subquery plans
             if let Some(obj) = node.as_object() {
                 if let Some(subplan) = obj.get("plan").and_then(|p| p.as_array()) {
-                    apply_table_heuristics(subplan, expr_to_table, input_tables);
+                    apply_column_heuristics(subplan, expr_to_column_source, input_tables);
                 }
             }
         }
@@ -425,14 +418,17 @@ fn match_relation_to_table(
     "unknown_table".to_string()
 }
 
-/// Process the plan to propagate table assignments through aliases
+/// Process the plan to propagate column assignments through aliases
 ///
 /// # Arguments
 /// * `catalyst_plan` - The Catalyst logical plan as a JSON Value array
-/// * `expr_to_table` - Mutable reference to expression ID -> table mapping
-fn process_alias_propagation(catalyst_plan: &[Value], expr_to_table: &mut HashMap<String, String>) {
+/// * `expr_to_column_source` - Mutable reference to expression ID -> (column_name, source_name) mapping
+fn process_alias_propagation(
+    catalyst_plan: &[Value],
+    expr_to_column_source: &mut IndexMap<usize, (String, String)>,
+) {
     // First, identify all alias relationships (new_expr_id -> source_expr_id)
-    let mut alias_relationships: HashMap<String, String> = HashMap::new();
+    let mut alias_relationships: HashMap<usize, usize> = HashMap::new();
 
     for node in catalyst_plan {
         if let Some(class) = node["class"].as_str() {
@@ -450,11 +446,10 @@ fn process_alias_propagation(catalyst_plan: &[Value], expr_to_table: &mut HashMa
                                             first.get("exprId"),
                                             first.get("child").and_then(|c| c.as_u64()),
                                         ) {
-                                            if let (Some(id), Some(jvm_id)) = (
-                                                expr_id_obj.get("id").and_then(|id| id.as_u64()),
-                                                expr_id_obj.get("jvmId").and_then(|j| j.as_str()),
-                                            ) {
-                                                let alias_id = format!("{}_{}", id, jvm_id);
+                                            if let Some(id) =
+                                                expr_id_obj.get("id").and_then(|id| id.as_u64())
+                                            {
+                                                let alias_id = id as usize;
 
                                                 // Find the source column
                                                 let source_idx = (child_idx + 1) as usize;
@@ -463,18 +458,11 @@ fn process_alias_propagation(catalyst_plan: &[Value], expr_to_table: &mut HashMa
                                                     if let Some(source_expr_id) =
                                                         source.get("exprId")
                                                     {
-                                                        if let (Some(src_id), Some(src_jvm_id)) = (
-                                                            source_expr_id
-                                                                .get("id")
-                                                                .and_then(|id| id.as_u64()),
-                                                            source_expr_id
-                                                                .get("jvmId")
-                                                                .and_then(|j| j.as_str()),
-                                                        ) {
-                                                            let source_id = format!(
-                                                                "{}_{}",
-                                                                src_id, src_jvm_id
-                                                            );
+                                                        if let Some(src_id) = source_expr_id
+                                                            .get("id")
+                                                            .and_then(|id| id.as_u64())
+                                                        {
+                                                            let source_id = src_id as usize;
                                                             alias_relationships
                                                                 .insert(alias_id, source_id);
                                                         }
@@ -492,7 +480,7 @@ fn process_alias_propagation(catalyst_plan: &[Value], expr_to_table: &mut HashMa
         }
     }
 
-    // Now propagate table assignments through aliases
+    // Now propagate column assignments through aliases
     // We may need multiple passes to handle chains of aliases
     let mut changes_made = true;
     let mut iterations = 0;
@@ -506,15 +494,67 @@ fn process_alias_propagation(catalyst_plan: &[Value], expr_to_table: &mut HashMa
         let relationships = alias_relationships.clone();
 
         for (alias_id, source_id) in relationships {
-            // If the source has a table but the alias doesn't, propagate
-            if let Some(table) = expr_to_table.get(&source_id) {
-                if let std::collections::hash_map::Entry::Vacant(e) =
-                    expr_to_table.to_owned().entry(alias_id)
-                {
-                    e.insert(table.clone());
+            // If the source has a column/source but the alias doesn't, propagate
+            if let Some((column_name, source_name)) = expr_to_column_source.get(&source_id).cloned()
+            {
+                if let indexmap::map::Entry::Vacant(e) = expr_to_column_source.entry(alias_id) {
+                    e.insert((column_name.clone(), source_name.clone()));
                     changes_made = true;
                 }
             }
         }
     }
+}
+
+/// Add initial table mappings based on LogicalRelation nodes
+fn add_initial_table_mappings(
+    expr_to_column_source: &mut IndexMap<usize, (String, String)>,
+    input_tables: &IndexMap<String, (String, IndexMap<String, String>)>,
+) -> io::Result<()> {
+    //Iterate through the input tables and match them to LogicalRelation nodes
+
+    let mut offset: usize = *expr_to_column_source.first().unwrap().0;
+
+    for table_name in input_tables.keys() {
+        let mut processed_items: usize = 0;
+        let mut latest_expr_id: usize = 0;
+        let col_numbers = input_tables
+            .get(table_name)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "Table not found"))?
+            .1
+            .len();
+
+        //now add the table name to the first n expression IDs in the expr_to_column_source map
+        for i in 0..col_numbers {
+            let expr_id = offset + i;
+            if let indexmap::map::Entry::Vacant(e) = expr_to_column_source.entry(expr_id) {
+                e.insert((format!("{}_col{}", table_name, i), table_name.to_string()));
+            } else {
+                let current_value = expr_to_column_source.get(&expr_id).unwrap();
+                expr_to_column_source
+                    .insert(expr_id, (current_value.0.clone(), table_name.to_string()));
+            }
+            processed_items += 1;
+            latest_expr_id = expr_id;
+        }
+
+        if processed_items >= expr_to_column_source.len() {
+            break;
+        } else {
+            // the offset is equal to the next expression ID after the last processed item. We need to retrieve it from the map
+            if let Some((next_expr_id, _)) = expr_to_column_source
+                .iter()
+                .find(|(k, _)| *k > &latest_expr_id)
+            {
+                offset = *next_expr_id;
+            } else {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "Failed to find next expression ID after processing input tables",
+                ));
+            }
+        }
+    }
+
+    Ok(())
 }

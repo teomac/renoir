@@ -16,10 +16,9 @@ use super::ast_builder::df_utils::ConverterObject;
 /// Convert a Catalyst plan to Renoir IR AST
 pub fn build_ir_ast_df(
     plan: &[Value],
-    conv_object: ConverterObject,
+    conv_object: &mut ConverterObject,
 ) -> Result<Arc<IrPlan>, Box<ConversionError>> {
     // The Catalyst plan is an array of nodes with the root node at index 0
-    let mut stream_index: usize = 0;
     if plan.is_empty() {
         return Err(Box::new(ConversionError::EmptyPlan));
     }
@@ -28,7 +27,7 @@ pub fn build_ir_ast_df(
     let mut project_count: usize = 0;
 
     // Start processing from the root node
-    let final_ast = process_node(plan, 0, &mut project_count, &mut stream_index, &conv_object)
+    let final_ast = process_node(plan, 0, &mut project_count, conv_object)
         .unwrap()
         .0;
 
@@ -43,8 +42,7 @@ pub fn process_node(
     full_plan: &[Value],
     current_index: usize,
     project_count: &mut usize,
-    stream_index: &mut usize,
-    conv_object: &ConverterObject,
+    conv_object: &mut ConverterObject,
 ) -> Result<(Arc<IrPlan>, usize), Box<ConversionError>> {
     let node = full_plan
         .get(current_index)
@@ -85,7 +83,6 @@ pub fn process_node(
                 full_plan,
                 current_index + child_idx as usize + 1,
                 project_count,
-                stream_index,
                 conv_object,
             )?;
 
@@ -93,7 +90,7 @@ pub fn process_node(
 
             // Process the project node
             Ok((
-                process_project(node, input_plan, stream_index, project_count, conv_object)?,
+                process_project(node, input_plan, project_count, conv_object)?,
                 index,
             ))
         }
@@ -110,11 +107,13 @@ pub fn process_node(
                 full_plan,
                 current_index + child_idx as usize + 1,
                 project_count,
-                stream_index,
                 conv_object,
             )?;
             // Process the filter node
-            Ok((process_filter(node, input_plan, stream_index, project_count, conv_object)?, index))
+            Ok((
+                process_filter(node, input_plan, project_count, conv_object)?,
+                index,
+            ))
         }
         "Join" => {
             let left_child_idx = node
@@ -129,7 +128,6 @@ pub fn process_node(
             let (left_child, index) = process_join_child(
                 current_index + left_child_idx as usize + 1,
                 full_plan,
-                stream_index,
                 &mut left_project_count,
                 conv_object,
             )?;
@@ -137,13 +135,8 @@ pub fn process_node(
             // Reset project count for right child
             let mut right_project_count: usize = 1;
 
-            let (right_child, final_idx) = process_join_child(
-                index + 1,
-                full_plan,
-                stream_index,
-                &mut right_project_count,
-                conv_object,
-            )?;
+            let (right_child, final_idx) =
+                process_join_child(index + 1, full_plan, &mut right_project_count, conv_object)?;
 
             Ok((
                 process_join(node, left_child, right_child, conv_object)?,
@@ -163,13 +156,12 @@ pub fn process_node(
                 full_plan,
                 current_index + child_idx as usize + 1,
                 project_count,
-                stream_index,
                 conv_object,
             )?;
 
             //Now process the aggregate node
             Ok((
-                process_aggregate(node, input_plan, stream_index, project_count, conv_object)?,
+                process_aggregate(node, input_plan, project_count, conv_object)?,
                 index,
             ))
         }
@@ -186,7 +178,6 @@ pub fn process_node(
                 full_plan,
                 current_index + child_idx as usize + 1,
                 project_count,
-                stream_index,
                 conv_object,
             )?;
 
@@ -206,7 +197,6 @@ pub fn process_node(
                 full_plan,
                 current_index + child_idx as usize + 1,
                 project_count,
-                stream_index,
                 conv_object,
             )?;
 
@@ -226,7 +216,6 @@ pub fn process_node(
                 full_plan,
                 current_index + child_idx as usize + 1,
                 project_count,
-                stream_index,
                 conv_object,
             )
         }
@@ -234,7 +223,7 @@ pub fn process_node(
             let is_subquery = *project_count > 1;
             // This is a base table scan
             Ok((
-                process_logical_rdd(node, stream_index, is_subquery, conv_object)?,
+                process_logical_rdd(node, is_subquery, conv_object)?,
                 current_index + 1,
             ))
         }
@@ -247,9 +236,8 @@ pub fn process_node(
 /// Process a LogicalRDD node (table scan)
 fn process_logical_rdd(
     node: &Value,
-    stream_index: &mut usize,
     is_subquery: bool,
-    conv_object: &ConverterObject,
+    conv_object: &mut ConverterObject,
 ) -> Result<Arc<IrPlan>, Box<ConversionError>> {
     // Extract table name from column expression IDs
     let mut table_name = String::from("unknown_table");
@@ -261,15 +249,13 @@ fn process_logical_rdd(
                 if let Some(column) = columns.first() {
                     // Extract the expression ID
                     if let Some(expr_id_obj) = column.get("exprId") {
-                        if let (Some(id), Some(jvm_id)) = (
-                            expr_id_obj.get("id").and_then(|id| id.as_u64()),
-                            expr_id_obj.get("jvmId").and_then(|j| j.as_str()),
-                        ) {
-                            let expr_id = format!("{}_{}", id, jvm_id);
+                        if let Some(id) = expr_id_obj.get("id").and_then(|id| id.as_u64()) {
+                            let expr_id = id as usize;
 
-                            // Look up the table name in our mapping
-                            if let Some(table) = conv_object.expr_to_table.get(&expr_id) {
-                                table_name = table.clone();
+                            // Look up the source name in our mapping
+                            if let Some((_, source_name)) = conv_object.expr_to_source.get(&expr_id)
+                            {
+                                table_name = source_name.clone();
                                 break;
                             }
                         }
@@ -285,9 +271,9 @@ fn process_logical_rdd(
     });
 
     let stream_name = if is_subquery {
-        format!("substream{}", stream_index)
+        format!("substream{}", conv_object.stream_index)
     } else {
-        format!("stream{}", stream_index)
+        format!("stream{}", conv_object.stream_index)
     };
 
     let plan = Arc::new(IrPlan::Scan {
@@ -296,7 +282,7 @@ fn process_logical_rdd(
         alias: Some(table_name),
     });
 
-    *stream_index += 1; // Increment the stream index for the next node
-                        // Create the Scan node
+    conv_object.stream_index += 1; // Increment the stream index for the next node
+                                   // Create the Scan node
     Ok(plan)
 }

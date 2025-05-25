@@ -10,9 +10,8 @@ use super::df_utils::ConverterObject; // Import the missing IrPlan type
 pub(crate) fn process_aggregate(
     node: &Value,
     input_plan: Arc<IrPlan>,
-    stream_index: &mut usize,
     project_count: &mut usize,
-    conv_object: &ConverterObject,
+    conv_object: &mut ConverterObject,
 ) -> Result<Arc<IrPlan>, Box<ConversionError>> {
     //Retrieve the grouping expressions array
     let grouping_expressions = node
@@ -48,7 +47,6 @@ pub(crate) fn process_aggregate(
         process_project_agg(
             aggregate_expressions,
             input_plan,
-            stream_index,
             project_count,
             conv_object,
         )
@@ -68,7 +66,6 @@ pub(crate) fn process_aggregate(
         process_project_agg(
             aggregate_expressions,
             group_plan,
-            stream_index,
             project_count,
             conv_object,
         )
@@ -77,7 +74,7 @@ pub(crate) fn process_aggregate(
 
 fn parse_grouping_expressions(
     group_expressions: &[Value],
-    conv_object: &ConverterObject,
+    conv_object: &mut ConverterObject,
 ) -> Result<Vec<ColumnRef>, Box<ConversionError>> {
     //group_expressions object is an array of arrays containing the column names on which the group by is performed
     //So, we need to iterate over each array inside the group_expressions array

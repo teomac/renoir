@@ -9,7 +9,7 @@ use super::df_utils::ConverterObject;
 pub(crate) fn process_sort(
     node: &Value,
     input_plan: Arc<IrPlan>,
-    conv_object: &ConverterObject,
+    conv_object: &mut ConverterObject,
 ) -> Result<Arc<IrPlan>, Box<ConversionError>> {
     // Extract the order array
     let order_array = node
@@ -47,7 +47,7 @@ pub(crate) fn process_sort(
 fn process_sort_object(
     sort_order: &Value,
     spec_array: &[Value],
-    conv_object: &ConverterObject,
+    conv_object: &mut ConverterObject,
 ) -> Result<OrderByItem, Box<ConversionError>> {
     // Get the direction
     let direction = sort_order
@@ -99,7 +99,7 @@ fn process_sort_object(
 fn process_sort_column(
     spec_array: &[Value],
     idx: usize,
-    conv_object: &ConverterObject,
+    conv_object: &mut ConverterObject,
 ) -> Result<ColumnRef, Box<ConversionError>> {
     if idx >= spec_array.len() {
         return Err(Box::new(ConversionError::InvalidExpression));

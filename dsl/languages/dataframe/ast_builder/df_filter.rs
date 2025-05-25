@@ -1,6 +1,6 @@
 use crate::dsl::ir::{
-    BinaryOp, ComparisonOp, ComplexField, Condition, FilterClause, FilterConditionType, IrPlan,
-    NullCondition, NullOp,
+    BinaryOp, ComparisonOp, ComplexField, Condition, FilterClause, FilterConditionType, IrLiteral,
+    IrPlan, NullCondition, NullOp,
 };
 use crate::dsl::languages::dataframe::conversion_error::ConversionError;
 use serde_json::Value;
@@ -12,9 +12,8 @@ use super::df_utils::ConverterObject;
 pub(crate) fn process_filter(
     node: &Value,
     input_plan: Arc<IrPlan>,
-    stream_index: &mut usize,
     project_count: &mut usize,
-    conv_object: &ConverterObject,
+    conv_object: &mut ConverterObject,
 ) -> Result<Arc<IrPlan>, Box<ConversionError>> {
     // Extract the condition array
     let condition_array = node
@@ -29,7 +28,7 @@ pub(crate) fn process_filter(
 
     // Process the condition, starting from the first element (index 0)
     let (filter_clause, _) =
-        process_condition_node(condition_array, 0, stream_index, project_count, conv_object)?;
+        process_condition_node(condition_array, 0, project_count, conv_object)?;
 
     // Create the Filter node
     Ok(Arc::new(IrPlan::Filter {
@@ -40,12 +39,11 @@ pub(crate) fn process_filter(
 
 /// Process a condition node in the condition array
 /// Returns the processed FilterClause and the next index to process
-fn process_condition_node(
+pub(crate) fn process_condition_node(
     condition_array: &[Value],
     idx: usize,
-    stream_index: &mut usize,
     project_count: &mut usize,
-    conv_object: &ConverterObject,
+    conv_object: &mut ConverterObject,
 ) -> Result<(FilterClause, usize), Box<ConversionError>> {
     if idx >= condition_array.len() {
         return Err(Box::new(ConversionError::InvalidExpression));
@@ -65,38 +63,64 @@ fn process_condition_node(
         .ok_or_else(|| Box::new(ConversionError::InvalidClassName))?;
 
     match node_type {
-        "And" | "Or" => process_binary_op_node(
-            condition_array,
-            node_type,
-            idx,
-            stream_index,
-            project_count,
-            conv_object,
-        ),
-        "Not" => process_not_node(
-            condition_array,
-            idx,
-            stream_index,
-            project_count,
-            conv_object,
-        ),
-        "IsNotNull" | "IsNull" => process_null_node(
-            condition_array,
-            node_type,
-            idx,
-            stream_index,
-            project_count,
-            conv_object,
-        ),
+        "And" | "Or" => {
+            process_binary_op_node(condition_array, node_type, idx, project_count, conv_object)
+        }
+        "Not" => process_not_node(condition_array, idx, project_count, conv_object),
+        "IsNotNull" | "IsNull" => {
+            process_null_node(condition_array, node_type, idx, project_count, conv_object)
+        }
         "EqualTo" | "GreaterThan" | "LessThan" | "GreaterThanOrEqual" | "LessThanOrEqual" => {
-            process_comparison_node(
-                condition_array,
-                node_type,
-                idx,
-                stream_index,
-                project_count,
-                conv_object,
-            )
+            process_comparison_node(condition_array, node_type, idx, project_count, conv_object)
+        }
+        "AttributeReference" => {
+            // Check if it's a boolean column
+            let data_type = node
+                .get("dataType")
+                .and_then(|dt| dt.as_str())
+                .unwrap_or("");
+
+            if data_type == "boolean" {
+                // This is a boolean column being used directly, equivalent to "column == true"
+                let column_ref = conv_object.create_column_ref(node)?;
+
+                // Create a complex field for the column
+                let left_field = ComplexField {
+                    column_ref: Some(column_ref),
+                    literal: None,
+                    aggregate: None,
+                    nested_expr: None,
+                    subquery: None,
+                    subquery_vec: None,
+                };
+
+                // Create a complex field for "true" literal
+                let right_field = ComplexField {
+                    column_ref: None,
+                    literal: Some(IrLiteral::Boolean(true)),
+                    aggregate: None,
+                    nested_expr: None,
+                    subquery: None,
+                    subquery_vec: None,
+                };
+
+                Ok((
+                    FilterClause::Base(FilterConditionType::Comparison(Condition {
+                        left_field,
+                        operator: ComparisonOp::Equal,
+                        right_field,
+                    })),
+                    idx + 1,
+                ))
+            } else {
+                // Not a boolean column - this is unexpected as a direct condition
+                Err(Box::new(ConversionError::UnsupportedExpressionType(
+                    format!(
+                        "Non-boolean column used directly as condition: {}",
+                        node_type
+                    ),
+                )))
+            }
         }
         _ => Err(Box::new(ConversionError::UnsupportedExpressionType(
             node_type.to_string(),
@@ -109,27 +133,16 @@ fn process_binary_op_node(
     condition_array: &[Value],
     op: &str,
     idx: usize,
-    stream_index: &mut usize,
     project_count: &mut usize,
-    conv_object: &ConverterObject,
+    conv_object: &mut ConverterObject,
 ) -> Result<(FilterClause, usize), Box<ConversionError>> {
     // Process left operand (always the next node)
-    let (left_clause, next_idx) = process_condition_node(
-        condition_array,
-        idx + 1,
-        stream_index,
-        project_count,
-        conv_object,
-    )?;
+    let (left_clause, next_idx) =
+        process_condition_node(condition_array, idx + 1, project_count, conv_object)?;
 
     // Process right operand (starts after the left branch is complete)
-    let (right_clause, final_idx) = process_condition_node(
-        condition_array,
-        next_idx,
-        stream_index,
-        project_count,
-        conv_object,
-    )?;
+    let (right_clause, final_idx) =
+        process_condition_node(condition_array, next_idx, project_count, conv_object)?;
 
     let binary_op = match op {
         "And" => BinaryOp::And,
@@ -155,21 +168,55 @@ fn process_binary_op_node(
 fn process_not_node(
     condition_array: &[Value],
     idx: usize,
-    stream_index: &mut usize,
     project_count: &mut usize,
-    conv_object: &ConverterObject,
+    conv_object: &mut ConverterObject,
 ) -> Result<(FilterClause, usize), Box<ConversionError>> {
     // Get the child index
     let child_idx = idx + 1; // Child is always the next node
 
+    // Check if the child is an AttributeReference (direct column reference)
+    // This would indicate a pattern like "col("dead") == False" which is represented
+    // as "NOT dead" in the Catalyst plan
+    let child_node = &condition_array[child_idx];
+    if let Some(child_class) = child_node.get("class").and_then(|c| c.as_str()) {
+        if child_class.ends_with("AttributeReference") {
+            // This is a boolean column being negated, equivalent to "column == false"
+            let column_ref = conv_object.create_column_ref(child_node)?;
+
+            // Create a complex field for the column
+            let left_field = ComplexField {
+                column_ref: Some(column_ref),
+                literal: None,
+                aggregate: None,
+                nested_expr: None,
+                subquery: None,
+                subquery_vec: None,
+            };
+
+            // Create a complex field for "false" literal
+            let right_field = ComplexField {
+                column_ref: None,
+                literal: Some(IrLiteral::Boolean(false)),
+                aggregate: None,
+                nested_expr: None,
+                subquery: None,
+                subquery_vec: None,
+            };
+
+            return Ok((
+                FilterClause::Base(FilterConditionType::Comparison(Condition {
+                    left_field,
+                    operator: ComparisonOp::Equal,
+                    right_field,
+                })),
+                child_idx + 1,
+            ));
+        }
+    }
+
     // Process the child condition
-    let (child_clause, next_idx) = process_condition_node(
-        condition_array,
-        child_idx,
-        stream_index,
-        project_count,
-        conv_object,
-    )?;
+    let (child_clause, next_idx) =
+        process_condition_node(condition_array, child_idx, project_count, conv_object)?;
 
     // Negate the condition based on its type
     match child_clause {
@@ -230,9 +277,8 @@ fn process_null_node(
     condition_array: &[Value],
     op: &str,
     idx: usize,
-    stream_index: &mut usize,
     project_count: &mut usize,
-    conv_object: &ConverterObject,
+    conv_object: &mut ConverterObject,
 ) -> Result<(FilterClause, usize), Box<ConversionError>> {
     // The attribute reference should be the next node
     let attr_idx = idx + 1;
@@ -242,13 +288,8 @@ fn process_null_node(
     }
 
     // Process the attribute reference
-    let (field, next_idx) = process_expression(
-        condition_array,
-        attr_idx,
-        stream_index,
-        project_count,
-        conv_object,
-    )?;
+    let (field, next_idx) =
+        process_expression(condition_array, attr_idx, project_count, conv_object)?;
 
     let null_op = match op {
         "IsNotNull" => NullOp::IsNotNull,
@@ -274,9 +315,8 @@ fn process_comparison_node(
     condition_array: &[Value],
     node_type: &str,
     idx: usize,
-    stream_index: &mut usize,
     project_count: &mut usize,
-    conv_object: &ConverterObject,
+    conv_object: &mut ConverterObject,
 ) -> Result<(FilterClause, usize), Box<ConversionError>> {
     let node = &condition_array[idx];
 
@@ -291,19 +331,13 @@ fn process_comparison_node(
     let (left_field, next_idx) = process_expression(
         condition_array,
         idx + left_idx + 1,
-        stream_index,
         project_count,
         conv_object,
     )?;
 
     // Process right expression
-    let (right_field, final_idx) = process_expression(
-        condition_array,
-        next_idx,
-        stream_index,
-        project_count,
-        conv_object,
-    )?;
+    let (right_field, final_idx) =
+        process_expression(condition_array, next_idx, project_count, conv_object)?;
 
     let comparison_op: ComparisonOp = match node_type {
         "EqualTo" => ComparisonOp::Equal,
@@ -332,9 +366,8 @@ fn process_comparison_node(
 fn process_pow_node(
     condition_array: &[Value],
     idx: usize,
-    stream_index: &mut usize,
     project_count: &mut usize,
-    conv_object: &ConverterObject,
+    conv_object: &mut ConverterObject,
 ) -> Result<(ComplexField, usize), Box<ConversionError>> {
     let node = &condition_array[idx];
 
@@ -349,19 +382,13 @@ fn process_pow_node(
     let (base_field, next_idx) = process_expression(
         condition_array,
         idx + 1 + base_idx,
-        stream_index,
         project_count,
         conv_object,
     )?;
 
     // Process exponent expression
-    let (exponent_field, final_idx) = process_expression(
-        condition_array,
-        next_idx,
-        stream_index,
-        project_count,
-        conv_object,
-    )?;
+    let (exponent_field, final_idx) =
+        process_expression(condition_array, next_idx, project_count, conv_object)?;
 
     // Create a nested expression for the power operation
     let nested_expr = Box::new((base_field, "^".to_string(), exponent_field, true));
@@ -384,9 +411,8 @@ fn process_arithmetic_node(
     condition_array: &[Value],
     idx: usize,
     op: &str,
-    stream_index: &mut usize,
     project_count: &mut usize,
-    conv_object: &ConverterObject,
+    conv_object: &mut ConverterObject,
 ) -> Result<(ComplexField, usize), Box<ConversionError>> {
     let node = &condition_array[idx];
 
@@ -401,19 +427,13 @@ fn process_arithmetic_node(
     let (left_field, next_idx) = process_expression(
         condition_array,
         idx + 1 + left_idx,
-        stream_index,
         project_count,
         conv_object,
     )?;
 
     // Process right expression
-    let (right_field, final_idx) = process_expression(
-        condition_array,
-        next_idx,
-        stream_index,
-        project_count,
-        conv_object,
-    )?;
+    let (right_field, final_idx) =
+        process_expression(condition_array, next_idx, project_count, conv_object)?;
 
     // Create a nested expression for the arithmetic operation
     let nested_expr = Box::new((left_field, op.to_string(), right_field, true));
@@ -435,7 +455,7 @@ fn process_arithmetic_node(
 fn process_attribute_reference_node(
     condition_array: &[Value],
     idx: usize,
-    conv_object: &ConverterObject,
+    conv_object: &mut ConverterObject,
 ) -> Result<(ComplexField, usize), Box<ConversionError>> {
     let node = &condition_array[idx];
 
@@ -459,7 +479,7 @@ fn process_attribute_reference_node(
 fn process_literal_node(
     condition_array: &[Value],
     idx: usize,
-    conv_object: &ConverterObject,
+    conv_object: &mut ConverterObject,
 ) -> Result<(ComplexField, usize), Box<ConversionError>> {
     let node = &condition_array[idx];
 
@@ -484,9 +504,8 @@ fn process_literal_node(
 fn process_expression(
     condition_array: &[Value],
     idx: usize,
-    stream_index: &mut usize,
     project_count: &mut usize,
-    conv_object: &ConverterObject,
+    conv_object: &mut ConverterObject,
 ) -> Result<(ComplexField, usize), Box<ConversionError>> {
     if idx >= condition_array.len() {
         return Err(Box::new(ConversionError::InvalidExpression));
@@ -508,60 +527,20 @@ fn process_expression(
     match expr_type {
         "AttributeReference" => process_attribute_reference_node(condition_array, idx, conv_object),
         "Literal" => process_literal_node(condition_array, idx, conv_object),
-        "Add" => process_arithmetic_node(
-            condition_array,
-            idx,
-            "+",
-            stream_index,
-            project_count,
-            conv_object,
-        ),
-        "Subtract" => process_arithmetic_node(
-            condition_array,
-            idx,
-            "-",
-            stream_index,
-            project_count,
-            conv_object,
-        ),
-        "Multiply" => process_arithmetic_node(
-            condition_array,
-            idx,
-            "*",
-            stream_index,
-            project_count,
-            conv_object,
-        ),
-        "Divide" => process_arithmetic_node(
-            condition_array,
-            idx,
-            "/",
-            stream_index,
-            project_count,
-            conv_object,
-        ),
-        "Pow" => process_pow_node(
-            condition_array,
-            idx,
-            stream_index,
-            project_count,
-            conv_object,
-        ),
-        "Cast" => process_expression(
-            condition_array,
-            idx + 1,
-            stream_index,
-            project_count,
-            conv_object,
-        ),
+        "Add" => process_arithmetic_node(condition_array, idx, "+", project_count, conv_object),
+        "Subtract" => {
+            process_arithmetic_node(condition_array, idx, "-", project_count, conv_object)
+        }
+        "Multiply" => {
+            process_arithmetic_node(condition_array, idx, "*", project_count, conv_object)
+        }
+        "Divide" => process_arithmetic_node(condition_array, idx, "/", project_count, conv_object),
+        "Pow" => process_pow_node(condition_array, idx, project_count, conv_object),
+        "Cast" => process_expression(condition_array, idx + 1, project_count, conv_object),
         "ScalarSubquery" => {
             // Process scalar subquery
-            let complex_field = process_scalar_subquery(
-                &condition_array[idx],
-                stream_index,
-                project_count,
-                conv_object,
-            )?;
+            let complex_field =
+                process_scalar_subquery(&condition_array[idx], project_count, conv_object)?;
             Ok((complex_field, idx + 1))
         }
         _ => Err(Box::new(ConversionError::UnsupportedExpressionType(

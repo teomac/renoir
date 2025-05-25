@@ -10,9 +10,8 @@ use crate::dsl::languages::dataframe::converter::process_node;
 /// Process a ScalarSubquery node from a Catalyst plan
 pub(crate) fn process_scalar_subquery(
     node: &Value,
-    stream_index: &mut usize,
     project_count: &mut usize,
-    conv_object: &ConverterObject,
+    conv_object: &mut ConverterObject,
 ) -> Result<ComplexField, Box<ConversionError>> {
     // Extract the subquery plan
     let subquery_plan = node
@@ -33,7 +32,6 @@ pub(crate) fn process_scalar_subquery(
         subquery_plan,
         0, 
         project_count,
-        stream_index,
         conv_object,
     )?;
 

@@ -12,9 +12,8 @@ use super::df_utils::ConverterObject;
 pub(crate) fn process_project(
     node: &Value,
     input_plan: Arc<IrPlan>,
-    stream_index: &mut usize,
     project_count: &mut usize,
-    conv_object: &ConverterObject,
+    conv_object: &mut ConverterObject,
 ) -> Result<Arc<IrPlan>, Box<ConversionError>> {
     // Extract the project list
     let project_list = node
@@ -29,7 +28,7 @@ pub(crate) fn process_project(
         if let Some(projections) = projection_array.as_array() {
             // Process the first expression in each projection array
             let projection_column =
-                process_projection_array(projections, stream_index, project_count, conv_object)?;
+                process_projection_array(projections, project_count, conv_object)?;
             columns.push(projection_column);
         }
     }
@@ -44,11 +43,21 @@ pub(crate) fn process_project(
         ));
     }
 
-    // Create the Project node
-    Ok(Arc::new(IrPlan::Project {
+    let project_node = Arc::new(IrPlan::Project {
         input: input_plan,
         columns,
         distinct: false,
+    });
+
+    //Now we need to create a new scan node with a new stream name and alias
+    let stream_name = format!("stream_{}", conv_object.stream_index);
+    conv_object.stream_index += 1;
+
+    // Create the Project node
+    Ok(Arc::new(IrPlan::Scan {
+        input: project_node,
+        stream_name: stream_name.clone(),
+        alias: Some(stream_name),
     }))
 }
 
@@ -56,9 +65,8 @@ pub(crate) fn process_project(
 pub(crate) fn process_project_agg(
     project_list: &[Value],
     input_plan: Arc<IrPlan>,
-    stream_index: &mut usize,
     _project_count: &mut usize,
-    conv_object: &ConverterObject,
+    conv_object: &mut ConverterObject,
 ) -> Result<Arc<IrPlan>, Box<ConversionError>> {
     let mut columns = Vec::new();
 
@@ -67,7 +75,7 @@ pub(crate) fn process_project_agg(
         if let Some(projections) = projection_array.as_array() {
             // Process the first expression in each projection array
             let projection_column =
-                process_projection_array(projections, stream_index, _project_count, conv_object)?;
+                process_projection_array(projections, _project_count, conv_object)?;
             columns.push(projection_column);
         }
     }
@@ -92,9 +100,8 @@ pub(crate) fn process_project_agg(
 
 fn process_projection_array(
     projection_array: &[Value],
-    stream_index: &mut usize,
     project_count: &mut usize,
-    conv_object: &ConverterObject,
+    conv_object: &mut ConverterObject,
 ) -> Result<ProjectionColumn, Box<ConversionError>> {
     //check if the projection array is empty
     if projection_array.is_empty() {
@@ -157,7 +164,6 @@ fn process_projection_array(
                 let (column, _) = process_expression(
                     projection_array,
                     (child_idx as usize) + 1,
-                    stream_index,
                     project_count,
                     alias_name,
                     conv_object,
@@ -166,14 +172,8 @@ fn process_projection_array(
             }
             _ => {
                 // Directly process the expression
-                let (column, _) = process_expression(
-                    projection_array,
-                    0,
-                    stream_index,
-                    project_count,
-                    None,
-                    conv_object,
-                )?;
+                let (column, _) =
+                    process_expression(projection_array, 0, project_count, None, conv_object)?;
                 projection_column.push(column);
             }
         }
@@ -192,10 +192,9 @@ fn process_projection_array(
 fn process_expression(
     expr_array: &[Value],
     idx: usize,
-    stream_index: &mut usize,
     project_count: &mut usize,
     alias: Option<String>,
-    conv_object: &ConverterObject,
+    conv_object: &mut ConverterObject,
 ) -> Result<(ProjectionColumn, usize), Box<ConversionError>> {
     if idx >= expr_array.len() {
         return Err(Box::new(ConversionError::InvalidExpression));
@@ -257,7 +256,6 @@ fn process_expression(
             process_expression(
                 expr_array,
                 idx + child_idx + 1,
-                stream_index,
                 project_count,
                 alias,
                 conv_object,
@@ -265,12 +263,8 @@ fn process_expression(
         }
         "ScalarSubquery" => {
             // Process scalar subquery
-            let complex_field = process_scalar_subquery(
-                &expr_array[idx],
-                stream_index,
-                project_count,
-                conv_object,
-            )?;
+            let complex_field =
+                process_scalar_subquery(&expr_array[idx], project_count, conv_object)?;
             Ok((
                 ProjectionColumn::ComplexValue(complex_field, alias),
                 idx + 1,
@@ -287,7 +281,7 @@ fn process_aggregate(
     expr_array: &[Value],
     idx: usize,
     alias: Option<String>,
-    conv_object: &ConverterObject,
+    conv_object: &mut ConverterObject,
 ) -> Result<(ProjectionColumn, usize), Box<ConversionError>> {
     let expr = &expr_array[idx];
 
@@ -377,7 +371,7 @@ fn process_arithmetic_operation(
     expr_array: &[Value],
     idx: usize,
     op_type: &str,
-    conv_object: &ConverterObject,
+    conv_object: &mut ConverterObject,
 ) -> Result<(ComplexField, usize), Box<ConversionError>> {
     let expr = &expr_array[idx];
 
@@ -430,7 +424,7 @@ fn process_arithmetic_operation(
 fn process_complex_field(
     expr_array: &[Value],
     idx: usize,
-    conv_object: &ConverterObject,
+    conv_object: &mut ConverterObject,
 ) -> Result<(ComplexField, usize), Box<ConversionError>> {
     if idx >= expr_array.len() {
         return Err(Box::new(ConversionError::InvalidExpression));
@@ -511,7 +505,7 @@ fn process_aggregate_field(
     expr_array: &[Value],
     idx: usize,
     agg_type: &str,
-    conv_object: &ConverterObject,
+    conv_object: &mut ConverterObject,
 ) -> Result<(ComplexField, usize), Box<ConversionError>> {
     let expr = &expr_array[idx];
 

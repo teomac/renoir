@@ -9,7 +9,7 @@ use super::df_utils::ConverterObject;
 pub(crate) fn process_limit(
     node: &Value,
     input_plan: Arc<IrPlan>,
-    _conv_object: &ConverterObject,
+    _conv_object: &mut ConverterObject,
 ) -> Result<Arc<IrPlan>, Box<ConversionError>> {
     // Extract the limitExpr array
     let limit_expr_array = node
