@@ -8,6 +8,7 @@ use std::sync::Arc;
 
 use super::df_subqueries::process_scalar_subquery;
 use super::df_utils::ConverterObject;
+
 /// Process a Filter (WHERE) node from a Catalyst plan
 pub(crate) fn process_filter(
     node: &Value,
@@ -27,6 +28,8 @@ pub(crate) fn process_filter(
     }
 
     // Process the condition, starting from the first element (index 0)
+    // Note: We don't need to track expr ID updates for filter conditions
+    // since they don't create new projections, just use existing column references
     let (filter_clause, _) =
         process_condition_node(condition_array, 0, project_count, conv_object)?;
 
@@ -70,7 +73,7 @@ pub(crate) fn process_condition_node(
         "IsNotNull" | "IsNull" => {
             process_null_node(condition_array, node_type, idx, project_count, conv_object)
         }
-        "EqualTo" | "GreaterThan" | "LessThan" | "GreaterThanOrEqual" | "LessThanOrEqual" => {
+        "EqualTo" | "GreaterThan" | "LessThan" | "GreaterThanOrEqual" | "LessThanOrEqual" | "NotEqualTo" => {
             process_comparison_node(condition_array, node_type, idx, project_count, conv_object)
         }
         "AttributeReference" => {
@@ -82,7 +85,15 @@ pub(crate) fn process_condition_node(
 
             if data_type == "boolean" {
                 // This is a boolean column being used directly, equivalent to "column == true"
-                let column_ref = conv_object.create_column_ref(node)?;
+                // Resolve using expr ID
+                let (_, column_name, source_name) = 
+                    conv_object.resolve_projection_column(node)
+                        .map_err(|_| Box::new(ConversionError::InvalidExpression))?;
+
+                let column_ref = crate::dsl::ir::ColumnRef {
+                    table: Some(source_name),
+                    column: column_name,
+                };
 
                 // Create a complex field for the column
                 let left_field = ComplexField {
@@ -128,7 +139,7 @@ pub(crate) fn process_condition_node(
     }
 }
 
-/// Process an AND node (left AND right)
+/// Process an AND/OR node (left AND/OR right)
 fn process_binary_op_node(
     condition_array: &[Value],
     op: &str,
@@ -181,7 +192,15 @@ fn process_not_node(
     if let Some(child_class) = child_node.get("class").and_then(|c| c.as_str()) {
         if child_class.ends_with("AttributeReference") {
             // This is a boolean column being negated, equivalent to "column == false"
-            let column_ref = conv_object.create_column_ref(child_node)?;
+            // Resolve using expr ID
+            let (_, column_name, source_name) = 
+                conv_object.resolve_projection_column(child_node)
+                    .map_err(|_| Box::new(ConversionError::InvalidExpression))?;
+
+            let column_ref = crate::dsl::ir::ColumnRef {
+                table: Some(source_name),
+                column: column_name,
+            };
 
             // Create a complex field for the column
             let left_field = ComplexField {
@@ -272,7 +291,7 @@ fn process_not_node(
     }
 }
 
-/// Process a NULL node
+/// Process a NULL node (IS NULL / IS NOT NULL)
 fn process_null_node(
     condition_array: &[Value],
     op: &str,
@@ -310,7 +329,7 @@ fn process_null_node(
     ))
 }
 
-/// Process an EQUAL TO node
+/// Process a comparison node (=, >, <, >=, <=, !=)
 fn process_comparison_node(
     condition_array: &[Value],
     node_type: &str,
@@ -341,6 +360,7 @@ fn process_comparison_node(
 
     let comparison_op: ComparisonOp = match node_type {
         "EqualTo" => ComparisonOp::Equal,
+        "NotEqualTo" => ComparisonOp::NotEqual,
         "GreaterThan" => ComparisonOp::GreaterThan,
         "LessThan" => ComparisonOp::LessThan,
         "GreaterThanOrEqual" => ComparisonOp::GreaterThanEquals,
@@ -362,7 +382,7 @@ fn process_comparison_node(
     ))
 }
 
-///Process a node with a power operation
+/// Process a power operation node (base ^ exponent)
 fn process_pow_node(
     condition_array: &[Value],
     idx: usize,
@@ -451,7 +471,7 @@ fn process_arithmetic_node(
     ))
 }
 
-/// Process an attribute reference node
+/// Process an attribute reference node using expression ID resolution
 fn process_attribute_reference_node(
     condition_array: &[Value],
     idx: usize,
@@ -459,8 +479,16 @@ fn process_attribute_reference_node(
 ) -> Result<(ComplexField, usize), Box<ConversionError>> {
     let node = &condition_array[idx];
 
-    // Create a column reference using the utility function
-    let column_ref = conv_object.create_column_ref(node)?;
+    // Resolve column using expression ID
+    let (_, column_name, source_name) = 
+        conv_object.resolve_projection_column(node)
+            .map_err(|_| Box::new(ConversionError::InvalidExpression))?;
+
+    // Create a column reference with resolved information
+    let column_ref = crate::dsl::ir::ColumnRef {
+        table: Some(source_name),
+        column: column_name,
+    };
 
     Ok((
         ComplexField {

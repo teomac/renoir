@@ -86,8 +86,6 @@ pub fn process_node(
                 conv_object,
             )?;
 
-            // Process the child node first
-
             // Process the project node
             Ok((
                 process_project(node, input_plan, project_count, conv_object)?,
@@ -282,7 +280,6 @@ fn process_logical_rdd(
         alias: Some(table_name),
     });
 
-    conv_object.stream_index += 1; // Increment the stream index for the next node
-                                   // Create the Scan node
+    conv_object.stream_index -= 1; // Decrement the stream index for the next node
     Ok(plan)
 }

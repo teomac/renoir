@@ -15,7 +15,7 @@ pub(crate) fn process_join(
     right_child: Arc<IrPlan>,
     conv_object: &mut ConverterObject,
 ) -> Result<Arc<IrPlan>, Box<ConversionError>> {
-      let join_type = node
+    let join_type = node
         .get("joinType")
         .ok_or_else(|| Box::new(ConversionError::MissingField("joinType".to_string())))
         .unwrap();
@@ -167,8 +167,7 @@ fn extract_join_conditions(
     Ok((simple_conditions, complex_conditions))
 }
 
-
-// Process only simple equality joins between column references
+// Process only simple equality joins between column references using expr ID resolution
 fn process_simple_equality(
     condition_array: &[Value],
     idx: usize,
@@ -225,8 +224,15 @@ fn process_simple_equality(
         )));
     }
 
-    // Process the left side
-    let left_col = conv_object.create_column_ref(left_node)?;
+    // Process the left side using expr ID resolution
+    let (_, left_column_name, left_source_name) = 
+        conv_object.resolve_projection_column(left_node)
+            .map_err(|_| Box::new(ConversionError::InvalidExpression))?;
+
+    let left_col = ColumnRef {
+        table: Some(left_source_name),
+        column: left_column_name,
+    };
     
     // Calculate right index
     let right_idx = left_child_idx + 1;
@@ -253,8 +259,15 @@ fn process_simple_equality(
         )));
     }
     
-    // Process the right side
-    let right_col = conv_object.create_column_ref(right_node)?;
+    // Process the right side using expr ID resolution
+    let (_, right_column_name, right_source_name) = 
+        conv_object.resolve_projection_column(right_node)
+            .map_err(|_| Box::new(ConversionError::InvalidExpression))?;
+
+    let right_col = ColumnRef {
+        table: Some(right_source_name),
+        column: right_column_name,
+    };
 
     Ok((
         vec![JoinCondition { left_col, right_col }],
@@ -269,36 +282,33 @@ pub(crate) fn process_join_child(
     conv_object: &mut ConverterObject,
 ) -> Result<(Arc<IrPlan>, usize), Box<ConversionError>> {
     
-    //process the child node using the process_node function
+    // Process the child node using the process_node function
     let child_ir = process_node(
         full_plan,
         child_index,
         project_count,
-        
         conv_object,
     )?;
 
-
     let processed_child_node = match &*child_ir.0 {
-        //if the child node is a Project node, we need to create a Scan node with the project as input
+        // If the child node is a Project node, we need to create a Scan node with the project as input
         IrPlan::Project { columns, .. } => {
             // Create a Scan node with the project as input
             // Extract alias from the first column that has a table reference
             let alias = extract_alias_from_columns(columns);
             
+            // Get the next stream name for this join child
+            let stream_name = conv_object.decrement_and_get_stream_name();
+            
             let scan_node = IrPlan::Scan {
                 input: child_ir.0,
-                stream_name: {
-                    let stream_name = format!("stream{}", conv_object.stream_index);
-                    conv_object.stream_index += 1; // Increment the stream index for the next node
-                    stream_name
-                },
+                stream_name: stream_name.clone(),
                 alias,
             };
             Arc::new(scan_node)
         }
         _ => {
-            child_ir.0.clone() //in any other case, we just return the child node
+            child_ir.0.clone() // In any other case, we just return the child node
         }
     };
 
@@ -307,12 +317,14 @@ pub(crate) fn process_join_child(
 }
 
 /// Extract alias from project columns by looking at the table references
+/// This function now works with the updated expression ID system
 fn extract_alias_from_columns(columns: &[ProjectionColumn]) -> Option<String> {
     for column in columns {
         match column {
             ProjectionColumn::Column(col_ref, _) => {
                 if let Some(ref table) = col_ref.table {
-                    // The table field in ColumnRef should contain the alias (t1, t2, etc.)
+                    // The table field in ColumnRef should contain the source name
+                    // For joins, this should be the stream name from the previous operation
                     return Some(table.clone());
                 }
             }
@@ -324,6 +336,12 @@ fn extract_alias_from_columns(columns: &[ProjectionColumn]) -> Option<String> {
             ProjectionColumn::ComplexValue(complex_field, _) => {
                 if let Some(ref col_ref) = complex_field.column_ref {
                     if let Some(ref table) = col_ref.table {
+                        return Some(table.clone());
+                    }
+                }
+                // For complex values, try to extract from aggregate
+                if let Some(ref agg_func) = complex_field.aggregate {
+                    if let Some(ref table) = agg_func.column.table {
                         return Some(table.clone());
                     }
                 }
@@ -372,8 +390,15 @@ pub fn process_attribute_reference(
 ) -> Result<(ColumnRef, usize), Box<ConversionError>> {
     let node = &condition_array[idx];
 
-    // Create a column reference using the utility function
-    let column_ref = conv_object.create_column_ref(node)?;
+    // Use expression ID resolution to get proper column reference
+    let (_, column_name, source_name) = 
+        conv_object.resolve_projection_column(node)
+            .map_err(|_| Box::new(ConversionError::InvalidExpression))?;
+
+    let column_ref = ColumnRef {
+        table: Some(source_name),
+        column: column_name,
+    };
 
     Ok((column_ref, idx + 1))
 }
@@ -409,11 +434,11 @@ pub fn process_comparison(
         .ok_or_else(|| Box::new(ConversionError::MissingField("left".to_string())))?
         as usize;
 
-    // Process left expression
+    // Process left expression using expr ID resolution
     let (left_field, next_idx) =
         process_attribute_reference(condition_array, idx + left_idx + 1, conv_object)?;
 
-    // Process right expression
+    // Process right expression using expr ID resolution
     let (right_field, final_idx) =
         process_attribute_reference(condition_array, next_idx, conv_object)?;
 
@@ -425,4 +450,74 @@ pub fn process_comparison(
         .to_vec(),
         final_idx,
     ))
+}
+
+/// Update expression mappings after a join operation
+/// This function handles the complex task of updating expr IDs to reflect
+/// the new column structure after a join
+pub fn update_expr_mappings_after_join(
+    conv_object: &mut ConverterObject,
+    left_stream_name: &str,
+    right_stream_name: &str,
+    result_stream_name: &str,
+) -> Result<(), Box<ConversionError>> {
+    let mut new_mappings = Vec::new();
+
+    // Clone the current mappings to avoid borrowing issues
+    let current_mappings = conv_object.expr_to_source.clone();
+
+    for (expr_id, (column_name, source_name)) in current_mappings {
+        // Determine the new source name based on where the column came from
+        let new_source = if source_name == left_stream_name || source_name == right_stream_name {
+            // This column came from one of the join inputs, update to result stream
+            result_stream_name.to_string()
+        } else {
+            // This column is from somewhere else, keep the original source
+            source_name.clone()
+        };
+
+        // For join results, we might want to qualify column names to avoid conflicts
+        // This depends on your specific requirements
+        let new_column_name = if source_name == left_stream_name || source_name == right_stream_name {
+            // Option 1: Keep original column name
+            column_name
+            
+            // Option 2: Qualify with source (uncomment if needed)
+            // format!("{}_{}", column_name, source_name)
+        } else {
+            column_name
+        };
+
+        new_mappings.push((expr_id, new_column_name, new_source));
+    }
+
+    // Apply all updates
+    conv_object.update_projection_mappings(new_mappings);
+
+    Ok(())
+}
+
+/// Helper function to determine join result column names
+/// This can be used to generate appropriate column names after joins
+pub fn generate_join_result_columns(
+    left_columns: &[String],
+    right_columns: &[String],
+    left_alias: &str,
+    right_alias: &str,
+) -> Vec<(String, String)> {
+    let mut result_columns = Vec::new();
+
+    // Add left table columns with qualification
+    for column in left_columns {
+        let qualified_name = format!("{}_{}", column, left_alias);
+        result_columns.push((column.clone(), qualified_name));
+    }
+
+    // Add right table columns with qualification
+    for column in right_columns {
+        let qualified_name = format!("{}_{}", column, right_alias);
+        result_columns.push((column.clone(), qualified_name));
+    }
+
+    result_columns
 }

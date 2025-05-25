@@ -1,9 +1,11 @@
 // dsl/languages/dataframe/ast_builder/df_utils.rs
 
-use crate::dsl::ir::{ColumnRef, IrLiteral};
+use crate::dsl::ir::{ColumnRef, IrLiteral, ProjectionColumn};
 use crate::dsl::languages::dataframe::conversion_error::ConversionError;
 use indexmap::IndexMap;
 use serde_json::Value;
+use rand::Rng;
+
 
 pub struct ConverterObject {
     pub expr_to_source: IndexMap<usize, (String, String)>,
@@ -15,7 +17,7 @@ impl ConverterObject {
     pub fn new(expr_to_source: IndexMap<usize, (String, String)>) -> Self {
         ConverterObject {
             expr_to_source,
-            stream_index: 0,
+            stream_index: rand::rng().random_range(1000..2000), // Random initial stream index
             needs_alias: false,
         }
     }
@@ -143,8 +145,7 @@ impl ConverterObject {
         })
     }
 
-    /// Update column and source information for an expression ID
-    /// This can be used during query processing to update aliases and projections
+     /// Update column and source information for an expression ID
     pub fn update_expr_mapping(
         &mut self,
         expr_id: usize,
@@ -153,6 +154,98 @@ impl ConverterObject {
     ) {
         self.expr_to_source
             .insert(expr_id, (column_name, source_name));
+    }
+
+    /// Bulk update expression mappings after processing a projection
+    /// This is called after processing all projection columns to update their expr IDs
+    /// with new source names and aliases
+    pub fn update_projection_mappings(
+        &mut self,
+        projection_updates: Vec<(usize, String, String)>, // (expr_id, new_column_name, new_source_name)
+    ) {
+        for (expr_id, column_name, source_name) in projection_updates {
+            self.expr_to_source
+                .insert(expr_id, (column_name, source_name));
+        }
+    }
+
+    /// Generate auto-alias for a column in join scenarios
+    /// Uses the pattern: column_sourcename
+    pub fn generate_auto_alias(
+        &self,
+        column_name: &str,
+        source_name: &str,
+        is_nested_projection: bool,
+    ) -> String {
+        if is_nested_projection {
+            // For nested projections after joins, always generate aliases
+            format!("{}_{}", column_name, source_name)
+        } else {
+            // For regular projections, use the original column name
+            column_name.to_string()
+        }
+    }
+
+    /// Extract expression ID from a projection column and resolve its information
+    /// Returns (expr_id, original_column_name, original_source_name)
+    pub fn resolve_projection_column(
+        &self,
+        node: &Value,
+    ) -> Result<(usize, String, String), Box<ConversionError>> {
+        let expr_id = Self::extract_expr_id(node)?;
+
+        let (column_name, source_name) =
+            Self::expr_id_to_column_source(&expr_id, &self.expr_to_source).unwrap_or_else(|| {
+                // Fallback: try to get column name directly from node
+                let fallback_column = node
+                    .get("name")
+                    .and_then(|n| n.as_str())
+                    .unwrap_or("unknown_column")
+                    .to_string();
+                (fallback_column, "unknown_source".to_string())
+            });
+
+        Ok((expr_id, column_name, source_name))
+    }
+
+    /// Collect all expression IDs from a list of projection columns
+    /// This is used to determine which expr IDs need to be updated after projection processing
+    pub fn collect_projection_expr_ids(
+        &self,
+        columns: &[ProjectionColumn],
+    ) -> Result<Vec<usize>, Box<ConversionError>> {
+        let mut expr_ids = Vec::new();
+
+        for column in columns {
+            match column {
+                ProjectionColumn::Column(col_ref, _) => {
+                    // For column references, we need to find the expr ID that maps to this column
+                    // This is a reverse lookup in our mapping
+                    if let Some(table) = &col_ref.table {
+                        // Look for expr ID that maps to (column_name, table_name)
+                        for (expr_id, (mapped_col, mapped_source)) in &self.expr_to_source {
+                            if mapped_col == &col_ref.column && mapped_source == table {
+                                expr_ids.push(*expr_id);
+                                break;
+                            }
+                        }
+                    } else {
+                        // Look for any expr ID that maps to this column name
+                        for (expr_id, (mapped_col, _)) in &self.expr_to_source {
+                            if mapped_col == &col_ref.column {
+                                expr_ids.push(*expr_id);
+                                break;
+                            }
+                        }
+                    }
+                }
+                // For other projection types (aggregates, complex values), 
+                // we'll handle them when we process the actual projection
+                _ => continue,
+            }
+        }
+
+        Ok(expr_ids)
     }
 
     /// Get the current column name for an expression ID
@@ -172,5 +265,17 @@ impl ConverterObject {
             .filter(|(_, (_, src))| src == source_name)
             .map(|(expr_id, _)| expr_id.clone())
             .collect()
+    }
+
+    /// Get the next stream name based on current stream_index
+    pub fn get_next_stream_name(&self) -> String {
+        format!("stream{}", self.stream_index)
+    }
+
+    /// Decrement stream index and return the new stream name
+    pub fn decrement_and_get_stream_name(&mut self) -> String {
+        let stream_name = format!("substream{}", self.stream_index);
+        self.stream_index -= 1;
+        stream_name
     }
 }
