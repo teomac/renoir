@@ -9,9 +9,13 @@ pub fn validate_ir_ast(ast: Arc<IrPlan>) -> Arc<IrPlan> {
     match &*ast {
         // If it's already a Project node, we're good
         IrPlan::Project { .. } => ast,
-        
+
         // If it's a Limit node, check its input recursively
-        IrPlan::Limit { input, limit, offset } => {
+        IrPlan::Limit {
+            input,
+            limit,
+            offset,
+        } => {
             let validated_input = validate_ir_ast(input.clone());
             Arc::new(IrPlan::Limit {
                 input: validated_input,
@@ -19,7 +23,7 @@ pub fn validate_ir_ast(ast: Arc<IrPlan>) -> Arc<IrPlan> {
                 offset: *offset,
             })
         }
-        
+
         // If it's an OrderBy node, check its input recursively
         IrPlan::OrderBy { input, items } => {
             let validated_input = validate_ir_ast(input.clone());
@@ -28,20 +32,19 @@ pub fn validate_ir_ast(ast: Arc<IrPlan>) -> Arc<IrPlan> {
                 items: items.clone(),
             })
         }
-        
+
         // For any other node type, wrap with a SELECT * projection
         _ => {
             Arc::new(IrPlan::Project {
-                input: ast,
-                columns: vec![ProjectionColumn::Column(
-                    ColumnRef {
-                        table: None,
-                        column: "*".to_string(),
-                    },
-                    None,
-                )],
-                distinct: false,
-            })
-        }
+            input: ast,
+            columns: vec![ProjectionColumn::Column(
+                ColumnRef {
+                    table: None,
+                    column: "*".to_string(),
+                },
+                None,
+            )],
+            distinct: false,
+        })},
     }
 }

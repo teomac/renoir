@@ -27,7 +27,7 @@ pub(crate) fn create_star_map(stream_name: &String, struct_name: &String, query_
         for stream in all_streams.iter() {
             let stream = query_object.get_stream(stream);
             let tuple_access = stream.get_access().get_base_path();
-            let table_struct = if stream.final_struct.is_empty() {
+            let table_struct = if stream.final_struct.get(stream.final_struct.keys().last().unwrap()).unwrap().is_empty() {
                 query_object.get_struct(&stream.source_table).unwrap()
             } else {
                 stream.final_struct.get(stream.final_struct.keys().last().unwrap()).unwrap()

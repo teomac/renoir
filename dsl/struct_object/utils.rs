@@ -30,7 +30,7 @@ pub(crate) fn check_column_validity(
             .unwrap_or_else(|| {
                 panic!("Error in retrieving struct_map for table {}.", alias);
             });
-        if !struct_map.contains_key(&col_to_check) {
+        if !struct_map.contains_key(&col_to_check) && !struct_map.contains_key(format!("{}_{}", col_to_check.to_string(), table_name).as_str()) {
             panic!("Column {} does not exist in table {}", col_to_check, alias);
         }
     } else {
