@@ -4,7 +4,6 @@ use crate::dsl::ir::{ColumnRef, IrLiteral, ProjectionColumn};
 use crate::dsl::languages::dataframe::conversion_error::ConversionError;
 use indexmap::IndexMap;
 use serde_json::Value;
-use rand::Rng;
 
 
 pub struct ConverterObject {
@@ -17,7 +16,7 @@ impl ConverterObject {
     pub fn new(expr_to_source: IndexMap<usize, (String, String)>) -> Self {
         ConverterObject {
             expr_to_source,
-            stream_index: rand::rng().random_range(1000..2000), // Random initial stream index
+            stream_index: 0,
             needs_alias: false,
         }
     }
@@ -272,10 +271,14 @@ impl ConverterObject {
         format!("stream{}", self.stream_index)
     }
 
-    /// Decrement stream index and return the new stream name
-    pub fn decrement_and_get_stream_name(&mut self) -> String {
-        let stream_name = format!("substream{}", self.stream_index);
-        self.stream_index -= 1;
-        stream_name
+    /// Increment stream index and return the new stream name
+    pub fn increment_and_get_stream_name(&mut self, index: usize) -> String {
+        let mut result = String::new();
+        for _ in 1..index {
+            result.push_str("sub");
+        }
+        let stream_name = format!("stream{}", self.stream_index);
+        self.stream_index += 1;
+        format!("{}{}", result, stream_name).to_string()
     }
 }

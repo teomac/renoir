@@ -15,6 +15,9 @@ pub(crate) fn process_project(
     project_count: &mut usize,
     conv_object: &mut ConverterObject,
 ) -> Result<Arc<IrPlan>, Box<ConversionError>> {
+    // Get the stream name for this projection
+    let stream_name = conv_object.increment_and_get_stream_name(*project_count);
+    println!("Processing Project node with stream name: {}", stream_name);
     // Extract the project list
     let project_list = node
         .get("projectList")
@@ -53,9 +56,6 @@ pub(crate) fn process_project(
         ));
     }
 
-    // Get the stream name for this projection
-    let stream_name = conv_object.decrement_and_get_stream_name();
-
     // Update all projection expr IDs with new source name and correct column names
     for (expr_id, column_name, source_name) in &mut projection_updates {
         *source_name = stream_name.clone(); // Update source name to new stream
@@ -68,9 +68,7 @@ pub(crate) fn process_project(
                 match column {
                     ProjectionColumn::Column(col_ref, alias) => {
                         // Check if this column corresponds to our expr_id by comparing original names
-                        if let Some((mapped_col, mapped_source)) =
-                            conv_object.expr_to_source.get(expr_id)
-                        {
+                        if let Some((mapped_col, _)) = conv_object.expr_to_source.get(expr_id) {
                             if mapped_col == &col_ref.column {
                                 // Update to the final column name (alias or auto-generated name)
                                 if let Some(alias_name) = alias {
@@ -138,12 +136,16 @@ pub(crate) fn process_project(
         distinct: false,
     });
 
-    // Create the Scan node with the same stream name
-    Ok(Arc::new(IrPlan::Scan {
-        input: project_node,
-        stream_name: stream_name.clone(),
-        alias: Some(stream_name),
-    }))
+    if *project_count > 1 {
+        // Create the Scan node with the same stream name
+        Ok(Arc::new(IrPlan::Scan {
+            input: project_node,
+            stream_name: stream_name.clone(),
+            alias: Some(stream_name),
+        }))
+    } else {
+        Ok(project_node.clone())
+    }
 }
 
 /// Process a Project (SELECT) node from a Catalyst plan for aggregates

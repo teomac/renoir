@@ -297,8 +297,9 @@ pub(crate) fn process_join_child(
             // Extract alias from the first column that has a table reference
             let alias = extract_alias_from_columns(columns);
             
+            println!("project count: {}", project_count);
             // Get the next stream name for this join child
-            let stream_name = conv_object.decrement_and_get_stream_name();
+            let stream_name = conv_object.increment_and_get_stream_name(*project_count);
             
             let scan_node = IrPlan::Scan {
                 input: child_ir.0,
@@ -306,9 +307,10 @@ pub(crate) fn process_join_child(
                 alias,
             };
             Arc::new(scan_node)
-        }
+        },
         _ => {
-            child_ir.0.clone() // In any other case, we just return the child node
+            // For any other type of node, just return it as is
+            child_ir.0.clone()
         }
     };
 

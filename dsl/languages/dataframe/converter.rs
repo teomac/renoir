@@ -113,7 +113,7 @@ pub fn process_node(
                 index,
             ))
         }
-        "Join" => {
+        "Join" => {            
             let left_child_idx = node
                 .get("left")
                 .and_then(|c| c.as_u64())
@@ -121,7 +121,8 @@ pub fn process_node(
                 .unwrap();
 
             // Reset project count for each join child to properly track nested Projects
-            let mut left_project_count: usize = 1;
+            let mut left_project_count: usize = *project_count;
+            let mut right_project_count: usize = *project_count + 1;
 
             let (left_child, index) = process_join_child(
                 current_index + left_child_idx as usize + 1,
@@ -129,9 +130,6 @@ pub fn process_node(
                 &mut left_project_count,
                 conv_object,
             )?;
-
-            // Reset project count for right child
-            let mut right_project_count: usize = 1;
 
             let (right_child, final_idx) =
                 process_join_child(index + 1, full_plan, &mut right_project_count, conv_object)?;
@@ -221,7 +219,7 @@ pub fn process_node(
             let is_subquery = *project_count > 1;
             // This is a base table scan
             Ok((
-                process_logical_rdd(node, is_subquery, conv_object)?,
+                process_logical_rdd(node, project_count, conv_object)?,
                 current_index + 1,
             ))
         }
@@ -234,7 +232,7 @@ pub fn process_node(
 /// Process a LogicalRDD node (table scan)
 fn process_logical_rdd(
     node: &Value,
-    is_subquery: bool,
+    project_count: &mut usize,
     conv_object: &mut ConverterObject,
 ) -> Result<Arc<IrPlan>, Box<ConversionError>> {
     // Extract table name from column expression IDs
@@ -268,18 +266,18 @@ fn process_logical_rdd(
         table_name: table_name.clone(),
     });
 
-    let stream_name = if is_subquery {
-        format!("substream{}", conv_object.stream_index)
-    } else {
-        format!("stream{}", conv_object.stream_index)
-    };
+    let mut final_stream_name = String::new();
+    for _ in 1..*project_count {
+        final_stream_name.push_str("sub");
+    }
+    final_stream_name.push_str(&format!("stream{}", conv_object.stream_index));
 
     let plan = Arc::new(IrPlan::Scan {
         input: table_node,
-        stream_name,
+        stream_name: final_stream_name,
         alias: Some(table_name),
     });
 
-    conv_object.stream_index -= 1; // Decrement the stream index for the next node
+    conv_object.stream_index += 1; // Increment the stream index for the next node
     Ok(plan)
 }
