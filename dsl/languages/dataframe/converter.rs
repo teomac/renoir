@@ -24,7 +24,7 @@ pub fn build_ir_ast_df(
     }
 
     println!("Catalyst plan: {:?}", plan);
-    let mut project_count: usize = 0;
+    let mut project_count:i64 = 0;
 
     // Start processing from the root node
     let final_ast = process_node(plan, 0, &mut project_count, conv_object)
@@ -41,7 +41,7 @@ pub fn build_ir_ast_df(
 pub fn process_node(
     full_plan: &[Value],
     current_index: usize,
-    project_count: &mut usize,
+    project_count: &mut i64,
     conv_object: &mut ConverterObject,
 ) -> Result<(Arc<IrPlan>, usize), Box<ConversionError>> {
     let node = full_plan
@@ -72,6 +72,8 @@ pub fn process_node(
             // Increment the project count
             *project_count += 1;
 
+            let current_project_count = *project_count;
+
             // Get the child node
             let child_idx = node
                 .get("child")
@@ -88,7 +90,7 @@ pub fn process_node(
 
             // Process the project node
             Ok((
-                process_project(node, input_plan, project_count, conv_object)?,
+                process_project(node, input_plan, &current_project_count, conv_object)?,
                 index,
             ))
         }
@@ -121,8 +123,8 @@ pub fn process_node(
                 .unwrap();
 
             // Reset project count for each join child to properly track nested Projects
-            let mut left_project_count: usize = *project_count;
-            let mut right_project_count: usize = *project_count + 1;
+            let mut left_project_count: i64 = *project_count;
+            let mut right_project_count: i64 = *project_count;
 
             let (left_child, index) = process_join_child(
                 current_index + left_child_idx as usize + 1,
@@ -216,7 +218,7 @@ pub fn process_node(
             )
         }
         "LogicalRDD" | "LogicalRelation" => {
-            let is_subquery = *project_count > 1;
+            *project_count += 1; // Increment project count for table scans
             // This is a base table scan
             Ok((
                 process_logical_rdd(node, project_count, conv_object)?,
@@ -232,7 +234,7 @@ pub fn process_node(
 /// Process a LogicalRDD node (table scan)
 fn process_logical_rdd(
     node: &Value,
-    project_count: &mut usize,
+    project_count: &mut i64,
     conv_object: &mut ConverterObject,
 ) -> Result<Arc<IrPlan>, Box<ConversionError>> {
     // Extract table name from column expression IDs
@@ -266,15 +268,12 @@ fn process_logical_rdd(
         table_name: table_name.clone(),
     });
 
-    let mut final_stream_name = String::new();
-    for _ in 1..*project_count {
-        final_stream_name.push_str("sub");
-    }
-    final_stream_name.push_str(&format!("stream{}", conv_object.stream_index));
+    let stream_name = conv_object.increment_and_get_stream_name(*project_count);
+
 
     let plan = Arc::new(IrPlan::Scan {
         input: table_node,
-        stream_name: final_stream_name,
+        stream_name,
         alias: Some(table_name),
     });
 

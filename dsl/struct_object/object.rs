@@ -402,13 +402,8 @@ impl QueryObject {
         let all_structs = self.table_to_struct_name.clone();
         let csvs = self.table_to_csv.clone();
 
-        println!("Structs: {:?}", all_structs);
-        println!("CSV: {:?}", csvs);
-        println!("Streams: {:?}", all_stream_names);
-
         for stream in all_stream_names.iter() {
             let stream_obj = self.get_mut_stream(stream);
-            println!("Stream: {:?}", stream_obj);
             if stream_obj.op_chain.is_empty() {
                 let table_name = stream_obj.source_table.clone();
                 let struct_name = all_structs.get(&table_name).unwrap();
@@ -571,8 +566,6 @@ impl QueryObject {
                                 } else {
                                     &stream.final_struct.get(stream.final_struct.keys().last().unwrap()).unwrap().clone()
                                 };
-
-                                println!("Struct map: {:?}", struct_map);
 
                                 for (col_name, col_type) in struct_map {
                                     let full_col_name = format!("{}_{}", col_name, alias);

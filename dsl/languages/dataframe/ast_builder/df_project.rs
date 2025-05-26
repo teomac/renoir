@@ -12,12 +12,11 @@ use super::df_utils::ConverterObject;
 pub(crate) fn process_project(
     node: &Value,
     input_plan: Arc<IrPlan>,
-    project_count: &mut usize,
+    project_count: &i64,
     conv_object: &mut ConverterObject,
 ) -> Result<Arc<IrPlan>, Box<ConversionError>> {
     // Get the stream name for this projection
     let stream_name = conv_object.increment_and_get_stream_name(*project_count);
-    println!("Processing Project node with stream name: {}", stream_name);
     // Extract the project list
     let project_list = node
         .get("projectList")
@@ -152,7 +151,7 @@ pub(crate) fn process_project(
 pub(crate) fn process_project_agg(
     project_list: &[Value],
     input_plan: Arc<IrPlan>,
-    _project_count: &mut usize,
+    _project_count: &mut i64,
     conv_object: &mut ConverterObject,
 ) -> Result<Arc<IrPlan>, Box<ConversionError>> {
     let mut columns = Vec::new();
@@ -196,7 +195,7 @@ pub(crate) fn process_project_agg(
 
 fn process_projection_array(
     projection_array: &[Value],
-    project_count: &mut usize,
+    project_count: &i64,
     needs_auto_aliases: bool,
     conv_object: &mut ConverterObject,
 ) -> Result<(ProjectionColumn, Vec<(usize, String, String)>), Box<ConversionError>> {
@@ -266,7 +265,7 @@ fn process_projection_array(
                 // If this is an alias, we need to update the expr ID for the alias itself
                 if let Ok(alias_expr_id) = ConverterObject::extract_expr_id(expr) {
                     let final_column_name = match &column {
-                        ProjectionColumn::Column(col_ref, Some(alias)) => alias.clone(),
+                        ProjectionColumn::Column(_, Some(alias)) => alias.clone(),
                         ProjectionColumn::Column(col_ref, None) => col_ref.column.clone(),
                         ProjectionColumn::Aggregate(_, Some(alias)) => alias.clone(),
                         ProjectionColumn::Aggregate(agg, None) => {
@@ -317,7 +316,7 @@ fn process_projection_array(
 fn process_expression(
     expr_array: &[Value],
     idx: usize,
-    project_count: &mut usize,
+    project_count: &i64,
     alias: Option<String>,
     needs_auto_aliases: bool,
     conv_object: &mut ConverterObject,
@@ -492,7 +491,7 @@ fn process_aggregate(
 
     if child_type == "AttributeReference" {
         // Resolve the column using expr ID
-        let (expr_id, original_column, original_source) =
+        let (_, original_column, original_source) =
             conv_object.resolve_projection_column(child)?;
 
         let column_ref = ColumnRef {
@@ -789,7 +788,7 @@ fn process_aggregate_field(
 
     // Resolve child column using expr ID
     let child_expr = &expr_array[idx + child_idx + 1];
-    let (expr_id, original_column, original_source) =
+    let (_, original_column, original_source) =
         conv_object.resolve_projection_column(child_expr)?;
 
     let column_ref = ColumnRef {

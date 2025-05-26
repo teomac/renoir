@@ -10,7 +10,7 @@ use crate::dsl::languages::dataframe::converter::process_node;
 /// Process a ScalarSubquery node from a Catalyst plan
 pub(crate) fn process_scalar_subquery(
     node: &Value,
-    project_count: &mut usize,
+    project_count: &i64,
     conv_object: &mut ConverterObject,
 ) -> Result<ComplexField, Box<ConversionError>> {
     // Extract the subquery plan
@@ -24,14 +24,15 @@ pub(crate) fn process_scalar_subquery(
     }
 
     // Process the subquery plan to generate an IR plan
-    // We need to increment the project count to ensure unique naming for nested projections
-    *project_count += 1;
+    // We need to increment the project count to ensure unique naming for nested projection
+
+    let mut project_count_new = *project_count + 1;
 
     // Start processing from the root node of the subquery plan (index 0)
     let (subquery_ir_plan, _) = process_node(
         subquery_plan,
         0, 
-        project_count,
+        &mut project_count_new,
         conv_object,
     )?;
 

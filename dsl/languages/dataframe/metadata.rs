@@ -1,6 +1,6 @@
 use indexmap::IndexMap;
 use serde_json::Value;
-use std::{collections::HashMap, io};
+use std::io;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -174,13 +174,6 @@ pub fn extract_expr_ids(
     //Third pass: process LogicalRelation nodes to match them to input tables
     let _ = add_initial_table_mappings(&mut expr_to_column_source, input_tables);
 
-    // Process alias propagation to propagate column assignments through aliases
-    //process_alias_propagation(catalyst_plan, &mut expr_to_column_source);
-
-    println!(
-        "Expression to column/source mapping: {:?}",
-        expr_to_column_source
-    );
     expr_to_column_source
 }
 
@@ -416,94 +409,6 @@ fn match_relation_to_table(
 
     // Last resort: use "unknown_table" as fallback
     "unknown_table".to_string()
-}
-
-/// Process the plan to propagate column assignments through aliases
-///
-/// # Arguments
-/// * `catalyst_plan` - The Catalyst logical plan as a JSON Value array
-/// * `expr_to_column_source` - Mutable reference to expression ID -> (column_name, source_name) mapping
-fn process_alias_propagation(
-    catalyst_plan: &[Value],
-    expr_to_column_source: &mut IndexMap<usize, (String, String)>,
-) {
-    // First, identify all alias relationships (new_expr_id -> source_expr_id)
-    let mut alias_relationships: HashMap<usize, usize> = HashMap::new();
-
-    for node in catalyst_plan {
-        if let Some(class) = node["class"].as_str() {
-            if class.ends_with("Project") {
-                if let Some(proj_list) = node["projectList"].as_array() {
-                    for proj_array in proj_list {
-                        if let Some(projections) = proj_array.as_array() {
-                            // Handle Alias expressions
-                            if projections.len() >= 2 {
-                                let first = &projections[0];
-                                if let Some(first_class) = first["class"].as_str() {
-                                    if first_class.ends_with("Alias") {
-                                        // Get alias expression ID
-                                        if let (Some(expr_id_obj), Some(child_idx)) = (
-                                            first.get("exprId"),
-                                            first.get("child").and_then(|c| c.as_u64()),
-                                        ) {
-                                            if let Some(id) =
-                                                expr_id_obj.get("id").and_then(|id| id.as_u64())
-                                            {
-                                                let alias_id = id as usize;
-
-                                                // Find the source column
-                                                let source_idx = (child_idx + 1) as usize;
-                                                if projections.len() > source_idx {
-                                                    let source = &projections[source_idx];
-                                                    if let Some(source_expr_id) =
-                                                        source.get("exprId")
-                                                    {
-                                                        if let Some(src_id) = source_expr_id
-                                                            .get("id")
-                                                            .and_then(|id| id.as_u64())
-                                                        {
-                                                            let source_id = src_id as usize;
-                                                            alias_relationships
-                                                                .insert(alias_id, source_id);
-                                                        }
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    // Now propagate column assignments through aliases
-    // We may need multiple passes to handle chains of aliases
-    let mut changes_made = true;
-    let mut iterations = 0;
-    let max_iterations = 10; // Prevent infinite loops
-
-    while changes_made && iterations < max_iterations {
-        changes_made = false;
-        iterations += 1;
-
-        // Clone to avoid borrowing issues
-        let relationships = alias_relationships.clone();
-
-        for (alias_id, source_id) in relationships {
-            // If the source has a column/source but the alias doesn't, propagate
-            if let Some((column_name, source_name)) = expr_to_column_source.get(&source_id).cloned()
-            {
-                if let indexmap::map::Entry::Vacant(e) = expr_to_column_source.entry(alias_id) {
-                    e.insert((column_name.clone(), source_name.clone()));
-                    changes_made = true;
-                }
-            }
-        }
-    }
 }
 
 /// Add initial table mappings based on LogicalRelation nodes

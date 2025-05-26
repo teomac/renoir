@@ -13,7 +13,7 @@ use super::df_utils::ConverterObject;
 pub(crate) fn process_filter(
     node: &Value,
     input_plan: Arc<IrPlan>,
-    project_count: &mut usize,
+    project_count: &mut i64,
     conv_object: &mut ConverterObject,
 ) -> Result<Arc<IrPlan>, Box<ConversionError>> {
     // Extract the condition array
@@ -45,7 +45,7 @@ pub(crate) fn process_filter(
 pub(crate) fn process_condition_node(
     condition_array: &[Value],
     idx: usize,
-    project_count: &mut usize,
+    project_count: &mut i64,
     conv_object: &mut ConverterObject,
 ) -> Result<(FilterClause, usize), Box<ConversionError>> {
     if idx >= condition_array.len() {
@@ -144,7 +144,7 @@ fn process_binary_op_node(
     condition_array: &[Value],
     op: &str,
     idx: usize,
-    project_count: &mut usize,
+    project_count: &mut i64,
     conv_object: &mut ConverterObject,
 ) -> Result<(FilterClause, usize), Box<ConversionError>> {
     // Process left operand (always the next node)
@@ -179,7 +179,7 @@ fn process_binary_op_node(
 fn process_not_node(
     condition_array: &[Value],
     idx: usize,
-    project_count: &mut usize,
+    project_count: &mut i64,
     conv_object: &mut ConverterObject,
 ) -> Result<(FilterClause, usize), Box<ConversionError>> {
     // Get the child index
@@ -296,7 +296,7 @@ fn process_null_node(
     condition_array: &[Value],
     op: &str,
     idx: usize,
-    project_count: &mut usize,
+    project_count: &mut i64,
     conv_object: &mut ConverterObject,
 ) -> Result<(FilterClause, usize), Box<ConversionError>> {
     // The attribute reference should be the next node
@@ -334,7 +334,7 @@ fn process_comparison_node(
     condition_array: &[Value],
     node_type: &str,
     idx: usize,
-    project_count: &mut usize,
+    project_count: &mut i64,
     conv_object: &mut ConverterObject,
 ) -> Result<(FilterClause, usize), Box<ConversionError>> {
     let node = &condition_array[idx];
@@ -386,7 +386,7 @@ fn process_comparison_node(
 fn process_pow_node(
     condition_array: &[Value],
     idx: usize,
-    project_count: &mut usize,
+    project_count: &mut i64,
     conv_object: &mut ConverterObject,
 ) -> Result<(ComplexField, usize), Box<ConversionError>> {
     let node = &condition_array[idx];
@@ -431,7 +431,7 @@ fn process_arithmetic_node(
     condition_array: &[Value],
     idx: usize,
     op: &str,
-    project_count: &mut usize,
+    project_count: &mut i64,
     conv_object: &mut ConverterObject,
 ) -> Result<(ComplexField, usize), Box<ConversionError>> {
     let node = &condition_array[idx];
@@ -532,7 +532,7 @@ fn process_literal_node(
 fn process_expression(
     condition_array: &[Value],
     idx: usize,
-    project_count: &mut usize,
+    project_count: &mut i64,
     conv_object: &mut ConverterObject,
 ) -> Result<(ComplexField, usize), Box<ConversionError>> {
     if idx >= condition_array.len() {

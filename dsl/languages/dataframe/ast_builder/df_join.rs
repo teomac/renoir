@@ -278,7 +278,7 @@ fn process_simple_equality(
 pub(crate) fn process_join_child(
     child_index: usize,
     full_plan: &[Value],
-    project_count: &mut usize,
+    project_count: &mut i64,
     conv_object: &mut ConverterObject,
 ) -> Result<(Arc<IrPlan>, usize), Box<ConversionError>> {
     
@@ -297,7 +297,6 @@ pub(crate) fn process_join_child(
             // Extract alias from the first column that has a table reference
             let alias = extract_alias_from_columns(columns);
             
-            println!("project count: {}", project_count);
             // Get the next stream name for this join child
             let stream_name = conv_object.increment_and_get_stream_name(*project_count);
             
@@ -352,174 +351,4 @@ fn extract_alias_from_columns(columns: &[ProjectionColumn]) -> Option<String> {
         }
     }
     None
-}
-
-pub fn process_join_condition(
-    condition_array: &[Value],
-    idx: usize,
-    conv_object: &mut ConverterObject,
-) -> Result<(Vec<JoinCondition>, usize), Box<ConversionError>> {
-    if idx >= condition_array.len() {
-        return Err(Box::new(ConversionError::InvalidExpression));
-    }
-
-    let node = &condition_array[idx];
-
-    // Get the class name
-    let class = node
-        .get("class")
-        .and_then(|c| c.as_str())
-        .ok_or_else(|| Box::new(ConversionError::InvalidClassName))?;
-
-    let node_type = class
-        .split('.')
-        .last()
-        .ok_or_else(|| Box::new(ConversionError::InvalidClassName))?;
-
-    match node_type {
-        "And" => process_binary_operator(condition_array, idx, conv_object),
-        "EqualTo" => process_comparison(condition_array, idx, conv_object),
-        _ => Err(Box::new(ConversionError::UnsupportedExpressionType(
-            node_type.to_string(),
-        ))),
-    }
-}
-
-pub fn process_attribute_reference(
-    condition_array: &[Value],
-    idx: usize,
-    conv_object: &mut ConverterObject,
-) -> Result<(ColumnRef, usize), Box<ConversionError>> {
-    let node = &condition_array[idx];
-
-    // Use expression ID resolution to get proper column reference
-    let (_, column_name, source_name) = 
-        conv_object.resolve_projection_column(node)
-            .map_err(|_| Box::new(ConversionError::InvalidExpression))?;
-
-    let column_ref = ColumnRef {
-        table: Some(source_name),
-        column: column_name,
-    };
-
-    Ok((column_ref, idx + 1))
-}
-
-pub fn process_binary_operator(
-    condition_array: &[Value],
-    idx: usize,
-    conv_object: &mut ConverterObject,
-) -> Result<(Vec<JoinCondition>, usize), Box<ConversionError>> {
-    // Process left operand (always the next node)
-    let (left_clause, next_idx) = process_comparison(condition_array, idx + 1, conv_object)?;
-
-    // Process right operand (starts after the left branch is complete)
-    let (right_clause, final_idx) = process_comparison(condition_array, next_idx, conv_object)?;
-
-    Ok((
-        [left_clause[0].clone(), right_clause[0].clone()].to_vec(),
-        final_idx,
-    ))
-}
-
-pub fn process_comparison(
-    condition_array: &[Value],
-    idx: usize,
-    conv_object: &mut ConverterObject,
-) -> Result<(Vec<JoinCondition>, usize), Box<ConversionError>> {
-    let node = &condition_array[idx];
-
-    // Get indices for left and right expressions
-    let left_idx = node
-        .get("left")
-        .and_then(|l| l.as_u64())
-        .ok_or_else(|| Box::new(ConversionError::MissingField("left".to_string())))?
-        as usize;
-
-    // Process left expression using expr ID resolution
-    let (left_field, next_idx) =
-        process_attribute_reference(condition_array, idx + left_idx + 1, conv_object)?;
-
-    // Process right expression using expr ID resolution
-    let (right_field, final_idx) =
-        process_attribute_reference(condition_array, next_idx, conv_object)?;
-
-    Ok((
-        [JoinCondition {
-            left_col: left_field,
-            right_col: right_field,
-        }]
-        .to_vec(),
-        final_idx,
-    ))
-}
-
-/// Update expression mappings after a join operation
-/// This function handles the complex task of updating expr IDs to reflect
-/// the new column structure after a join
-pub fn update_expr_mappings_after_join(
-    conv_object: &mut ConverterObject,
-    left_stream_name: &str,
-    right_stream_name: &str,
-    result_stream_name: &str,
-) -> Result<(), Box<ConversionError>> {
-    let mut new_mappings = Vec::new();
-
-    // Clone the current mappings to avoid borrowing issues
-    let current_mappings = conv_object.expr_to_source.clone();
-
-    for (expr_id, (column_name, source_name)) in current_mappings {
-        // Determine the new source name based on where the column came from
-        let new_source = if source_name == left_stream_name || source_name == right_stream_name {
-            // This column came from one of the join inputs, update to result stream
-            result_stream_name.to_string()
-        } else {
-            // This column is from somewhere else, keep the original source
-            source_name.clone()
-        };
-
-        // For join results, we might want to qualify column names to avoid conflicts
-        // This depends on your specific requirements
-        let new_column_name = if source_name == left_stream_name || source_name == right_stream_name {
-            // Option 1: Keep original column name
-            column_name
-            
-            // Option 2: Qualify with source (uncomment if needed)
-            // format!("{}_{}", column_name, source_name)
-        } else {
-            column_name
-        };
-
-        new_mappings.push((expr_id, new_column_name, new_source));
-    }
-
-    // Apply all updates
-    conv_object.update_projection_mappings(new_mappings);
-
-    Ok(())
-}
-
-/// Helper function to determine join result column names
-/// This can be used to generate appropriate column names after joins
-pub fn generate_join_result_columns(
-    left_columns: &[String],
-    right_columns: &[String],
-    left_alias: &str,
-    right_alias: &str,
-) -> Vec<(String, String)> {
-    let mut result_columns = Vec::new();
-
-    // Add left table columns with qualification
-    for column in left_columns {
-        let qualified_name = format!("{}_{}", column, left_alias);
-        result_columns.push((column.clone(), qualified_name));
-    }
-
-    // Add right table columns with qualification
-    for column in right_columns {
-        let qualified_name = format!("{}_{}", column, right_alias);
-        result_columns.push((column.clone(), qualified_name));
-    }
-
-    result_columns
 }

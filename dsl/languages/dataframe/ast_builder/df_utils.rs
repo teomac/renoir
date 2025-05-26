@@ -1,6 +1,6 @@
 // dsl/languages/dataframe/ast_builder/df_utils.rs
 
-use crate::dsl::ir::{ColumnRef, IrLiteral, ProjectionColumn};
+use crate::dsl::ir::{ColumnRef, IrLiteral};
 use crate::dsl::languages::dataframe::conversion_error::ConversionError;
 use indexmap::IndexMap;
 use serde_json::Value;
@@ -9,7 +9,6 @@ use serde_json::Value;
 pub struct ConverterObject {
     pub expr_to_source: IndexMap<usize, (String, String)>,
     pub stream_index: usize,
-    pub needs_alias: bool,
 }
 
 impl ConverterObject {
@@ -17,7 +16,6 @@ impl ConverterObject {
         ConverterObject {
             expr_to_source,
             stream_index: 0,
-            needs_alias: false,
         }
     }
 
@@ -144,17 +142,6 @@ impl ConverterObject {
         })
     }
 
-     /// Update column and source information for an expression ID
-    pub fn update_expr_mapping(
-        &mut self,
-        expr_id: usize,
-        column_name: String,
-        source_name: String,
-    ) {
-        self.expr_to_source
-            .insert(expr_id, (column_name, source_name));
-    }
-
     /// Bulk update expression mappings after processing a projection
     /// This is called after processing all projection columns to update their expr IDs
     /// with new source names and aliases
@@ -207,74 +194,10 @@ impl ConverterObject {
         Ok((expr_id, column_name, source_name))
     }
 
-    /// Collect all expression IDs from a list of projection columns
-    /// This is used to determine which expr IDs need to be updated after projection processing
-    pub fn collect_projection_expr_ids(
-        &self,
-        columns: &[ProjectionColumn],
-    ) -> Result<Vec<usize>, Box<ConversionError>> {
-        let mut expr_ids = Vec::new();
-
-        for column in columns {
-            match column {
-                ProjectionColumn::Column(col_ref, _) => {
-                    // For column references, we need to find the expr ID that maps to this column
-                    // This is a reverse lookup in our mapping
-                    if let Some(table) = &col_ref.table {
-                        // Look for expr ID that maps to (column_name, table_name)
-                        for (expr_id, (mapped_col, mapped_source)) in &self.expr_to_source {
-                            if mapped_col == &col_ref.column && mapped_source == table {
-                                expr_ids.push(*expr_id);
-                                break;
-                            }
-                        }
-                    } else {
-                        // Look for any expr ID that maps to this column name
-                        for (expr_id, (mapped_col, _)) in &self.expr_to_source {
-                            if mapped_col == &col_ref.column {
-                                expr_ids.push(*expr_id);
-                                break;
-                            }
-                        }
-                    }
-                }
-                // For other projection types (aggregates, complex values), 
-                // we'll handle them when we process the actual projection
-                _ => continue,
-            }
-        }
-
-        Ok(expr_ids)
-    }
-
-    /// Get the current column name for an expression ID
-    pub fn get_column_name(&self, expr_id: &usize) -> Option<String> {
-        self.expr_to_source.get(expr_id).map(|(col, _)| col.clone())
-    }
-
-    /// Get the current source name for an expression ID
-    pub fn get_source_name(&self, expr_id: &usize) -> Option<String> {
-        self.expr_to_source.get(expr_id).map(|(_, src)| src.clone())
-    }
-
-    /// Get all expression IDs for a specific source
-    pub fn get_expr_ids_for_source(&self, source_name: &str) -> Vec<usize> {
-        self.expr_to_source
-            .iter()
-            .filter(|(_, (_, src))| src == source_name)
-            .map(|(expr_id, _)| expr_id.clone())
-            .collect()
-    }
-
-    /// Get the next stream name based on current stream_index
-    pub fn get_next_stream_name(&self) -> String {
-        format!("stream{}", self.stream_index)
-    }
-
     /// Increment stream index and return the new stream name
-    pub fn increment_and_get_stream_name(&mut self, index: usize) -> String {
+    pub fn increment_and_get_stream_name(&mut self, index: i64) -> String {
         let mut result = String::new();
-        for _ in 1..index {
+        for _ in 2..index {
             result.push_str("sub");
         }
         let stream_name = format!("stream{}", self.stream_index);
