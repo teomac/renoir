@@ -95,6 +95,10 @@ pub fn process_node(
             ))
         }
         "Filter" => {
+            if *project_count == 0{
+                *project_count += 1; // Increment project count for the first filter
+            }
+            let current_project_count = *project_count;
             // Get the child node
             let child_idx = node
                 .get("child")
@@ -111,7 +115,7 @@ pub fn process_node(
             )?;
             // Process the filter node
             Ok((
-                process_filter(node, input_plan, project_count, conv_object)?,
+                process_filter(node, input_plan, current_project_count, conv_object)?,
                 index,
             ))
         }
@@ -142,6 +146,10 @@ pub fn process_node(
             ))
         }
         "Aggregate" => {
+            // Increment the project count
+            *project_count += 1;
+
+            let current_project_count = *project_count;
             //Get the child node
             let child_idx = node
                 .get("child")
@@ -159,7 +167,7 @@ pub fn process_node(
 
             //Now process the aggregate node
             Ok((
-                process_aggregate(node, input_plan, project_count, conv_object)?,
+                process_aggregate(node, input_plan, &current_project_count, conv_object)?,
                 index,
             ))
         }

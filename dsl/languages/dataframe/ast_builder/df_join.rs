@@ -121,7 +121,7 @@ fn extract_join_conditions(
                             // add it as a complex condition
                             if let Ok((filter_clause, _)) = 
                                 crate::dsl::languages::dataframe::ast_builder::df_filter::process_condition_node(
-                                    condition_array, i, &mut 0, conv_object
+                                    condition_array, i,  0, conv_object
                                 ) {
                                 complex_conditions.push(filter_clause);
                             }
@@ -131,7 +131,7 @@ fn extract_join_conditions(
                         // These operators are always complex conditions
                         if let Ok((filter_clause, _)) = 
                             crate::dsl::languages::dataframe::ast_builder::df_filter::process_condition_node(
-                                condition_array, i, &mut 0, conv_object
+                                condition_array, i,  0, conv_object
                             ) {
                             complex_conditions.push(filter_clause);
                         }
@@ -147,7 +147,7 @@ fn extract_join_conditions(
                 // Not a simple equality
                 if let Ok((filter_clause, _)) = 
                     crate::dsl::languages::dataframe::ast_builder::df_filter::process_condition_node(
-                        condition_array, 0, &mut 0, conv_object
+                        condition_array, 0, 0, conv_object
                     ) {
                     complex_conditions.push(filter_clause);
                 }
@@ -157,7 +157,7 @@ fn extract_join_conditions(
             // Any other condition is treated as complex
             if let Ok((filter_clause, _)) = 
                 crate::dsl::languages::dataframe::ast_builder::df_filter::process_condition_node(
-                    condition_array, 0, &mut 0, conv_object
+                    condition_array, 0,  0, conv_object
                 ) {
                 complex_conditions.push(filter_clause);
             }

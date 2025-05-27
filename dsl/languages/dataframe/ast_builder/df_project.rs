@@ -55,79 +55,14 @@ pub(crate) fn process_project(
         ));
     }
 
-    // Update all projection expr IDs with new source name and correct column names
-    for (expr_id, column_name, source_name) in &mut projection_updates {
-        *source_name = stream_name.clone(); // Update source name to new stream
-
-        // If we generated auto-aliases, we need to update the column name in the mapping
-        // to match what was actually projected
-        if needs_auto_aliases {
-            // Find the corresponding column in our processed columns to get the actual name used
-            for column in &columns {
-                match column {
-                    ProjectionColumn::Column(col_ref, alias) => {
-                        // Check if this column corresponds to our expr_id by comparing original names
-                        if let Some((mapped_col, _)) = conv_object.expr_to_source.get(expr_id) {
-                            if mapped_col == &col_ref.column {
-                                // Update to the final column name (alias or auto-generated name)
-                                if let Some(alias_name) = alias {
-                                    *column_name = alias_name.clone();
-                                } else {
-                                    // This should be the auto-generated name
-                                    *column_name = conv_object.generate_auto_alias(
-                                        &col_ref.column,
-                                        col_ref.table.as_ref().unwrap_or(&"unknown".to_string()),
-                                        needs_auto_aliases,
-                                    );
-                                }
-                                break;
-                            }
-                        }
-                    }
-                    ProjectionColumn::Aggregate(agg_func, alias) => {
-                        // Handle aggregate projections similarly
-                        if let Some((mapped_col, _)) = conv_object.expr_to_source.get(expr_id) {
-                            let expected_agg_name = format!(
-                                "{}_{}",
-                                agg_func.function.to_string().to_lowercase(),
-                                agg_func.column.column
-                            );
-                            if mapped_col.contains(&agg_func.column.column)
-                                || mapped_col == &expected_agg_name
-                            {
-                                if let Some(alias_name) = alias {
-                                    *column_name = alias_name.clone();
-                                } else if needs_auto_aliases {
-                                    *column_name = format!(
-                                        "{}_{}_{}",
-                                        agg_func.function.to_string().to_lowercase(),
-                                        agg_func.column.column,
-                                        agg_func
-                                            .column
-                                            .table
-                                            .as_ref()
-                                            .unwrap_or(&"unknown".to_string())
-                                    );
-                                }
-                                break;
-                            }
-                        }
-                    }
-                    ProjectionColumn::ComplexValue(_, alias) => {
-                        // Handle complex expressions
-                        if let Some(alias_name) = alias {
-                            *column_name = alias_name.clone();
-                        }
-                        // For complex expressions without aliases, keep the generated name
-                    }
-                    _ => continue,
-                }
-            }
-        }
+    // Update projection expr IDs - but only for the expressions that are actually being projected
+    // and only update the ones that correspond to the new stream we're creating
+    for (expr_id, new_column_name, _) in &projection_updates {
+        // Only update the source to the new stream name for expressions that are being projected
+        conv_object
+            .expr_to_source
+            .insert(*expr_id, (new_column_name.clone(), stream_name.clone()));
     }
-
-    // Apply all expr ID updates to the converter object
-    conv_object.update_projection_mappings(projection_updates);
 
     let project_node = Arc::new(IrPlan::Project {
         input: input_plan,
@@ -151,11 +86,12 @@ pub(crate) fn process_project(
 pub(crate) fn process_project_agg(
     project_list: &[Value],
     input_plan: Arc<IrPlan>,
-    _project_count: &mut i64,
+    project_count: &i64,
     conv_object: &mut ConverterObject,
 ) -> Result<Arc<IrPlan>, Box<ConversionError>> {
     let mut columns = Vec::new();
     let mut projection_updates = Vec::new();
+    let stream_name = conv_object.increment_and_get_stream_name(*project_count);
 
     // Check if we need auto-aliases (only when input is a Join node)
     let needs_auto_aliases = matches!(&*input_plan, IrPlan::Join { .. });
@@ -165,7 +101,7 @@ pub(crate) fn process_project_agg(
         if let Some(projections) = projection_array.as_array() {
             let (projection_column, expr_updates) = process_projection_array(
                 projections,
-                _project_count,
+                project_count,
                 needs_auto_aliases,
                 conv_object,
             )?;
@@ -184,13 +120,33 @@ pub(crate) fn process_project_agg(
         ));
     }
 
+    // Update projection expr IDs - but only for the expressions that are actually being projected
+    // and only update the ones that correspond to the new stream we're creating
+    for (expr_id, new_column_name, _) in &projection_updates {
+        // Only update the source to the new stream name for expressions that are being projected
+        conv_object
+            .expr_to_source
+            .insert(*expr_id, (new_column_name.clone(), stream_name.clone()));
+    }
+
     // For aggregates, we don't create a new scan node immediately
     // The calling function will handle that
-    Ok(Arc::new(IrPlan::Project {
+    let project_node = Arc::new(IrPlan::Project {
         input: input_plan,
         columns,
         distinct: false,
-    }))
+    });
+
+    if *project_count > 1 {
+        // Create the Scan node with the same stream name
+        Ok(Arc::new(IrPlan::Scan {
+            input: project_node,
+            stream_name: stream_name.clone(),
+            alias: Some(stream_name),
+        }))
+    } else {
+        Ok(project_node.clone())
+    }
 }
 
 fn process_projection_array(
@@ -253,7 +209,7 @@ fn process_projection_array(
                     .ok_or_else(|| Box::new(ConversionError::MissingField("child".to_string())))?;
 
                 // Process the child expression with the alias
-                let (column, mut child_updates) = process_expression(
+                let (column, _, mut child_updates) = process_expression(
                     projection_array,
                     (child_idx as usize) + 1,
                     project_count,
@@ -294,7 +250,7 @@ fn process_projection_array(
             }
             _ => {
                 // Directly process the expression
-                let (column, updates) = process_expression(
+                let (column, _, updates) = process_expression(
                     projection_array,
                     0,
                     project_count,
@@ -320,7 +276,7 @@ fn process_expression(
     alias: Option<String>,
     needs_auto_aliases: bool,
     conv_object: &mut ConverterObject,
-) -> Result<(ProjectionColumn, Vec<(usize, String, String)>), Box<ConversionError>> {
+) -> Result<(ProjectionColumn, usize, Vec<(usize, String, String)>), Box<ConversionError>> {
     if idx >= expr_array.len() {
         return Err(Box::new(ConversionError::InvalidExpression));
     }
@@ -347,7 +303,7 @@ fn process_expression(
             // Determine final column name and alias
             let column_alias = if let Some(alias_name) = alias {
                 // User provided alias - use as-is
-                Some(alias_name)
+                Some(alias_name.clone())
             } else if needs_auto_aliases {
                 // Auto-generate alias for join projections
                 let auto_alias = conv_object.generate_auto_alias(
@@ -355,7 +311,7 @@ fn process_expression(
                     &original_source,
                     needs_auto_aliases,
                 );
-                Some(auto_alias)
+                Some(auto_alias.clone())
             } else {
                 // No alias needed
                 None
@@ -367,12 +323,16 @@ fn process_expression(
                 column: original_column.clone(),
             };
 
-            // Track this expr ID for updating (use the alias name if present, otherwise original)
-            let mapping_name = column_alias.clone().unwrap_or(original_column.clone());
-            expr_updates.push((expr_id, mapping_name, "placeholder".to_string()));
+            // For the expression updates, use the final column name (alias if present, otherwise original)
+            let final_column_name = column_alias.clone().unwrap_or(original_column);
+
+            // Only track expression IDs that are actually being projected in this step
+            // This prevents overwriting expression IDs that shouldn't be updated
+            expr_updates.push((expr_id, final_column_name, "placeholder".to_string()));
 
             Ok((
                 ProjectionColumn::Column(column_ref, column_alias),
+                idx + 1,
                 expr_updates,
             ))
         }
@@ -389,6 +349,7 @@ fn process_expression(
             };
             Ok((
                 ProjectionColumn::ComplexValue(complex_field, alias),
+                idx + 1,
                 expr_updates,
             ))
         }
@@ -396,7 +357,7 @@ fn process_expression(
             process_aggregate(expr_array, idx + 1, alias, needs_auto_aliases, conv_object)
         }
         "Add" | "Subtract" | "Multiply" | "Divide" | "Pow" => {
-            let (complex_field, updates) = process_arithmetic_operation(
+            let (complex_field, next_idx, updates) = process_arithmetic_operation(
                 expr_array,
                 idx,
                 expr_type,
@@ -406,6 +367,7 @@ fn process_expression(
             expr_updates.extend(updates);
             Ok((
                 ProjectionColumn::ComplexValue(complex_field, alias),
+                next_idx,
                 expr_updates,
             ))
         }
@@ -432,6 +394,7 @@ fn process_expression(
                 process_scalar_subquery(&expr_array[idx], project_count, conv_object)?;
             Ok((
                 ProjectionColumn::ComplexValue(complex_field, alias),
+                idx + 1,
                 expr_updates,
             ))
         }
@@ -448,7 +411,7 @@ fn process_aggregate(
     alias: Option<String>,
     needs_auto_aliases: bool,
     conv_object: &mut ConverterObject,
-) -> Result<(ProjectionColumn, Vec<(usize, String, String)>), Box<ConversionError>> {
+) -> Result<(ProjectionColumn, usize, Vec<(usize, String, String)>), Box<ConversionError>> {
     let expr = &expr_array[idx];
     let mut expr_updates = Vec::new();
 
@@ -491,8 +454,7 @@ fn process_aggregate(
 
     if child_type == "AttributeReference" {
         // Resolve the column using expr ID
-        let (_, original_column, original_source) =
-            conv_object.resolve_projection_column(child)?;
+        let (_, original_column, original_source) = conv_object.resolve_projection_column(child)?;
 
         let column_ref = ColumnRef {
             table: Some(original_source.clone()),
@@ -536,6 +498,7 @@ fn process_aggregate(
 
         Ok((
             ProjectionColumn::Aggregate(agg_func, final_alias),
+            child_idx + 1,
             expr_updates,
         ))
     } else if child_type == "Literal" {
@@ -568,6 +531,7 @@ fn process_aggregate(
 
             return Ok((
                 ProjectionColumn::Aggregate(agg_func, final_alias),
+                child_idx + 1,
                 expr_updates,
             ));
         }
@@ -585,7 +549,7 @@ fn process_arithmetic_operation(
     op_type: &str,
     needs_auto_aliases: bool,
     conv_object: &mut ConverterObject,
-) -> Result<(ComplexField, Vec<(usize, String, String)>), Box<ConversionError>> {
+) -> Result<(ComplexField, usize, Vec<(usize, String, String)>), Box<ConversionError>> {
     let expr = &expr_array[idx];
     let mut expr_updates = Vec::new();
 
@@ -595,7 +559,7 @@ fn process_arithmetic_operation(
         .ok_or_else(|| Box::new(ConversionError::MissingField("left".to_string())))?
         as usize;
 
-    let (left_field, left_updates) = process_complex_field(
+    let (left_field, left_next_idx, left_updates) = process_complex_field(
         expr_array,
         idx + left_idx + 1,
         needs_auto_aliases,
@@ -616,7 +580,7 @@ fn process_arithmetic_operation(
         }
     };
 
-    let (right_field, right_updates) = process_complex_field(
+    let (right_field, right_next_idx, right_updates) = process_complex_field(
         expr_array,
         idx + left_idx + 2,
         needs_auto_aliases,
@@ -635,6 +599,7 @@ fn process_arithmetic_operation(
             subquery: None,
             subquery_vec: None,
         },
+        left_next_idx.max(right_next_idx),
         expr_updates,
     ))
 }
@@ -645,7 +610,7 @@ fn process_complex_field(
     idx: usize,
     needs_auto_aliases: bool,
     conv_object: &mut ConverterObject,
-) -> Result<(ComplexField, Vec<(usize, String, String)>), Box<ConversionError>> {
+) -> Result<(ComplexField, usize, Vec<(usize, String, String)>), Box<ConversionError>> {
     if idx >= expr_array.len() {
         return Err(Box::new(ConversionError::InvalidExpression));
     }
@@ -686,6 +651,7 @@ fn process_complex_field(
                     subquery: None,
                     subquery_vec: None,
                 },
+                idx + 1,
                 expr_updates,
             ))
         }
@@ -700,6 +666,7 @@ fn process_complex_field(
                     subquery: None,
                     subquery_vec: None,
                 },
+                idx + 1,
                 expr_updates,
             ))
         }
@@ -739,7 +706,7 @@ fn process_aggregate_field(
     idx: usize,
     agg_type: &str,
     conv_object: &mut ConverterObject,
-) -> Result<(ComplexField, Vec<(usize, String, String)>), Box<ConversionError>> {
+) -> Result<(ComplexField, usize, Vec<(usize, String, String)>), Box<ConversionError>> {
     let expr = &expr_array[idx];
     let expr_updates = Vec::new();
 
@@ -782,6 +749,7 @@ fn process_aggregate_field(
                 subquery: None,
                 subquery_vec: None,
             },
+            idx + 1,
             expr_updates,
         ));
     }
@@ -810,6 +778,7 @@ fn process_aggregate_field(
             subquery: None,
             subquery_vec: None,
         },
+        idx + child_idx + 2,
         expr_updates,
     ))
 }

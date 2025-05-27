@@ -178,6 +178,7 @@ impl ConverterObject {
         &self,
         node: &Value,
     ) -> Result<(usize, String, String), Box<ConversionError>> {
+        println!("expr_to_source: {:?}", self.expr_to_source);
         let expr_id = Self::extract_expr_id(node)?;
 
         let (column_name, source_name) =

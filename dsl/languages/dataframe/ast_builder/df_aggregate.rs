@@ -10,7 +10,7 @@ use super::df_utils::ConverterObject;
 pub(crate) fn process_aggregate(
     node: &Value,
     input_plan: Arc<IrPlan>,
-    project_count: &mut i64,
+    project_count: &i64,
     conv_object: &mut ConverterObject,
 ) -> Result<Arc<IrPlan>, Box<ConversionError>> {
     // Retrieve the grouping expressions array
