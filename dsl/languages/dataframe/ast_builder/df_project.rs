@@ -582,7 +582,7 @@ fn process_arithmetic_operation(
 
     let (right_field, right_next_idx, right_updates) = process_complex_field(
         expr_array,
-        idx + left_idx + 2,
+        left_next_idx,
         needs_auto_aliases,
         conv_object,
     )?;
