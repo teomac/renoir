@@ -425,6 +425,8 @@ fn process_aggregate(
         .last()
         .ok_or_else(|| Box::new(ConversionError::InvalidClassName))?;
 
+    println!("Processing aggregate type: {}", agg_type);
+
     let aggregate_type = match agg_type {
         "Sum" => AggregateType::Sum,
         "Min" => AggregateType::Min,
@@ -438,6 +440,8 @@ fn process_aggregate(
             )))
         }
     };
+
+    println!("Aggregate type resolved: {:?}", aggregate_type);
 
     let child_idx = idx + 1;
     let child = &expr_array[child_idx];
@@ -580,12 +584,8 @@ fn process_arithmetic_operation(
         }
     };
 
-    let (right_field, right_next_idx, right_updates) = process_complex_field(
-        expr_array,
-        left_next_idx,
-        needs_auto_aliases,
-        conv_object,
-    )?;
+    let (right_field, right_next_idx, right_updates) =
+        process_complex_field(expr_array, left_next_idx, needs_auto_aliases, conv_object)?;
     expr_updates.extend(right_updates);
 
     let nested_expr = Box::new((left_field, operator.to_string(), right_field, true));
@@ -671,7 +671,7 @@ fn process_complex_field(
             ))
         }
         "Sum" | "Min" | "Max" | "Avg" | "Count" => {
-            process_aggregate_field(expr_array, idx, expr_type, conv_object)
+            process_aggregate_field(expr_array, idx, conv_object)
         }
         "Add" | "Subtract" | "Multiply" | "Divide" | "Pow" => process_arithmetic_operation(
             expr_array,
@@ -694,6 +694,20 @@ fn process_complex_field(
                 conv_object,
             )
         }
+        "AggregateExpression" => {
+            // Extract the actual aggregate function from the AggregateExpression wrapper
+            let agg_func_idx = expr
+                .get("aggregateFunction")
+                .and_then(|af| af.as_u64())
+                .ok_or_else(|| {
+                    Box::new(ConversionError::MissingField(
+                        "aggregateFunction".to_string(),
+                    ))
+                })? as usize;
+
+            // Process the actual aggregate function
+            process_aggregate_field(expr_array, idx + agg_func_idx + 1, conv_object)
+        }
         _ => Err(Box::new(ConversionError::UnsupportedExpressionType(
             expr_type.to_string(),
         ))),
@@ -704,17 +718,21 @@ fn process_complex_field(
 fn process_aggregate_field(
     expr_array: &[Value],
     idx: usize,
-    agg_type: &str,
     conv_object: &mut ConverterObject,
 ) -> Result<(ComplexField, usize, Vec<(usize, String, String)>), Box<ConversionError>> {
     let expr = &expr_array[idx];
     let expr_updates = Vec::new();
+    let child_expr = &expr_array[idx + 1];
 
-    let child_idx = expr
-        .get("child")
-        .and_then(|c| c.as_u64())
-        .ok_or_else(|| Box::new(ConversionError::MissingField("child".to_string())))?
-        as usize;
+    let agg_type = expr
+        .get("class")
+        .and_then(|at| at.as_str())
+        .ok_or_else(|| Box::new(ConversionError::InvalidClassName))?
+        .split('.')
+        .last()
+        .ok_or_else(|| Box::new(ConversionError::InvalidClassName))?;
+
+    println!("Processing aggregate type: {}", agg_type);
 
     let aggregate_type = match agg_type {
         "Sum" => AggregateType::Sum,
@@ -729,7 +747,18 @@ fn process_aggregate_field(
         }
     };
 
-    if aggregate_type == AggregateType::Count && expr.get("isDistinct").is_some() {
+
+    if aggregate_type == AggregateType::Count
+        && child_expr
+            .get("class")
+            .and_then(|at| at.as_str())
+            .ok_or_else(|| Box::new(ConversionError::InvalidClassName))?
+            .split('.')
+            .last()
+            == Some("Literal")
+    {
+        println!("Child expression: {:?}", child_expr);
+
         let column_ref = ColumnRef {
             table: None,
             column: "*".to_string(),
@@ -755,7 +784,8 @@ fn process_aggregate_field(
     }
 
     // Resolve child column using expr ID
-    let child_expr = &expr_array[idx + child_idx + 1];
+
+    println!("Processing child expression: {:?}", child_expr);
     let (_, original_column, original_source) =
         conv_object.resolve_projection_column(child_expr)?;
 
@@ -778,7 +808,7 @@ fn process_aggregate_field(
             subquery: None,
             subquery_vec: None,
         },
-        idx + child_idx + 2,
+        idx + 2,
         expr_updates,
     ))
 }
