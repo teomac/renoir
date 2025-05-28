@@ -140,12 +140,14 @@ pub(crate) fn create_simple_map(
                     if is_check_list_empty {
                         format!("{}: Some({})", field_name, value)
                     } else {
-                        format!(
+                        let result = format!(
                             "{}: if {} {{Some({})}} else {{ None }}",
                             field_name,
                             check_list.join(" && "),
                             value
-                        )
+                        );
+                        check_list.clear(); // Clear the check list after use
+                        result
                     }
                 }
                 ProjectionColumn::StringLiteral(value, alias) => {

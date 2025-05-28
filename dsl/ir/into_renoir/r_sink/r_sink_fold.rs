@@ -498,6 +498,7 @@ pub(crate) fn create_map(
             }
             _ => panic!("Invalid projection clause"),
         };
+        check_list.clear();
         result.push_str(&format!("    {}: {},\n", field_name, value));
     }
 
