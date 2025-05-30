@@ -11,7 +11,7 @@ use core::panic;
 use indexmap::IndexMap;
 use std::sync::Arc;
 
-///Object that holds all the information about query, streams and tables. It is the main core of the entire execution. 
+///Object that holds all the information about query, streams and tables. It is the main core of the entire execution.
 #[derive(Clone, Debug)]
 pub struct QueryObject {
     // Tables references
@@ -83,12 +83,20 @@ impl QueryObject {
     }
 
     //getter and setter methods for tables_info
-    pub(crate) fn set_tables_info(&mut self, tables_info: IndexMap<String, IndexMap<String, String>>) {
+    pub(crate) fn set_tables_info(
+        &mut self,
+        tables_info: IndexMap<String, IndexMap<String, String>>,
+    ) {
         self.tables_info = tables_info;
     }
 
     //method to create a new stream
-    pub(crate) fn create_new_stream(&mut self, stream_name: &String, source_table: &String, alias: &str) {
+    pub(crate) fn create_new_stream(
+        &mut self,
+        stream_name: &String,
+        source_table: &String,
+        alias: &str,
+    ) {
         //create the StreamInfo object
         let mut stream =
             StreamInfo::new(stream_name.clone(), source_table.clone(), alias.to_owned());
@@ -109,9 +117,10 @@ impl QueryObject {
 
         stream.update_columns(self.tables_info.get(source_table).unwrap().clone());
 
-        stream
-            .final_struct
-            .insert(format!("Struct_{}", stream_name.clone()).to_string(), IndexMap::new());
+        stream.final_struct.insert(
+            format!("Struct_{}", stream_name.clone()).to_string(),
+            IndexMap::new(),
+        );
 
         self.streams.insert(stream_name.clone(), stream);
     }
@@ -207,12 +216,11 @@ impl QueryObject {
         let final_struct_name = stream.final_struct.keys().last().unwrap();
         let final_struct = stream.final_struct.get(final_struct_name).unwrap();
         let str = if self.get_struct_field(&table_name, field).is_none() {
-            if final_struct.contains_key(&column.column){
+            if final_struct.contains_key(&column.column) {
                 final_struct.get(&column.column).unwrap().to_string()
+            } else {
+                "f64".to_string()
             }
-            else{
-              "f64".to_string()  
-            }   
         } else {
             self.get_struct_field(&table_name, field)
                 .unwrap()
@@ -292,10 +300,10 @@ impl QueryObject {
                     .final_struct
                     .insert(format!("Struct_{}", stream.id.clone()), IndexMap::new());
             } else {
-                stream.final_struct.insert(format!(
-                    "{}_clone",
-                    stream.final_struct.keys().last().unwrap()
-                ), IndexMap::new());
+                stream.final_struct.insert(
+                    format!("{}_clone", stream.final_struct.keys().last().unwrap()),
+                    IndexMap::new(),
+                );
             }
             stream.is_keyed = false;
             stream.key_columns.clear();
@@ -348,10 +356,10 @@ impl QueryObject {
                         .final_struct
                         .insert(format!("Struct_{}", stream.id.clone()), IndexMap::new());
                 } else {
-                    stream.final_struct.insert(format!(
-                        "{}_clone",
-                        stream.final_struct.keys().last().unwrap()
-                    ), IndexMap::new());
+                    stream.final_struct.insert(
+                        format!("{}_clone", stream.final_struct.keys().last().unwrap()),
+                        IndexMap::new(),
+                    );
                 }
                 stream.is_keyed = false;
                 stream.key_columns.clear();
@@ -456,13 +464,23 @@ impl QueryObject {
                     }
                 }
             }
+            IrPlan::Scan { input, .. } => {
+                // If we encounter a Scan node, recursively process its input
+                self.collect_projection_aggregates(input);
+            }
             IrPlan::OrderBy { input, .. } => {
                 self.collect_projection_aggregates(input);
             }
             IrPlan::Limit { input, .. } => {
                 self.collect_projection_aggregates(input);
             } // Handle LIMIT clause if needed
-            _ => panic!("Expected Project node at the root of the AST"),
+            _ => {
+                println!(
+                    "Warning: collect_projection_aggregates called on non-Project node: {:?}",
+                    ir_ast
+                );
+                panic!("Expected Project node at the root of the AST")
+            }
         }
     }
 
@@ -486,7 +504,7 @@ impl QueryObject {
         }
     }
 
-    /// Populates the result mappings for the final projection. 
+    /// Populates the result mappings for the final projection.
     /// It generates the final structs names and types.
     pub(crate) fn populate_result_mappings(
         &mut self,
@@ -561,10 +579,19 @@ impl QueryObject {
                                     stream.alias.clone()
                                 };
 
-                                let struct_map = if stream.final_struct.get(stream.final_struct.keys().last().unwrap()).unwrap().is_empty() {
+                                let struct_map = if stream
+                                    .final_struct
+                                    .get(stream.final_struct.keys().last().unwrap())
+                                    .unwrap()
+                                    .is_empty()
+                                {
                                     self.tables_info.get(table).unwrap()
                                 } else {
-                                    &stream.final_struct.get(stream.final_struct.keys().last().unwrap()).unwrap().clone()
+                                    &stream
+                                        .final_struct
+                                        .get(stream.final_struct.keys().last().unwrap())
+                                        .unwrap()
+                                        .clone()
                                 };
 
                                 for (col_name, col_type) in struct_map {
@@ -721,7 +748,7 @@ impl QueryObject {
                 IrLiteral::Integer(_) => "i64".to_string(),
                 IrLiteral::Float(_) => "f64".to_string(),
                 IrLiteral::String(_) => "String".to_string(),
-                IrLiteral::Boolean(_) => "bool".to_string()
+                IrLiteral::Boolean(_) => "bool".to_string(),
             }
         } else if let Some(ref nested) = field.nested_expr {
             let (left, op, right, _) = &**nested;

@@ -32,7 +32,7 @@ pub(crate) fn check_column_validity(
                 panic!("Error in retrieving struct_map for table {}.", alias);
             });
         if !struct_map.contains_key(&col_to_check) 
-        && !struct_map.contains_key(format!("{}_{}", col_to_check.to_string(), table_name).as_str()) 
+        && !struct_map.contains_key(format!("{}_{}", col_to_check, table_name).as_str()) 
         && !query_object.get_stream(stream_name).initial_columns.contains_key(&col_to_check) && !query_object.get_stream(stream_name).initial_columns.contains_key(format!("{}_{}", col_to_check, table_name).as_str()) {
             panic!("Column {} does not exist in table {}", col_to_check, alias);
         }

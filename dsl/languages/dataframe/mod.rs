@@ -4,27 +4,35 @@ use std::sync::Arc;
 use ast_builder::df_utils::ConverterObject;
 use converter::build_ir_ast_df;
 use indexmap::IndexMap;
-use metadata::{extract_expr_ids, extract_metadata};
+use metadata::extract_metadata;
 use serde_json::Value;
 
-use crate::dsl::{binary_generation::{creation, execution::binary_execution}, ir::{ir_ast_to_renoir, IrPlan}, query::subquery_utils::manage_subqueries, struct_object::object::QueryObject};
+use crate::dsl::{
+    binary_generation::{creation, execution::binary_execution},
+    ir::{ir_ast_to_renoir, IrPlan},
+    query::subquery_utils::manage_subqueries,
+    struct_object::object::QueryObject,
+};
 
-pub(crate) mod converter;
-pub(crate) mod conversion_error;
-pub(crate) mod metadata;
 pub(crate) mod ast_builder;
+pub(crate) mod conversion_error;
+pub(crate) mod converter;
+pub(crate) mod metadata;
 
-
-pub fn renoir_dataframe(metadata_list: Vec<String>, csv_paths: Vec<String>, catalyst_plan: &[Value], output_path: &str, renoir_path: &Option<String>) -> io::Result<String> {
-    
+pub fn renoir_dataframe(
+    metadata_list: Vec<String>,
+    csv_paths: Vec<String>,
+    expr_ids_mapping: IndexMap<usize, (String, String)>,
+    catalyst_plan: &[Value],
+    output_path: &str,
+    renoir_path: &Option<String>,
+) -> io::Result<String> {
     //step 1: convert metadata_list to a IndexMap<String, (String, String)> containing the input tables
     let input_tables = extract_metadata(metadata_list, csv_paths)?;
 
     //step 2: retrieve an object from the catalyst plan that contains the mapping expr_id to table name
 
-    let expr_ids = extract_expr_ids(catalyst_plan, &input_tables);
-
-    let mut conv_object = ConverterObject::new(expr_ids.clone());
+    let mut conv_object = ConverterObject::new(expr_ids_mapping.clone());
 
     //step 3: Generate the IR Plan from the catalyst plan
 
@@ -32,7 +40,6 @@ pub fn renoir_dataframe(metadata_list: Vec<String>, csv_paths: Vec<String>, cata
 
     //step 4: Process the IR AST and generate the Rust binary with Renoir code
     process_ir_ast_for_df(ir_ast, &output_path.to_string(), renoir_path, &input_tables)
-    
 }
 
 /// Processes the IR AST and generates a Rust binary containing the corresponding Renoir code.
