@@ -278,13 +278,11 @@ fn process_logical_rdd(
 
     let stream_name = conv_object.increment_and_get_stream_name(*project_count);
 
-
     let plan = Arc::new(IrPlan::Scan {
         input: table_node,
         stream_name,
         alias: Some(table_name),
     });
 
-    conv_object.stream_index += 1; // Increment the stream index for the next node
     Ok(plan)
 }
