@@ -2,6 +2,7 @@ use serde_json::Value;
 use std::sync::Arc;
 
 use crate::dsl::ir::{ColumnRef, IrPlan};
+use crate::dsl::languages::dataframe::ast_builder::df_utils::ExprUpdate;
 use crate::dsl::languages::dataframe::conversion_error::ConversionError;
 
 use super::df_project::process_project_agg;
@@ -85,7 +86,7 @@ pub(crate) fn process_aggregate(
 fn parse_grouping_expressions(
     group_expressions: &[Value],
     conv_object: &mut ConverterObject,
-) -> Result<(Vec<ColumnRef>, Vec<(usize, String, String)>), Box<ConversionError>> {
+) -> Result<(Vec<ColumnRef>, Vec<ExprUpdate>), Box<ConversionError>> {
     let mut group_keys = Vec::new();
     let mut expr_updates = Vec::new();
 
@@ -113,7 +114,7 @@ fn parse_grouping_expressions(
                 // For GROUP BY columns, we typically want to preserve their original
                 // names and sources, but we still track them for consistency
                 // The source name remains the same since GROUP BY doesn't change the source
-                expr_updates.push((expr_id, column_name, source_name));
+                expr_updates.push(ExprUpdate::new(expr_id, column_name, source_name));
             }
         }
     }

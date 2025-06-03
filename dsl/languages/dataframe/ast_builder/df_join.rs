@@ -32,6 +32,7 @@ pub(crate) fn process_join(
         "Inner$" => JoinType::Inner,
         "LeftOuter$" => JoinType::Left,
         "FullOuter$" => JoinType::Outer,
+        "LeftSemi$" => JoinType::Left,
         _ => {
             return Err(Box::new(ConversionError::UnsupportedJoinType(
                 join_type_str.to_string(),
@@ -298,7 +299,11 @@ pub(crate) fn process_join_child(
             let alias = extract_alias_from_columns(columns);
             
             // Get the next stream name for this join child
-            let stream_name = conv_object.increment_and_get_stream_name(*project_count);
+            let stream_name = if let Some(last) = conv_object.stream_names.last() {
+                last.clone()
+            } else {
+                conv_object.increment_and_get_stream_name(*project_count)
+            };
             
             let scan_node = IrPlan::Scan {
                 input: child_ir.0,

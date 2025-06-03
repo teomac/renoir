@@ -568,7 +568,7 @@ fn process_expression(
         "ScalarSubquery" => {
             // Process scalar subquery
             let complex_field =
-                process_scalar_subquery(&condition_array[idx], &project_count, conv_object)?;
+                process_scalar_subquery(&condition_array[idx], conv_object)?;
             Ok((complex_field, idx + 1))
         }
         _ => Err(Box::new(ConversionError::UnsupportedExpressionType(

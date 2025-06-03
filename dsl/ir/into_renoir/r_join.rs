@@ -28,11 +28,15 @@ pub(crate) fn process_join(
         // Get the stream names from aliases
         let mut left_stream_name = query_object
             .get_stream_from_alias(left_col.table.as_ref().unwrap())
-            .unwrap()
+            .unwrap_or_else(|| {
+                &query_object.streams.get(left_col.table.as_ref().unwrap()).as_ref().unwrap().id
+            })
             .clone();
         let mut right_stream_name = query_object
             .get_stream_from_alias(right_col.table.as_ref().unwrap())
-            .unwrap()
+            .unwrap_or_else(|| {
+                &query_object.streams.get(right_col.table.as_ref().unwrap()).as_ref().unwrap().id
+            })
             .clone();
 
         // Validate columns

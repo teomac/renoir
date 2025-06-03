@@ -1,5 +1,3 @@
-// dsl/languages/dataframe/ast_builder/df_utils.rs
-
 use crate::dsl::ir::{ColumnRef, IrLiteral};
 use crate::dsl::languages::dataframe::conversion_error::ConversionError;
 use indexmap::IndexMap;
@@ -9,6 +7,24 @@ use serde_json::Value;
 pub struct ConverterObject {
     pub expr_to_source: IndexMap<usize, (String, String)>,
     pub stream_index: usize,
+    pub stream_names: Vec<String>,
+}
+
+pub struct ExprUpdate{
+    pub expr_id: usize,
+    pub column_name: String,
+    pub source_name: String,
+}
+
+impl ExprUpdate {
+    pub fn new(expr_id: usize, column_name: String, source_name: String) -> Self {
+        ExprUpdate {
+            expr_id,
+            column_name,
+            source_name,
+        }
+    }
+    
 }
 
 impl ConverterObject {
@@ -16,6 +32,7 @@ impl ConverterObject {
         ConverterObject {
             expr_to_source,
             stream_index: 0,
+            stream_names: Vec::new(),
         }
     }
 
@@ -147,11 +164,11 @@ impl ConverterObject {
     /// with new source names and aliases
     pub fn update_projection_mappings(
         &mut self,
-        projection_updates: Vec<(usize, String, String)>, // (expr_id, new_column_name, new_source_name)
+        projection_updates: Vec<ExprUpdate>, // (expr_id, new_column_name, new_source_name)
     ) {
-        for (expr_id, column_name, source_name) in projection_updates {
+        for update in projection_updates {
             self.expr_to_source
-                .insert(expr_id, (column_name, source_name));
+                .insert(update.expr_id, (update.column_name, update.source_name));
         }
     }
 
@@ -178,7 +195,6 @@ impl ConverterObject {
         &self,
         node: &Value,
     ) -> Result<(usize, String, String), Box<ConversionError>> {
-        println!("expr_to_source: {:?}", self.expr_to_source);
         let expr_id = Self::extract_expr_id(node)?;
 
         let (column_name, source_name) =
@@ -198,11 +214,13 @@ impl ConverterObject {
     /// Increment stream index and return the new stream name
     pub fn increment_and_get_stream_name(&mut self, index: i64) -> String {
         let mut result = String::new();
-        for _ in 2..index {
+        for _ in 1..index {
             result.push_str("sub");
         }
         let stream_name = format!("stream{}", self.stream_index);
         self.stream_index += 1;
-        format!("{}{}", result, stream_name).to_string()
+        let result = format!("{}{}", result, stream_name).to_string();
+        self.stream_names.push(result.clone());
+        result
     }
 }

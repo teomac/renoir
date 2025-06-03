@@ -197,7 +197,7 @@ impl QueryObject {
     pub(crate) fn get_type(&self, column: &ColumnRef) -> String {
         let stream_name: String = if column.table.is_some() {
             self.get_stream_from_alias(column.table.as_ref().unwrap())
-                .unwrap()
+                .unwrap_or_else(|| &self.streams.get(column.table.as_ref().unwrap()).unwrap().id)
                 .clone()
         } else {
             let all_streams = self.streams.keys().cloned().collect::<Vec<_>>();

@@ -2,6 +2,7 @@ use crate::dsl::ir::{
     AggregateFunction, AggregateType, ColumnRef, ComplexField, IrLiteral, IrPlan, ProjectionColumn,
 };
 use crate::dsl::languages::dataframe::ast_builder::df_subqueries::process_scalar_subquery;
+use crate::dsl::languages::dataframe::ast_builder::df_utils::ExprUpdate;
 use crate::dsl::languages::dataframe::conversion_error::ConversionError;
 use serde_json::Value;
 use std::sync::Arc;
@@ -33,12 +34,8 @@ pub(crate) fn process_project(
     for projection_array in project_list {
         if let Some(projections) = projection_array.as_array() {
             // Process the first expression in each projection array
-            let (projection_column, expr_updates) = process_projection_array(
-                projections,
-                project_count,
-                needs_auto_aliases,
-                conv_object,
-            )?;
+            let (projection_column, expr_updates) =
+                process_projection_array(projections, needs_auto_aliases, conv_object)?;
             columns.push(projection_column);
             projection_updates.extend(expr_updates);
         }
@@ -57,11 +54,11 @@ pub(crate) fn process_project(
 
     // Update projection expr IDs - but only for the expressions that are actually being projected
     // and only update the ones that correspond to the new stream we're creating
-    for (expr_id, new_column_name, _) in &projection_updates {
+    for update in &projection_updates {
         // Only update the source to the new stream name for expressions that are being projected
         conv_object
             .expr_to_source
-            .insert(*expr_id, (new_column_name.clone(), stream_name.clone()));
+            .insert(update.expr_id, (update.column_name.clone(), stream_name.clone()));
     }
 
     let project_node = Arc::new(IrPlan::Project {
@@ -99,12 +96,8 @@ pub(crate) fn process_project_agg(
     // Process each projection list item
     for projection_array in project_list {
         if let Some(projections) = projection_array.as_array() {
-            let (projection_column, expr_updates) = process_projection_array(
-                projections,
-                project_count,
-                needs_auto_aliases,
-                conv_object,
-            )?;
+            let (projection_column, expr_updates) =
+                process_projection_array(projections, needs_auto_aliases, conv_object)?;
             columns.push(projection_column);
             projection_updates.extend(expr_updates);
         }
@@ -122,11 +115,11 @@ pub(crate) fn process_project_agg(
 
     // Update projection expr IDs - but only for the expressions that are actually being projected
     // and only update the ones that correspond to the new stream we're creating
-    for (expr_id, new_column_name, _) in &projection_updates {
+    for update in &projection_updates {
         // Only update the source to the new stream name for expressions that are being projected
         conv_object
             .expr_to_source
-            .insert(*expr_id, (new_column_name.clone(), stream_name.clone()));
+            .insert(update.expr_id, (update.column_name.clone(), stream_name.clone()));
     }
 
     // For aggregates, we don't create a new scan node immediately
@@ -151,10 +144,9 @@ pub(crate) fn process_project_agg(
 
 fn process_projection_array(
     projection_array: &[Value],
-    project_count: &i64,
     needs_auto_aliases: bool,
     conv_object: &mut ConverterObject,
-) -> Result<(ProjectionColumn, Vec<(usize, String, String)>), Box<ConversionError>> {
+) -> Result<(ProjectionColumn, Vec<ExprUpdate>), Box<ConversionError>> {
     if projection_array.is_empty() {
         return Err(Box::new(ConversionError::InvalidExpression));
     }
@@ -212,7 +204,6 @@ fn process_projection_array(
                 let (column, _, mut child_updates) = process_expression(
                     projection_array,
                     (child_idx as usize) + 1,
-                    project_count,
                     alias_name,
                     needs_auto_aliases,
                     conv_object,
@@ -238,7 +229,7 @@ fn process_projection_array(
                         _ => format!("col_{}", alias_expr_id),
                     };
 
-                    child_updates.push((
+                    child_updates.push(ExprUpdate::new(
                         alias_expr_id,
                         final_column_name,
                         "placeholder".to_string(),
@@ -250,14 +241,8 @@ fn process_projection_array(
             }
             _ => {
                 // Directly process the expression
-                let (column, _, updates) = process_expression(
-                    projection_array,
-                    0,
-                    project_count,
-                    None,
-                    needs_auto_aliases,
-                    conv_object,
-                )?;
+                let (column, _, updates) =
+                    process_expression(projection_array, 0, None, needs_auto_aliases, conv_object)?;
                 expr_updates.extend(updates);
                 Ok((column, expr_updates))
             }
@@ -272,11 +257,10 @@ fn process_projection_array(
 fn process_expression(
     expr_array: &[Value],
     idx: usize,
-    project_count: &i64,
     alias: Option<String>,
     needs_auto_aliases: bool,
     conv_object: &mut ConverterObject,
-) -> Result<(ProjectionColumn, usize, Vec<(usize, String, String)>), Box<ConversionError>> {
+) -> Result<(ProjectionColumn, usize, Vec<ExprUpdate>), Box<ConversionError>> {
     if idx >= expr_array.len() {
         return Err(Box::new(ConversionError::InvalidExpression));
     }
@@ -328,7 +312,7 @@ fn process_expression(
 
             // Only track expression IDs that are actually being projected in this step
             // This prevents overwriting expression IDs that shouldn't be updated
-            expr_updates.push((expr_id, final_column_name, "placeholder".to_string()));
+            expr_updates.push(ExprUpdate::new(expr_id, final_column_name, "placeholder".to_string()));
 
             Ok((
                 ProjectionColumn::Column(column_ref, column_alias),
@@ -382,7 +366,6 @@ fn process_expression(
             process_expression(
                 expr_array,
                 idx + child_idx + 1,
-                project_count,
                 alias,
                 needs_auto_aliases,
                 conv_object,
@@ -390,8 +373,7 @@ fn process_expression(
         }
         "ScalarSubquery" => {
             // Process scalar subquery
-            let complex_field =
-                process_scalar_subquery(&expr_array[idx], project_count, conv_object)?;
+            let complex_field = process_scalar_subquery(&expr_array[idx], conv_object)?;
             Ok((
                 ProjectionColumn::ComplexValue(complex_field, alias),
                 idx + 1,
@@ -411,7 +393,7 @@ fn process_aggregate(
     alias: Option<String>,
     needs_auto_aliases: bool,
     conv_object: &mut ConverterObject,
-) -> Result<(ProjectionColumn, usize, Vec<(usize, String, String)>), Box<ConversionError>> {
+) -> Result<(ProjectionColumn, usize, Vec<ExprUpdate>), Box<ConversionError>> {
     let expr = &expr_array[idx];
     let mut expr_updates = Vec::new();
 
@@ -424,8 +406,6 @@ fn process_aggregate(
         .split('.')
         .last()
         .ok_or_else(|| Box::new(ConversionError::InvalidClassName))?;
-
-    println!("Processing aggregate type: {}", agg_type);
 
     let aggregate_type = match agg_type {
         "Sum" => AggregateType::Sum,
@@ -440,8 +420,6 @@ fn process_aggregate(
             )))
         }
     };
-
-    println!("Aggregate type resolved: {:?}", aggregate_type);
 
     let child_idx = idx + 1;
     let child = &expr_array[child_idx];
@@ -497,7 +475,7 @@ fn process_aggregate(
                     original_column
                 )
             });
-            expr_updates.push((agg_expr_id, agg_name, "placeholder".to_string()));
+            expr_updates.push(ExprUpdate::new(agg_expr_id, agg_name, "placeholder".to_string()));
         }
 
         Ok((
@@ -526,7 +504,7 @@ fn process_aggregate(
 
             // Track count(*) for expr ID updates
             if let Ok(agg_expr_id) = ConverterObject::extract_expr_id(expr) {
-                expr_updates.push((
+                expr_updates.push(ExprUpdate::new(
                     agg_expr_id,
                     "count_star".to_string(),
                     "placeholder".to_string(),
@@ -553,7 +531,7 @@ fn process_arithmetic_operation(
     op_type: &str,
     needs_auto_aliases: bool,
     conv_object: &mut ConverterObject,
-) -> Result<(ComplexField, usize, Vec<(usize, String, String)>), Box<ConversionError>> {
+) -> Result<(ComplexField, usize, Vec<ExprUpdate>), Box<ConversionError>> {
     let expr = &expr_array[idx];
     let mut expr_updates = Vec::new();
 
@@ -610,7 +588,7 @@ fn process_complex_field(
     idx: usize,
     needs_auto_aliases: bool,
     conv_object: &mut ConverterObject,
-) -> Result<(ComplexField, usize, Vec<(usize, String, String)>), Box<ConversionError>> {
+) -> Result<(ComplexField, usize, Vec<ExprUpdate>), Box<ConversionError>> {
     if idx >= expr_array.len() {
         return Err(Box::new(ConversionError::InvalidExpression));
     }
@@ -640,7 +618,7 @@ fn process_complex_field(
             };
 
             // Track for updates
-            expr_updates.push((expr_id, original_column, "placeholder".to_string()));
+            expr_updates.push(ExprUpdate::new(expr_id, original_column, "placeholder".to_string()));
 
             Ok((
                 ComplexField {
@@ -719,7 +697,7 @@ fn process_aggregate_field(
     expr_array: &[Value],
     idx: usize,
     conv_object: &mut ConverterObject,
-) -> Result<(ComplexField, usize, Vec<(usize, String, String)>), Box<ConversionError>> {
+) -> Result<(ComplexField, usize, Vec<ExprUpdate>), Box<ConversionError>> {
     let expr = &expr_array[idx];
     let expr_updates = Vec::new();
     let child_expr = &expr_array[idx + 1];
@@ -731,8 +709,6 @@ fn process_aggregate_field(
         .split('.')
         .last()
         .ok_or_else(|| Box::new(ConversionError::InvalidClassName))?;
-
-    println!("Processing aggregate type: {}", agg_type);
 
     let aggregate_type = match agg_type {
         "Sum" => AggregateType::Sum,
@@ -747,7 +723,6 @@ fn process_aggregate_field(
         }
     };
 
-
     if aggregate_type == AggregateType::Count
         && child_expr
             .get("class")
@@ -757,7 +732,6 @@ fn process_aggregate_field(
             .last()
             == Some("Literal")
     {
-        println!("Child expression: {:?}", child_expr);
 
         let column_ref = ColumnRef {
             table: None,
@@ -784,8 +758,6 @@ fn process_aggregate_field(
     }
 
     // Resolve child column using expr ID
-
-    println!("Processing child expression: {:?}", child_expr);
     let (_, original_column, original_source) =
         conv_object.resolve_projection_column(child_expr)?;
 

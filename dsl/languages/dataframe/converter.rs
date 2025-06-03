@@ -24,7 +24,7 @@ pub fn build_ir_ast_df(
     }
 
     println!("Catalyst plan: {:?}", plan);
-    let mut project_count:i64 = 0;
+    let mut project_count: i64 = 0;
 
     // Start processing from the root node
     let final_ast = process_node(plan, 0, &mut project_count, conv_object)
@@ -95,7 +95,7 @@ pub fn process_node(
             ))
         }
         "Filter" => {
-            if *project_count == 0{
+            if *project_count == 0 {
                 *project_count += 1; // Increment project count for the first filter
             }
             let current_project_count = *project_count;
@@ -119,7 +119,7 @@ pub fn process_node(
                 index,
             ))
         }
-        "Join" => {            
+        "Join" => {
             let left_child_idx = node
                 .get("left")
                 .and_then(|c| c.as_u64())
@@ -227,7 +227,7 @@ pub fn process_node(
         }
         "LogicalRDD" | "LogicalRelation" => {
             *project_count += 1; // Increment project count for table scans
-            // This is a base table scan
+                                 // This is a base table scan
             Ok((
                 process_logical_rdd(node, project_count, conv_object)?,
                 current_index + 1,
