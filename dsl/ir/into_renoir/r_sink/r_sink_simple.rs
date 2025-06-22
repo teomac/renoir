@@ -66,7 +66,7 @@ pub(crate) fn create_simple_map(
                     //if the stream is grouped, check if the column is a key column
                     let mut is_key: bool = false;
                     if is_grouped {
-                        if !keys.iter().any(|key| key == col_ref) {
+                        if !keys.iter().any(|key| key.0 == *col_ref) {
                             panic!(
                                 "Column {} is not a key column in the grouped stream",
                                 col_ref.column
@@ -77,7 +77,11 @@ pub(crate) fn create_simple_map(
                     }
 
                     if is_key {
-                        let key_pos = keys.iter().position(|key| key == col_ref).unwrap();
+                        
+                        let key_pos = keys.iter().find(|key| key.0.column == col_ref.column).map_or_else(
+                    || panic!("Key column {} not found in keys", col_ref.column),
+                    |key| key.1.to_string(),
+                );
                         let value: String;
                         if keys.len() == 1 {
                             if col_type == "f64" {
@@ -331,7 +335,7 @@ pub(crate) fn process_complex_field(
         let mut is_key = false;
 
         if col_stream.is_keyed {
-            if !keys.iter().any(|key| key == col) {
+            if !keys.iter().any(|key| key.0 == *col) {
                 panic!(
                     "Column {} is not a key column in the grouped stream",
                     col.column
@@ -342,7 +346,10 @@ pub(crate) fn process_complex_field(
         }
 
         if is_key {
-            let key_pos = keys.iter().position(|key| key == col).unwrap();
+            let key_pos = keys.iter().find(|key| key.0.column == col.column).map_or_else(
+                    || panic!("Key column {} not found in keys", col.column),
+                    |key| key.1.to_string(),
+                );
             if keys.len() == 1 {
                 if col_type == "f64" {
                     check_list.push("x.0.is_some()".to_string());

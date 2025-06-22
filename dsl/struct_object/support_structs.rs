@@ -14,7 +14,7 @@ pub struct StreamInfo {
     pub initial_columns: IndexMap<String, String>, // Column name → type mappings
     pub access: AccessPath, // Access path for tuple
     pub is_keyed: bool, // Whether the stream is keyed
-    pub key_columns: Vec<ColumnRef>, // Key columns
+    pub key_columns: Vec<(ColumnRef, usize)>, // Key columns and position
     pub op_chain: Vec<String>, // Operator chain
     pub final_struct: IndexMap<String, IndexMap<String, String>>, // key: final_struct name, value: struct
     pub join_tree: Option<JoinTree>, // Join tree

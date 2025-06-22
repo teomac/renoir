@@ -181,6 +181,7 @@ pub(crate) fn process_group_by(
 ///
 /// A String containing the tuple of column references for group by
 fn process_group_by_keys(columns: &[ColumnRef], query_object: &mut QueryObject) -> String {
+    let mut index:usize = 0;
     if !query_object.has_join {
         let stream_name = query_object
             .streams
@@ -218,7 +219,11 @@ fn process_group_by_keys(columns: &[ColumnRef], query_object: &mut QueryObject) 
 
         let stream = query_object.get_mut_stream(&stream_name);
         stream.is_keyed = true;
-        stream.key_columns.extend(columns.to_owned());
+        stream.key_columns = columns
+            .iter()
+            .cloned()
+            .zip(0..columns.len())
+            .collect::<Vec<_>>();
 
         final_string
     } else {
@@ -257,7 +262,8 @@ fn process_group_by_keys(columns: &[ColumnRef], query_object: &mut QueryObject) 
 
                 let mut_stream = query_object.get_mut_stream(&stream_name);
                 mut_stream.is_keyed = true;
-                mut_stream.key_columns.push(col.clone());
+                mut_stream.key_columns.push((col.clone(), index));
+                index += 1;
 
                 format!(
                     "x{}.{}.clone(){}",

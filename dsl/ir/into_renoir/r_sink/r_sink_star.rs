@@ -55,7 +55,7 @@ pub(crate) fn create_star_map(stream_name: &String, struct_name: &String, query_
         for stream in all_streams.iter() {
             key_columns.extend(query_object.get_stream(stream).key_columns.clone());
         }
-        for (index, key_column) in key_columns.iter().enumerate() {
+        for (key_column, index) in key_columns.iter() {
             let is_single_key = key_columns.len() == 1;
             let col_table = key_column.table.clone().unwrap_or(String::new());
             let col_type = query_object.get_type(key_column);

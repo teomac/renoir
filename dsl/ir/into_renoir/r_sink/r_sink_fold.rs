@@ -1,6 +1,6 @@
 use crate::dsl::ir::ir_ast_structure::{ComplexField, ProjectionColumn};
 use crate::dsl::ir::r_sink::r_sink_utils::{AccumulatorInfo, AccumulatorValue};
-use crate::dsl::ir::{AggregateType, IrLiteral};
+use crate::dsl::ir::{AggregateType, ColumnRef, IrLiteral};
 use crate::dsl::struct_object::object::QueryObject;
 ///
 /// initial function
@@ -35,6 +35,9 @@ pub(crate) fn create_aggregate_map(
     for stream in all_streams.iter() {
         keys.extend(query_object.get_stream(stream).key_columns.clone());
     }
+    let col_keys = keys.iter()
+        .map(|key| key.0.clone())
+        .collect::<Vec<ColumnRef>>();
 
     // First analyze all clauses to build accumulator info
     for (i, clause) in projection_clauses.iter().enumerate() {
@@ -64,7 +67,7 @@ pub(crate) fn create_aggregate_map(
             }
             ProjectionColumn::Column(col, _) => {
                 //check if the stream is grouped and if the column is a key column
-                if is_grouped && !keys.contains(col) {
+                if is_grouped && !col_keys.contains(col) {
                     panic!("Cannot use key column in projection clause in grouped query");
                 }
                 //no need to add the column because it is already a key in the keyed stream
@@ -338,6 +341,9 @@ pub(crate) fn create_map(
     for stream in all_streams.iter() {
         keys.extend(query_object.get_stream(stream).key_columns.clone());
     }
+    let col_keys = keys.iter()
+        .map(|key| key.0.clone())
+        .collect::<Vec<ColumnRef>>();
 
     let mut check_list = Vec::new();
 
@@ -451,7 +457,7 @@ pub(crate) fn create_map(
                 };
                 //we need to check if the stream is grouped and if the column is a key column
                 if is_grouped {
-                    if !keys.contains(col) {
+                    if !col_keys.contains(col) {
                         panic!("Cannot use key column in projection clause in grouped query");
                     }
                 } else {
@@ -463,7 +469,10 @@ pub(crate) fn create_map(
 
                 let col_stream = query_object.get_stream(col_stream_name);
                 col_stream.check_if_column_exists(&col.column);
-                let key_position = keys.iter().position(|x| x == col).unwrap();
+                let key_position = keys.iter().find(|key| key.0.column == col.column).map_or_else(
+                    || panic!("Key column {} not found in keys", col.column),
+                    |key| key.1.to_string(),
+                );
                 let is_single_key = keys.len() == 1;
                 if is_single_key {
                     if col_type == "f64" {
@@ -648,7 +657,7 @@ fn process_complex_field_for_map(
         let needs_casting = !cast.is_empty();
         // Handle column reference - must be a key column in grouped context
         // Verify this is a key column
-        if !keys.iter().any(|key| key.column == col.column) {
+        if !keys.iter().any(|key| key.0.column == col.column) {
             panic!(
                 "Column {} must be a key column when used with aggregates",
                 col.column
@@ -661,7 +670,7 @@ fn process_complex_field_for_map(
         // Get position in key tuple
         let key_position = keys
             .iter()
-            .position(|key| key.column == col.column)
+            .position(|key| key.0.column == col.column)
             .expect("Key column not found");
 
         // Key columns are accessed via x.0 and don't need safety checks

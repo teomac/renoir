@@ -20,6 +20,7 @@ use std::sync::Arc;
 ///
 /// * `sql_query` - A string that holds the SQL query to be executed.
 /// * `output_path` - A string that holds the path where the output binary will be saved.
+/// * `renoir_path` - An optional string that holds the path to the Renoir library.
 /// * `input_tables` - An `IndexMap` that holds the table name as the key and a tuple of CSV path and user-defined types as the value.
 ///
 /// # Returns

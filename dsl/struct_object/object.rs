@@ -532,8 +532,8 @@ impl QueryObject {
                             }
 
                             for key_col in &keys {
-                                let stream_name = if key_col.table.is_some() {
-                                    self.get_stream_from_alias(key_col.table.as_ref().unwrap())
+                                let stream_name = if key_col.0.table.is_some() {
+                                    self.get_stream_from_alias(key_col.0.table.as_ref().unwrap())
                                         .unwrap()
                                 } else if all_streams.len() == 1 {
                                     &all_streams[0]
@@ -543,13 +543,13 @@ impl QueryObject {
 
                                 let table = self.get_stream(stream_name).source_table.clone();
                                 let col_type = self
-                                    .get_struct_field(&table, &key_col.column)
+                                    .get_struct_field(&table, &key_col.0.column)
                                     .expect("Column not found in table structure")
                                     .clone();
 
                                 let suffix = if self.has_join {
-                                    if key_col.table.is_some() {
-                                        key_col.table.as_ref().unwrap().clone()
+                                    if key_col.0.table.is_some() {
+                                        key_col.0.table.as_ref().unwrap().clone()
                                     } else {
                                         stream_name.clone()
                                     }
@@ -557,7 +557,7 @@ impl QueryObject {
                                     stream_name.clone()
                                 };
 
-                                let col_name = format!("{}_{}", key_col.column, suffix);
+                                let col_name = format!("{}_{}", key_col.0.column, suffix);
                                 self.result_column_types.insert(col_name, col_type);
                             }
                         } else {
