@@ -1,7 +1,11 @@
 use crate::dsl::struct_object::object::QueryObject;
 use core::panic;
 
-pub(crate) fn create_star_map(stream_name: &String, struct_name: &String, query_object: &QueryObject) -> String {
+pub(crate) fn create_star_map(
+    stream_name: &String,
+    struct_name: &String,
+    query_object: &QueryObject,
+) -> String {
     let stream = query_object.get_stream(stream_name);
     let mut result = format!(".map(|x| {} {{ ", struct_name);
 
@@ -21,16 +25,29 @@ pub(crate) fn create_star_map(stream_name: &String, struct_name: &String, query_
         all_streams.push(stream_name.clone());
     }
 
-    let is_grouped = stream.is_keyed && !stream.key_columns.is_empty();
+    //retrieve the key columns
+    let mut key_columns = Vec::new();
+    for stream in all_streams.iter() {
+        key_columns.extend(query_object.get_stream(stream).key_columns.clone());
+    }
+    let is_grouped = !key_columns.is_empty();
 
     if !is_grouped {
         for stream in all_streams.iter() {
             let stream = query_object.get_stream(stream);
             let tuple_access = stream.get_access().get_base_path();
-            let table_struct = if stream.final_struct.get(stream.final_struct.keys().last().unwrap()).unwrap().is_empty() {
+            let table_struct = if stream
+                .final_struct
+                .get(stream.final_struct.keys().last().unwrap())
+                .unwrap()
+                .is_empty()
+            {
                 query_object.get_struct(&stream.source_table).unwrap()
             } else {
-                stream.final_struct.get(stream.final_struct.keys().last().unwrap()).unwrap()
+                stream
+                    .final_struct
+                    .get(stream.final_struct.keys().last().unwrap())
+                    .unwrap()
             };
 
             for (column_index, field_name) in table_struct.iter().enumerate() {
@@ -50,11 +67,6 @@ pub(crate) fn create_star_map(stream_name: &String, struct_name: &String, query_
         }
     } else {
         //grouped case
-        //retrieve the key columns
-        let mut key_columns = Vec::new();
-        for stream in all_streams.iter() {
-            key_columns.extend(query_object.get_stream(stream).key_columns.clone());
-        }
         for (key_column, index) in key_columns.iter() {
             let is_single_key = key_columns.len() == 1;
             let col_table = key_column.table.clone().unwrap_or(String::new());

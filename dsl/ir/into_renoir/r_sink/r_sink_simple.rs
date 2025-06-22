@@ -30,11 +30,11 @@ pub(crate) fn create_simple_map(
         all_streams.push(stream_name.clone());
     }
 
-    let is_grouped = main_stream.is_keyed && !main_stream.key_columns.is_empty();
     let mut keys = Vec::new();
     for stream in all_streams.iter() {
         keys.extend(query_object.get_stream(stream).key_columns.clone());
     }
+    let is_grouped = !keys.is_empty();
 
     let mut check_list = Vec::new();
 
