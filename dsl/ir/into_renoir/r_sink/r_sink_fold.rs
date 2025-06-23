@@ -229,18 +229,17 @@ fn create_fold(
                     AggregateType::Count => {
                         if col.column == "*" {
                             update_code
-                                .push_str(&format!("    {}acc{} += 1;\n", asterisk, index_acc));
+                                .push_str(&format!("{}acc{} += 1;\n", asterisk, index_acc));
                         } else {
                             update_code.push_str(&format!(
-                                "    if {}.is_some() {{ {}acc{} += 1; }}\n",
+                                "    if {}.is_some() {{{}acc{} += 1; }}\n",
                                 col_access, asterisk, index_acc
                             ));
                         }
                     }
                     AggregateType::Sum => {
                         update_code.push_str(&format!(
-                            "    if let Some(val) = {} {{ 
-                                {}acc{} = Some(acc{}.unwrap_or(0{}) + val);
+                            "    if let Some(val) = {} {{{}acc{} = Some(acc{}.unwrap_or(0{}) + val);
                             }}\n",
                             col_access,
                             asterisk,
@@ -251,8 +250,7 @@ fn create_fold(
                     }
                     AggregateType::Max => {
                         update_code.push_str(&format!(
-                            "    if let Some({}val) = {} {{
-                                {}acc{} = Some(match acc{} {{
+                            "    if let Some({}val) = {} {{{}acc{} = Some(match acc{} {{
                                     Some(current_max) => {}current_max.max({}val),
                                     None => val
                                 }});

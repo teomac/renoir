@@ -9,11 +9,6 @@ pub struct Fields {
     pub structs: IndexMap<String, IndexMap<String, String>>, //struct name, struct
     pub streams: IndexMap<String, StreamInfo>,               //stream name, stream
     pub output_path: String,
-
-    pub distinct: String,
-    pub limit: String,
-    pub order_by: String,
-
     pub main: String, //final main string
 }
 
@@ -43,9 +38,6 @@ impl Fields {
             streams: IndexMap::new(),
             main: String::new(),
             output_path: String::new(),
-            distinct: String::new(),
-            limit: String::new(),
-            order_by: String::new(),
         }
     }
 
@@ -100,11 +92,6 @@ impl Fields {
 
         self.main.push_str("ctx.execute_blocking();");
         self.main.push('\n');
-        self.main.push_str(self.distinct.as_str());
-        self.main.push('\n');
-        self.main.push_str(self.order_by.as_str());
-        self.main.push('\n');
-        self.main.push_str(self.limit.as_str());
         self.main.push_str("}}");
     }
 
