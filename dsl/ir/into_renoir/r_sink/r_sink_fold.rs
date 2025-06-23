@@ -476,7 +476,7 @@ pub(crate) fn create_map(
                 let is_single_key = keys.len() == 1;
                 if is_single_key {
                     if col_type == "f64" {
-                        "if x.0.is_some() { x.0.unwrap().into_inner() } else { None }".to_string()
+                        "if x.0.is_some() { Some(x.0.unwrap().into_inner() as f64) } else { None }".to_string()
                     } else {
                         format!(
                             "x.0{}",
@@ -485,7 +485,7 @@ pub(crate) fn create_map(
                     }
                 } else if col_type == "f64" {
                     format!(
-                        "if x.0.{}.is_some() {{ x.0.{}.unwrap().into_inner() }} else {{ None }}",
+                        "if x.0.{}.is_some() {{ Some(x.0.{}.unwrap().into_inner() as f64) }} else {{ None }}",
                         key_position, key_position
                     )
                 } else {

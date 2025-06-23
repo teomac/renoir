@@ -88,10 +88,7 @@ pub(crate) fn create_simple_map(
                                 value = "if x.0.is_some() { Some(x.0.unwrap().into_inner() as f64) } else { None }".to_string();
 
                             } else {
-                                value = format!(
-                                    "x.0{}",
-                                    if col_type == "String" { ".clone()" } else { "" }
-                                );
+                                value = "x.0.clone()".to_string();
 
                             }
                             format!("{}: {}", field_name, value)

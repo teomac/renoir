@@ -29,6 +29,7 @@ impl Fields {
             imports: {
                 r#"#![allow(non_camel_case_types)]
         #![allow(unused_variables)]
+        #![allow(non_snake_case)]
         use renoir::{{config::ConfigBuilder, prelude::*}};
         use serde::{{Deserialize, Serialize}};
         use serde_json;

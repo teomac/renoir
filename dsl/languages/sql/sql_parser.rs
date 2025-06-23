@@ -10,7 +10,7 @@ pub(crate) fn sql_to_ir(query_str: &str) -> String {
     let mut index: usize = 0;
 
     let ir_string = SqlToIr::convert(&sql_ast, &mut index, 0);
-    println!("Generated Ir string:\n{}", ir_string);
+    //println!("Generated Ir string:\n{}", ir_string);
 
     ir_string
 }
