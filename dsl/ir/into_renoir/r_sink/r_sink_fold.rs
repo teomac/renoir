@@ -478,10 +478,7 @@ pub(crate) fn create_map(
                     if col_type == "f64" {
                         "if x.0.is_some() { Some(x.0.unwrap().into_inner() as f64) } else { None }".to_string()
                     } else {
-                        format!(
-                            "x.0{}",
-                            if col_type == "String" { ".clone()" } else { "" }
-                        )
+                        "x.0.clone()".to_string()
                     }
                 } else if col_type == "f64" {
                     format!(

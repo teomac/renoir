@@ -76,7 +76,7 @@ impl Fields {
                 stream_name,
                 if i == self.streams.len() - 1 {
                     format!(
-                        r#"{} .write_csv(move |_| r"{}.csv".into(), true)"#,
+                        r#"{} .write_csv(move |_| r"{}\output.csv".into(), true)"#,
                         stream.op_chain.concat(),
                         self.output_path
                     )
@@ -173,7 +173,15 @@ impl Fields {
         let stream_name = self.streams.first().unwrap().0.clone();
         let new_result = format!("{}_result", stream_name);
         let stream = self.streams.get_mut(&stream_name).unwrap();
-        let result_type = stream.final_struct.first().unwrap().1.first().unwrap().1.clone();
+        let result_type = stream
+            .final_struct
+            .first()
+            .unwrap()
+            .1
+            .first()
+            .unwrap()
+            .1
+            .clone();
 
         let len_check = format!(
             r#"if {}.len() != 1 {{
@@ -188,7 +196,13 @@ impl Fields {
         let collection_code = format!(
             r#"
         .map(|x| x.{}{})"#,
-            stream.final_struct.get(stream.final_struct.keys().last().unwrap()).unwrap().first().unwrap().0,
+            stream
+                .final_struct
+                .get(stream.final_struct.keys().last().unwrap())
+                .unwrap()
+                .first()
+                .unwrap()
+                .0,
             if needs_ordered_float {
                 ".map(OrderedFloat)"
             } else {
