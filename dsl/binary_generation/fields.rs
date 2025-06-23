@@ -76,9 +76,14 @@ impl Fields {
                 stream_name,
                 if i == self.streams.len() - 1 {
                     format!(
-                        r#"{} .write_csv(move |_| r"{}\output.csv".into(), true)"#,
+                        r#"{} .write_csv(move |_| r"{}{}output.csv".into(), true)"#,
                         stream.op_chain.concat(),
-                        self.output_path
+                        self.output_path,
+                        if cfg!(target_os = "windows") {
+                            '\\'
+                        } else {
+                            '/'
+                        }
                     )
                 } else {
                     stream.op_chain.concat()
