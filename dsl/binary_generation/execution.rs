@@ -44,7 +44,7 @@ pub(crate) fn binary_execution(
 
     // Build the binary using cargo in debug mode
     let status = Command::new("cargo")
-        .args(["build"])
+        .args(["build", "--release"])
         .current_dir(&rust_project.project_path)
         .status()?;
 
@@ -65,7 +65,7 @@ pub(crate) fn binary_execution(
     let output = Command::new(
         rust_project
             .project_path
-            .join("target/debug")
+            .join("target/release")
             .join(binary_name),
     )
     //.current_dir(std::env::current_dir()?)
