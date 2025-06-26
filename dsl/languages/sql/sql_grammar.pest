@@ -45,7 +45,7 @@ table_column = {
     variable ~ "." ~ variable
 }
 
-spaced_string = @{ ('a'..'z' | 'A'..'Z' | '0'..'9' | " " | "-" | "_")* }
+spaced_string = @{ ('a'..'z' | 'A'..'Z' | '0'..'9' | " " | "-" | "_" | "#" | "*" | "%" | "&" | "/" | "\")* }
 string_literal = @{ "'" ~ spaced_string ~ "'" }
 
 // Arithmetic expression components
