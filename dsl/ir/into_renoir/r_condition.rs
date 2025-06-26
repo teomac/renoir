@@ -220,7 +220,7 @@ fn process_arithmetic_expression(
                 }
             }
             IrLiteral::Float(f) => format!("{:.2}", f),
-            IrLiteral::String(s) => format!("\"{}\"", s),
+            IrLiteral::String(s) => format!("\"{}\".to_string()", s),
             IrLiteral::Boolean(b) => b.to_string(),
         }
     } else if let Some((sub_name, sub_type)) = &field.subquery_vec {

@@ -851,7 +851,7 @@ fn process_filter_field(
                 }
             }
             IrLiteral::Float(f) => format!("{:.2}", f),
-            IrLiteral::String(s) => format!("\"{}\"", s),
+            IrLiteral::String(s) => format!("\"{}\".to_string()", s),
             IrLiteral::Boolean(b) => b.to_string(),
         }
     } else if let Some(ref agg) = field.aggregate {
