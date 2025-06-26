@@ -9,7 +9,7 @@ number = @{ ("-")? ~
 }
 boolean_keyword = @{ ^"true" | ^"false" }
 symbol = @{ ("^"| "+" | "-" | "*" | "/")}
-string = @{ "'" ~ (identifier | number) ~ "'" }
+string = @{ "'" ~ ('a'..'z' | 'A'..'Z' | '0'..'9' | " ")* ~ "'" }
 value = { boolean_keyword | number | string }
 
 as_keyword = @{ "as" }
